@@ -1,0 +1,33 @@
+services:
+  app:
+    image: ghcr.io/sirtheta/budget:latest
+    container_name: budget
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: "file:/app/data/budget.db"
+      NODE_ENV: production
+      # `docker compose up` works without a .env file: when AUTH_SECRET /
+      # ENCRYPTION_KEY are not provided, the container generates random ones
+      # on first start and persists them in the data volume (./data). To use
+      # your own values, set them via .env (see .env.example) — explicitly
+      # configured values always take precedence over generated ones.
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # Server timezone (log timestamps etc.). Which calendar day a recurring
+      # booking is due on follows APP_TIMEZONE (default Europe/Zurich) and
+      # works regardless of TZ.
+      TZ: ${TZ:-Europe/Zurich}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/auth/session"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

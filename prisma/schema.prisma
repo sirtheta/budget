@@ -1,0 +1,424 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ── Users & Roles ─────────────────────────────────────────────────────────────
+
+enum UserRole {
+  Admin
+  Editor
+  Viewer
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         UserRole @default(Viewer)
+  isActive     Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions        Transaction[]
+  auditLogs           AuditLog[]
+  passwordResetTokens PasswordResetToken[]
+  importBatches       ImportBatch[]
+}
+
+model PasswordResetToken {
+  id     Int    @id @default(autoincrement())
+  userId Int
+  // SHA-256 of the raw token; the raw token only ever exists in the email
+  // link, so a leaked DB row can't be used to reset a password.
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ── Accounts ──────────────────────────────────────────────────────────────────
+
+enum AccountType {
+  Checking // Lohn-/Privatkonto
+  Savings // Sparkonto
+  CreditCard // Kreditkarte
+  Cash // Bargeld
+  Investment // Depot/Wertschriften
+}
+
+model Account {
+  id   Int         @id @default(autoincrement())
+  name String
+  type AccountType @default(Checking)
+  // Used to auto-match a CAMT.053 statement to this account on import.
+  iban String?     @unique
+  // Balance at the point where record-keeping starts, in Rappen. The current
+  // balance is this plus the sum of all transactions (see lib/balances.ts).
+  openingBalanceCents Int @default(0)
+  // Hex colour for charts; falls back to the palette in lib/colors.ts.
+  color               String?
+  sortOrder           Int     @default(0)
+  isActive            Boolean @default(true)
+  // Depots etc. count towards net worth but must not distort income/expense
+  // analytics — their transactions are excluded from budget evaluations.
+  excludeFromBudget   Boolean @default(false)
+  notes               String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions     Transaction[]
+  recurring        RecurringTransaction[] @relation("RecurringAccount")
+  recurringCounter RecurringTransaction[] @relation("RecurringCounterAccount")
+  reserves         Reserve[]
+  savingsGoals     SavingsGoal[]
+  importBatches    ImportBatch[]
+
+  @@index([sortOrder])
+}
+
+// ── Categories ────────────────────────────────────────────────────────────────
+
+enum CategoryKind {
+  Income
+  Expense
+}
+
+/// Two levels only: a category is either a top-level group (parentId = null)
+/// or a leaf below one. Transactions are always booked on leaves — enforced in
+/// the Server Actions, since SQLite can't express it.
+model Category {
+  id       Int          @id @default(autoincrement())
+  name     String
+  kind     CategoryKind @default(Expense)
+  parentId Int?
+
+  color     String?
+  icon      String?
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Category[] @relation("CategoryTree")
+
+  transactions Transaction[]
+  budgets      Budget[]
+  reserves     Reserve[]
+  recurring    RecurringTransaction[]
+  importRules  ImportRule[]
+
+  @@index([kind])
+  @@index([parentId])
+}
+
+// ── Transactions ──────────────────────────────────────────────────────────────
+
+enum TransactionSource {
+  Manual
+  Recurring
+  Import
+}
+
+model Transaction {
+  id Int @id @default(autoincrement())
+  // YYYY-MM-DD (local calendar day). A string rather than DateTime so
+  // filtering and sorting by month/year never depends on the server timezone.
+  date String
+  // Signed amount in Rappen: negative = expense, positive = income.
+  // Integer rather than Decimal — money arithmetic stays exact and the value
+  // survives the Server-Component → Client-Component boundary unchanged.
+  amountCents Int
+
+  accountId  Int
+  categoryId Int?
+
+  description  String
+  counterparty String?
+  notes        String?
+
+  // Both halves of a transfer share this id and carry no category; analytics
+  // filters them out so moving money between own accounts is never counted as
+  // income or expense.
+  transferGroupId String?
+
+  source TransactionSource @default(Manual)
+
+  // Fingerprint over account + date + amount + bank reference. Unique, so a
+  // statement imported twice can't create duplicates (see lib/import/dedupe.ts).
+  importHash    String? @unique
+  importBatchId Int?
+  // AcctSvcrRef / EndToEndId from CAMT.053, kept for reconciliation.
+  bankReference String?
+
+  recurringId Int?
+  createdById Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account     Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category    Category?             @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  importBatch ImportBatch?          @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  recurring   RecurringTransaction? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  createdBy   User?                 @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([date])
+  @@index([accountId, date])
+  @@index([categoryId, date])
+  @@index([transferGroupId])
+  @@index([importBatchId])
+}
+
+// ── Budgets ───────────────────────────────────────────────────────────────────
+
+/// Planned amount (Soll) for one category in one month, in Rappen and always
+/// positive. The actual (Ist) is computed from transactions in lib/budget.ts.
+model Budget {
+  id          Int @id @default(autoincrement())
+  categoryId  Int
+  year        Int
+  month       Int // 1–12
+  amountCents Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, year, month])
+  @@index([year, month])
+}
+
+// ── Reserves (Rückstellungen) ─────────────────────────────────────────────────
+
+/// A cost that falls due yearly or half-yearly (Krankenkasse, Steuern,
+/// Versicherungen) but should be set aside monthly. lib/reserves.ts derives
+/// the required monthly rate from the amount, interval and next due date.
+model Reserve {
+  id                Int    @id @default(autoincrement())
+  name              String
+  /// Amount due each interval, in Rappen (positive).
+  targetAmountCents Int
+  /// Months between due dates: 12 = yearly, 6 = half-yearly, 3 = quarterly.
+  intervalMonths    Int    @default(12)
+  /// Next due date, YYYY-MM-DD.
+  nextDueDate       String
+  /// Amount already set aside, in Rappen.
+  savedCents        Int    @default(0)
+
+  categoryId Int?
+  accountId  Int?
+
+  isActive Boolean @default(true)
+  notes    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  account  Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([nextDueDate])
+}
+
+// ── Savings goals ─────────────────────────────────────────────────────────────
+
+model SavingsGoal {
+  id                Int     @id @default(autoincrement())
+  name              String
+  targetAmountCents Int
+  savedCents        Int     @default(0)
+  /// Target date, YYYY-MM-DD; drives the suggested monthly rate.
+  targetDate        String?
+  accountId         Int?
+  color             String?
+  isActive          Boolean @default(true)
+  notes             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+}
+
+// ── Recurring transactions ────────────────────────────────────────────────────
+
+/// Standing entries (rent, subscriptions, insurance, monthly savings).
+/// The cron job in lib/recurring.ts posts each one when `nextDate` is reached.
+model RecurringTransaction {
+  id          Int    @id @default(autoincrement())
+  name        String
+  /// Signed amount in Rappen, same convention as Transaction.
+  amountCents Int
+
+  accountId Int
+  /// Set for recurring transfers (e.g. a monthly standing order to savings).
+  /// When present the posting creates both halves and ignores `categoryId`.
+  counterAccountId Int?
+  categoryId       Int?
+
+  /// Months between postings: 1 = monthly, 3 = quarterly, 12 = yearly.
+  intervalMonths Int     @default(1)
+  startDate      String // YYYY-MM-DD
+  nextDate       String // YYYY-MM-DD
+  endDate        String?
+
+  isActive Boolean @default(true)
+  /// false = only shown as a suggestion on the dashboard instead of posted.
+  autoPost Boolean @default(true)
+  notes    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account        Account       @relation("RecurringAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  counterAccount Account?      @relation("RecurringCounterAccount", fields: [counterAccountId], references: [id], onDelete: SetNull)
+  category       Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  transactions   Transaction[]
+
+  @@index([nextDate])
+  @@index([isActive])
+}
+
+// ── Import ────────────────────────────────────────────────────────────────────
+
+enum ImportFormat {
+  Camt053
+  Csv
+}
+
+model ImportBatch {
+  id       Int          @id @default(autoincrement())
+  filename String
+  format   ImportFormat
+
+  accountId Int?
+  userId    Int?
+
+  importedCount Int @default(0)
+  skippedCount  Int @default(0)
+
+  /// Closing balance reported by the statement, in Rappen. Compared against
+  /// the computed account balance so a partial import is noticed immediately.
+  statementBalanceCents Int?
+  periodFrom            String?
+  periodTo              String?
+
+  createdAt DateTime @default(now())
+
+  account      Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  transactions Transaction[]
+
+  @@index([createdAt])
+}
+
+enum RuleField {
+  Description
+  Counterparty
+}
+
+enum RuleMatch {
+  Contains
+  StartsWith
+  EndsWith
+  Regex
+}
+
+/// Auto-categorisation for imported transactions. The first matching rule
+/// (lowest `priority`) wins — see lib/import/rules.ts.
+model ImportRule {
+  id         Int       @id @default(autoincrement())
+  name       String
+  field      RuleField @default(Description)
+  matchType  RuleMatch @default(Contains)
+  pattern    String
+  categoryId Int
+  priority   Int       @default(0)
+  isActive   Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([priority])
+}
+
+/// Column layout of one bank's CSV export, saved so the same file format can
+/// be imported again without re-mapping.
+model CsvMapping {
+  id        Int     @id @default(autoincrement())
+  name      String  @unique
+  delimiter String  @default(";")
+  encoding  String  @default("utf-8")
+  /// Rows to skip before the header (some banks prepend metadata lines).
+  skipRows  Int     @default(0)
+  hasHeader Boolean @default(true)
+
+  /// Zero-based column indices.
+  dateColumn        Int
+  dateFormat        String @default("DD.MM.YYYY")
+  descriptionColumn Int
+  /// Either one signed amount column …
+  amountColumn      Int?
+  /// … or separate debit/credit columns.
+  debitColumn        Int?
+  creditColumn       Int?
+  counterpartyColumn Int?
+
+  decimalSeparator   String @default(".")
+  thousandsSeparator String @default("'")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── Audit log ─────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  userName   String
+  action     String // CREATE | UPDATE | DELETE | IMPORT | AUTOMATIC | SETTINGS
+  entityType String // Transaction | Account | Category | Budget | ...
+  entityId   Int?
+  details    String? // JSON: { before, after, ... }
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ── System settings (singleton) ───────────────────────────────────────────────
+
+model SystemSettings {
+  id Int @id @default(1)
+
+  /// ISO currency code, used for formatting only — the app is single-currency.
+  currency String @default("CHF")
+
+  smtpHost        String?
+  smtpPort        Int?
+  smtpUser        String?
+  smtpPassword    String? // AES-encrypted
+  smtpFromName    String?
+  smtpFromAddress String?
+
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,140 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { RuleField, RuleMatch } from "@prisma/client";
+import prisma from "@/lib/prisma";
+import { requireEditor } from "@/lib/permissions";
+import { logAudit } from "@/lib/audit";
+import { categorize } from "@/lib/import/rules";
+
+export type ActionState = { error?: string; success?: boolean };
+
+const ruleSchema = z.object({
+  name: z.string().trim().min(1, "Name darf nicht leer sein.").max(80),
+  field: z.enum(RuleField),
+  matchType: z.enum(RuleMatch),
+  pattern: z.string().trim().min(1, "Suchmuster darf nicht leer sein.").max(200),
+  categoryId: z.coerce.number().int(),
+  priority: z.coerce.number().int().min(0).max(999),
+});
+
+export async function saveImportRuleAction(
+  _prevState: ActionState | undefined,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const parsed = ruleSchema.safeParse({
+    name: formData.get("name") ?? "",
+    field: formData.get("field") ?? "Description",
+    matchType: formData.get("matchType") ?? "Contains",
+    pattern: formData.get("pattern") ?? "",
+    categoryId: formData.get("categoryId") ?? "",
+    priority: formData.get("priority") ?? 0,
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };
+
+  // An invalid regex would silently never match, so it is rejected at save
+  // time rather than quietly doing nothing during every future import.
+  if (parsed.data.matchType === "Regex") {
+    try {
+      new RegExp(parsed.data.pattern);
+    } catch (err) {
+      return {
+        error: `Ungültiger regulärer Ausdruck: ${err instanceof Error ? err.message : "Syntaxfehler"}`,
+      };
+    }
+  }
+
+  const category = await prisma.category.findUnique({ where: { id: parsed.data.categoryId } });
+  if (!category) return { error: "Kategorie nicht gefunden." };
+
+  const idRaw = formData.get("id");
+  const id = idRaw ? parseInt(String(idRaw), 10) : null;
+
+  if (id) {
+    await prisma.importRule.update({ where: { id }, data: parsed.data });
+    await logAudit(session, "UPDATE", "ImportRule", id, { name: parsed.data.name });
+  } else {
+    const created = await prisma.importRule.create({ data: parsed.data });
+    await logAudit(session, "CREATE", "ImportRule", created.id, { name: parsed.data.name });
+  }
+
+  revalidatePath("/import");
+  return { success: true };
+}
+
+export async function deleteImportRuleAction(id: number): Promise<ActionState> {
+  const session = await requireEditor();
+  const rule = await prisma.importRule.delete({ where: { id } });
+  await logAudit(session, "DELETE", "ImportRule", id, { name: rule.name });
+  revalidatePath("/import");
+  return { success: true };
+}
+
+export async function toggleImportRuleAction(id: number, isActive: boolean): Promise<ActionState> {
+  const session = await requireEditor();
+  const rule = await prisma.importRule.update({ where: { id }, data: { isActive } });
+  await logAudit(session, "UPDATE", "ImportRule", id, { name: rule.name, isActive });
+  revalidatePath("/import");
+  return { success: true };
+}
+
+/**
+ * Applies the current rules to transactions that are still uncategorised.
+ *
+ * Rules only run during import, so a rule added afterwards would otherwise
+ * never reach the bookings that prompted it. Only untouched rows are
+ * considered — a manual categorisation is never overwritten.
+ */
+export async function applyRulesToUncategorizedAction(): Promise<
+  ActionState & { updated?: number }
+> {
+  const session = await requireEditor();
+
+  const [rules, pending] = await Promise.all([
+    prisma.importRule.findMany({ where: { isActive: true } }),
+    prisma.transaction.findMany({
+      where: { categoryId: null, transferGroupId: null },
+      select: { id: true, description: true, counterparty: true, amountCents: true, date: true },
+    }),
+  ]);
+
+  if (rules.length === 0) return { error: "Es sind keine aktiven Regeln vorhanden." };
+
+  const categories = await prisma.category.findMany({ select: { id: true, kind: true } });
+  const kindById = new Map(categories.map((category) => [category.id, category.kind]));
+
+  let updated = 0;
+  for (const transaction of pending) {
+    const categoryId = categorize(rules, {
+      date: transaction.date,
+      amountCents: transaction.amountCents,
+      description: transaction.description,
+      counterparty: transaction.counterparty,
+      bankReference: null,
+    });
+    if (categoryId === null) continue;
+
+    // Same guard as the booking form: an expense must not land in an income
+    // category, even when a sloppy rule says so.
+    const kind = kindById.get(categoryId);
+    if (kind === "Income" && transaction.amountCents < 0) continue;
+    if (kind === "Expense" && transaction.amountCents > 0) continue;
+
+    await prisma.transaction.update({ where: { id: transaction.id }, data: { categoryId } });
+    updated++;
+  }
+
+  await logAudit(session, "UPDATE", "Transaction", undefined, {
+    action: "applyRulesToUncategorized",
+    updated,
+  });
+
+  revalidatePath("/import");
+  revalidatePath("/transactions");
+  revalidatePath("/budget");
+  revalidatePath("/dashboard");
+  return { success: true, updated };
+}

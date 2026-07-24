@@ -1,0 +1,135 @@
+name: Web CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/dependabot.yml'
+      - 'LICENSE'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/dependabot.yml'
+      - 'LICENSE'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: ESLint
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run lint
+
+  test-and-build:
+    name: Test & Build
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Tests mit Coverage ausführen
+        run: npm run test:coverage
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: coverage
+          retention-days: 14
+      - name: Build ausführen
+        run: npm run build
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Chromium installieren
+        run: npx playwright install --with-deps chromium
+      - name: E2E-Tests ausführen
+        run: npx playwright test
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 14
+
+  release-please:
+    name: Release Please
+    needs: [lint, test-and-build, e2e]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build-and-push:
+    name: Docker Build & Push
+    needs: [lint, test-and-build, e2e, release-please]
+    if: |
+      always() &&
+      needs.lint.result == 'success' &&
+      needs['test-and-build'].result == 'success' &&
+      needs.e2e.result == 'success' &&
+      (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image-Tags ermitteln
+        id: tags
+        run: |
+          REPO="ghcr.io/${{ github.repository_owner }}/budget"
+          TAG_NAME="${{ needs.release-please.outputs.tag_name }}"
+          if [[ -n "$TAG_NAME" ]]; then
+            VERSION="${TAG_NAME#budget-v}"
+            echo "tags=${REPO}:${VERSION},${REPO}:latest" >> $GITHUB_OUTPUT
+          else
+            echo "tags=${REPO}:latest,${REPO}:${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          fi
+      - name: Image bauen und pushen
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

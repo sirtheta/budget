@@ -167,6 +167,7 @@ export function parseCsvStatement(input: string, mapping: CsvMapping): CsvParseR
     let amountCents: number | null = null;
     if (mapping.amountColumn !== null) {
       amountCents = parseMoney(cell(row, mapping.amountColumn));
+      if (amountCents !== null && mapping.invertAmount) amountCents = -amountCents;
     } else {
       const debit = parseMoney(cell(row, mapping.debitColumn));
       const credit = parseMoney(cell(row, mapping.creditColumn));

@@ -400,6 +400,11 @@ model CsvMapping {
   descriptionColumn Int
   /// Either one signed amount column …
   amountColumn      Int?
+  /// Some exports (credit cards in particular) write purchases as a
+  /// positive amount and credits as negative — the opposite of this app's
+  /// convention. Flips the sign of `amountColumn` when set; ignored for
+  /// debit/credit pairs, which are already direction-correct by column.
+  invertAmount      Boolean @default(false)
   /// … or separate debit/credit columns.
   debitColumn        Int?
   creditColumn       Int?

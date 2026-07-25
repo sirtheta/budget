@@ -196,6 +196,7 @@ CREATE TABLE "CsvMapping" (
     "dateFormat" TEXT NOT NULL DEFAULT 'DD.MM.YYYY',
     "descriptionColumn" INTEGER NOT NULL,
     "amountColumn" INTEGER,
+    "invertAmount" BOOLEAN NOT NULL DEFAULT false,
     "debitColumn" INTEGER,
     "creditColumn" INTEGER,
     "counterpartyColumn" INTEGER,

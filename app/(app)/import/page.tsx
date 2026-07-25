@@ -20,6 +20,7 @@ import { ImportWizard } from "./import-wizard";
 import { CsvMappingDialog } from "./csv-mapping-dialog";
 import { ApplyRulesButton, RuleDialog } from "./rule-dialog";
 import { SeedDefaultRulesButton } from "./seed-default-rules-button";
+import { SeedDefaultMappingsButton } from "./seed-default-mappings-button";
 import {
   DeleteBatchButton,
   DeleteMappingButton,
@@ -182,19 +183,23 @@ export default async function ImportPage() {
               Nur nötig für CSV-Import — CAMT.053 braucht keine Zuordnung.
             </CardDescription>
           </div>
-          <CsvMappingDialog
-            trigger={
-              <Button size="sm" className="shrink-0">
-                <Plus className="h-3.5 w-3.5" /> Neues Mapping
-              </Button>
-            }
-          />
+          <div className="flex gap-2 shrink-0">
+            {mappings.length === 0 && <SeedDefaultMappingsButton />}
+            <CsvMappingDialog
+              trigger={
+                <Button size="sm">
+                  <Plus className="h-3.5 w-3.5" /> Neues Mapping
+                </Button>
+              }
+            />
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {mappings.length === 0 ? (
-            <p className="p-8 text-center text-sm text-muted-foreground">
-              Noch kein Mapping angelegt.
-            </p>
+            <div className="flex flex-col items-center gap-3 p-8 text-center text-sm text-muted-foreground">
+              <p>Noch kein Mapping angelegt. Fertige Vorlagen: Migros Kreditkarte, Revolut.</p>
+              <SeedDefaultMappingsButton />
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>

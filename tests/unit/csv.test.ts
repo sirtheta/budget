@@ -14,6 +14,7 @@ function mapping(overrides: Partial<CsvMapping> = {}): CsvMapping {
     dateFormat: "DD.MM.YYYY",
     descriptionColumn: 1,
     amountColumn: 2,
+    invertAmount: false,
     debitColumn: null,
     creditColumn: null,
     counterpartyColumn: null,
@@ -105,6 +106,12 @@ describe("parseCsvStatement", () => {
       mapping({ amountColumn: null, debitColumn: 2, creditColumn: 3 })
     );
     expect(result.transactions.map((t) => t.amountCents)).toEqual([-8240, 680000]);
+  });
+
+  it("flips the sign when invertAmount is set, e.g. credit card exports where purchases are positive", () => {
+    const csv = "Datum;Text;Betrag\n05.02.2026;Migros;82.40\n25.02.2026;Gutschrift;-40.00";
+    const result = parseCsvStatement(csv, mapping({ invertAmount: true }));
+    expect(result.transactions.map((t) => t.amountCents)).toEqual([-8240, 4000]);
   });
 
   it("skips metadata lines before the header", () => {

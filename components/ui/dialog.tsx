@@ -1,5 +1,6 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { RemoveScroll } from "react-remove-scroll";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -7,12 +8,16 @@ const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
 const DialogClose = DialogPrimitive.Close;
 
-function DialogOverlay({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
+// A plain div rather than `DialogPrimitive.Overlay`: Radix's own Overlay
+// renders nothing when the Dialog is `modal={false}` (used by dialogs that
+// hold a Combobox — see combobox.tsx for why), which would drop the dimmed
+// backdrop and background scroll lock along with the focus trap we actually
+// wanted to relax. `RemoveScroll` restores the scroll lock independently.
+function DialogOverlay({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <DialogPrimitive.Overlay
-      className={cn("fixed inset-0 z-50 bg-black/50", className)}
-      {...props}
-    />
+    <RemoveScroll allowPinchZoom>
+      <div className={cn("fixed inset-0 z-50 bg-black/50", className)} {...props} />
+    </RemoveScroll>
   );
 }
 

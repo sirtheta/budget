@@ -19,6 +19,7 @@ import {
 import { ImportWizard } from "./import-wizard";
 import { CsvMappingDialog } from "./csv-mapping-dialog";
 import { ApplyRulesButton, RuleDialog } from "./rule-dialog";
+import { SeedDefaultRulesButton } from "./seed-default-rules-button";
 import {
   DeleteBatchButton,
   DeleteMappingButton,
@@ -79,6 +80,7 @@ export default async function ImportPage() {
             </CardDescription>
           </div>
           <div className="flex gap-2 shrink-0">
+            {rules.length === 0 && <SeedDefaultRulesButton />}
             {rules.length > 0 && <ApplyRulesButton />}
             <RuleDialog
               categories={categories}
@@ -92,9 +94,10 @@ export default async function ImportPage() {
         </CardHeader>
         <CardContent className="p-0">
           {rules.length === 0 ? (
-            <p className="p-8 text-center text-sm text-muted-foreground">
-              Noch keine Regeln. Typischer Start: „Beschreibung enthält MIGROS → Lebensmittel“.
-            </p>
+            <div className="flex flex-col items-center gap-3 p-8 text-center text-sm text-muted-foreground">
+              <p>Noch keine Regeln. Typischer Start: „Beschreibung enthält MIGROS → Lebensmittel“.</p>
+              <SeedDefaultRulesButton />
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>

@@ -7,6 +7,7 @@ import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { categorize } from "@/lib/import/rules";
+import { seedDefaultImportRules } from "@/lib/import/default-rules";
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -137,4 +138,19 @@ export async function applyRulesToUncategorizedAction(): Promise<
   revalidatePath("/budget");
   revalidatePath("/dashboard");
   return { success: true, updated };
+}
+
+/** Creates the Swiss starter rule set; skips patterns and categories already covered. */
+export async function seedDefaultImportRulesAction(): Promise<
+  ActionState & { created?: number }
+> {
+  const session = await requireEditor();
+  const { created, skipped } = await seedDefaultImportRules(prisma);
+  await logAudit(session, "CREATE", "ImportRule", undefined, {
+    action: "seedDefaults",
+    created,
+    skipped,
+  });
+  revalidatePath("/import");
+  return { success: true, created };
 }

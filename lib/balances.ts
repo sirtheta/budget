@@ -1,5 +1,6 @@
 import type { Account, AccountType, PrismaClient } from "@prisma/client";
 import { colorFor } from "@/lib/colors";
+import { btcChfRate, btcToCents } from "@/lib/crypto-price";
 
 export interface AccountBalance {
   id: number;
@@ -7,9 +8,13 @@ export interface AccountBalance {
   type: AccountType;
   color: string;
   excludeFromBudget: boolean;
-  /** Opening balance plus every booked transaction, in Rappen. */
+  /** Opening balance plus every booked transaction, in Rappen. Crypto accounts: btcAmount × live rate. */
   balanceCents: number;
   openingBalanceCents: number;
+  /** Crypto accounts only. */
+  btcAmount: number | null;
+  /** Crypto accounts only; null if the rate could not be fetched. */
+  btcRateChf: number | null;
 }
 
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
@@ -18,11 +23,13 @@ export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   CreditCard: "Kreditkarte",
   Cash: "Bargeld",
   Investment: "Depot",
+  Crypto: "Bitcoin-Wallet",
 };
 
 /**
  * Current balance of every account: its opening balance plus the sum of all
- * its transactions.
+ * its transactions. Crypto accounts have no transactions — their balance is
+ * the held BTC amount converted at the live rate instead.
  *
  * Balances are derived rather than stored — a stored running balance would
  * drift the moment a transaction is edited, deleted, or back-dated, and
@@ -37,21 +44,40 @@ export async function accountBalances(
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
-  const sums = await prisma.transaction.groupBy({
-    by: ["accountId"],
-    _sum: { amountCents: true },
-  });
+  const hasCrypto = accounts.some((account) => account.type === "Crypto");
+  const [sums, rate] = await Promise.all([
+    prisma.transaction.groupBy({ by: ["accountId"], _sum: { amountCents: true } }),
+    hasCrypto ? btcChfRate() : Promise.resolve(null),
+  ]);
   const byAccount = new Map(sums.map((row) => [row.accountId, row._sum.amountCents ?? 0]));
 
-  return accounts.map((account) => ({
-    id: account.id,
-    name: account.name,
-    type: account.type,
-    color: colorFor(account.id, account.color),
-    excludeFromBudget: account.excludeFromBudget,
-    openingBalanceCents: account.openingBalanceCents,
-    balanceCents: account.openingBalanceCents + (byAccount.get(account.id) ?? 0),
-  }));
+  return accounts.map((account) => {
+    if (account.type === "Crypto") {
+      const btcAmount = account.btcAmount ?? 0;
+      return {
+        id: account.id,
+        name: account.name,
+        type: account.type,
+        color: colorFor(account.id, account.color),
+        excludeFromBudget: account.excludeFromBudget,
+        openingBalanceCents: 0,
+        balanceCents: btcToCents(btcAmount, rate) ?? 0,
+        btcAmount,
+        btcRateChf: rate,
+      };
+    }
+    return {
+      id: account.id,
+      name: account.name,
+      type: account.type,
+      color: colorFor(account.id, account.color),
+      excludeFromBudget: account.excludeFromBudget,
+      openingBalanceCents: account.openingBalanceCents,
+      balanceCents: account.openingBalanceCents + (byAccount.get(account.id) ?? 0),
+      btcAmount: null,
+      btcRateChf: null,
+    };
+  });
 }
 
 /** Balance of a single account, or null when the account doesn't exist. */

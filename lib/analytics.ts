@@ -156,6 +156,10 @@ export interface NetWorthPoint {
  * Unlike the income/expense series this deliberately includes transfers and
  * excluded accounts: the point is total wealth, and money moved into a
  * portfolio has not left the household.
+ *
+ * Crypto accounts contribute nothing here — they have no opening balance or
+ * transactions, only a live-priced current value (see lib/balances.ts) — so
+ * BTC holdings show up in today's net worth but not in this historical trend.
  */
 export async function netWorthSeries(
   prisma: PrismaClient,

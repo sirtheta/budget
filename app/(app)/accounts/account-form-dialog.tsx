@@ -85,43 +85,70 @@ export function AccountFormDialog({
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="openingBalance">Startsaldo (CHF)</Label>
-              <Input
-                id="openingBalance"
-                name="openingBalance"
-                inputMode="decimal"
-                defaultValue={
-                  account ? (account.openingBalanceCents / 100).toFixed(2) : "0.00"
-                }
-              />
+          {type === "Crypto" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="btcAmount">BTC-Bestand</Label>
+                <Input
+                  id="btcAmount"
+                  name="btcAmount"
+                  inputMode="decimal"
+                  defaultValue={account?.btcAmount ?? "0"}
+                  placeholder="0.12345678"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="color">Farbe</Label>
+                <Input
+                  id="color"
+                  name="color"
+                  type="color"
+                  defaultValue={account?.color ?? "#6366f1"}
+                  className="h-9 p-1"
+                />
+              </div>
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="color">Farbe</Label>
-              <Input
-                id="color"
-                name="color"
-                type="color"
-                defaultValue={account?.color ?? "#6366f1"}
-                className="h-9 p-1"
-              />
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="openingBalance">Startsaldo (CHF)</Label>
+                <Input
+                  id="openingBalance"
+                  name="openingBalance"
+                  inputMode="decimal"
+                  defaultValue={
+                    account ? (account.openingBalanceCents / 100).toFixed(2) : "0.00"
+                  }
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="color">Farbe</Label>
+                <Input
+                  id="color"
+                  name="color"
+                  type="color"
+                  defaultValue={account?.color ?? "#6366f1"}
+                  className="h-9 p-1"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="iban">IBAN (optional)</Label>
-            <Input
-              id="iban"
-              name="iban"
-              defaultValue={account?.iban ?? ""}
-              placeholder="CH93 0076 2011 6238 5295 7"
-            />
-            <p className="text-xs text-muted-foreground">
-              Wird beim CAMT.053-Import verwendet, um den Auszug automatisch diesem Konto
-              zuzuordnen.
-            </p>
-          </div>
+          {type !== "Crypto" && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="iban">IBAN (optional)</Label>
+              <Input
+                id="iban"
+                name="iban"
+                defaultValue={account?.iban ?? ""}
+                placeholder="CH93 0076 2011 6238 5295 7"
+              />
+              <p className="text-xs text-muted-foreground">
+                Wird beim CAMT.053-Import verwendet, um den Auszug automatisch diesem Konto
+                zuzuordnen.
+              </p>
+            </div>
+          )}
 
           <label className="flex items-start gap-2 text-sm">
             <input

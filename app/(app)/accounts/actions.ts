@@ -22,6 +22,7 @@ const accountSchema = z.object({
     })
     .transform((value) => value || null),
   openingBalance: z.string(),
+  btcAmount: z.string(),
   color: z.string().trim().max(20).optional(),
   excludeFromBudget: z.boolean(),
   notes: z.string().trim().max(500).optional(),
@@ -33,6 +34,7 @@ function readForm(formData: FormData) {
     type: formData.get("type") ?? "Checking",
     iban: formData.get("iban") ?? "",
     openingBalance: String(formData.get("openingBalance") ?? "0"),
+    btcAmount: String(formData.get("btcAmount") ?? "0"),
     color: formData.get("color") ?? undefined,
     excludeFromBudget: formData.get("excludeFromBudget") === "on",
     notes: formData.get("notes") ?? undefined,
@@ -48,8 +50,24 @@ export async function saveAccountAction(
   const parsed = readForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };
 
-  const openingBalanceCents = parseMoney(parsed.data.openingBalance || "0");
-  if (openingBalanceCents === null) return { error: "Startsaldo ist keine gültige Zahl." };
+  const isCrypto = parsed.data.type === "Crypto";
+
+  let openingBalanceCents = 0;
+  let btcAmount: number | null = null;
+  let iban: string | null = parsed.data.iban;
+
+  if (isCrypto) {
+    const raw = parsed.data.btcAmount.trim().replace(",", ".");
+    btcAmount = raw === "" ? 0 : Number(raw);
+    if (!Number.isFinite(btcAmount) || btcAmount < 0) {
+      return { error: "BTC-Bestand ist keine gültige Zahl." };
+    }
+    iban = null; // crypto wallets don't have one, and IBAN is unique
+  } else {
+    const cents = parseMoney(parsed.data.openingBalance || "0");
+    if (cents === null) return { error: "Startsaldo ist keine gültige Zahl." };
+    openingBalanceCents = cents;
+  }
 
   const idRaw = formData.get("id");
   const id = idRaw ? parseInt(String(idRaw), 10) : null;
@@ -57,8 +75,9 @@ export async function saveAccountAction(
   const data = {
     name: parsed.data.name,
     type: parsed.data.type,
-    iban: parsed.data.iban,
+    iban,
     openingBalanceCents,
+    btcAmount,
     color: parsed.data.color || null,
     excludeFromBudget: parsed.data.excludeFromBudget,
     notes: parsed.data.notes || null,

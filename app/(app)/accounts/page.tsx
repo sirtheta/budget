@@ -28,6 +28,7 @@ export default async function AccountsPage() {
     accountBalances(prisma, { includeInactive: true }),
   ]);
   const balanceById = new Map(balances.map((b) => [b.id, b.balanceCents]));
+  const btcById = new Map(balances.map((b) => [b.id, { amount: b.btcAmount, rate: b.btcRateChf }]));
   const activeNetWorth = netWorthCents(balances.filter((b) => accounts.find((a) => a.id === b.id)?.isActive));
 
   return (
@@ -96,7 +97,13 @@ export default async function AccountsPage() {
                         {ACCOUNT_TYPE_LABELS[account.type]}
                       </TableCell>
                       <TableCell className="text-muted-foreground font-mono text-xs">
-                        {account.iban ?? "—"}
+                        {account.type === "Crypto"
+                          ? (() => {
+                              const btc = btcById.get(account.id);
+                              if (!btc || btc.amount === null) return "—";
+                              return `${btc.amount} BTC${btc.rate === null ? " (Kurs n/a)" : ` @ ${btc.rate.toLocaleString("de-CH")}`}`;
+                            })()
+                          : (account.iban ?? "—")}
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         <Money cents={balanceById.get(account.id) ?? 0} colored />

@@ -54,6 +54,7 @@ enum AccountType {
   CreditCard // Kreditkarte
   Cash // Bargeld
   Investment // Depot/Wertschriften
+  Crypto // Bitcoin-Wallet
 }
 
 model Account {
@@ -65,6 +66,10 @@ model Account {
   // Balance at the point where record-keeping starts, in Rappen. The current
   // balance is this plus the sum of all transactions (see lib/balances.ts).
   openingBalanceCents Int @default(0)
+  // Crypto accounts only: BTC held. The account has no transactions — its
+  // balance is this times the live rate (see lib/crypto-price.ts), not
+  // openingBalanceCents + transaction sum.
+  btcAmount Float?
   // Hex colour for charts; falls back to the palette in lib/colors.ts.
   color               String?
   sortOrder           Int     @default(0)

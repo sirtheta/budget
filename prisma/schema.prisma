@@ -370,6 +370,12 @@ model ImportRule {
   pattern           String
   categoryId        Int?
   transferAccountId Int?
+  /// Absolute Rappen bounds (inclusive) a match's amount must fall within, so
+  /// e.g. a broad "Revolut" pattern can be split into a small recurring
+  /// transfer (Sackgeld) and everything else, without the two being
+  /// distinguishable by pattern alone.
+  minAmountCents    Int?
+  maxAmountCents    Int?
   priority          Int       @default(0)
   isActive          Boolean   @default(true)
 

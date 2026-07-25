@@ -58,7 +58,11 @@ export function ImportWizard({
   const [edits, setEdits] = useState<{
     preview: ImportPreview;
     selected: Set<string>;
-    categories: Record<string, number | null>;
+    /** Per-row override of the rule-suggested categorisation, keyed by row
+     *  hash: "none" | `cat:${categoryId}` | `transfer:${accountId}`. Lets a
+     *  wrongly-triggered rule (e.g. a broad "Revolut" transfer match) be
+     *  corrected before import instead of after, without deleting anything. */
+    overrides: Record<string, string>;
     done: { imported: number; skipped: number } | null;
   } | null>(null);
   const active = edits?.preview === preview ? edits : null;
@@ -76,7 +80,7 @@ export function ImportWizard({
   const update = (
     changes: Partial<{
       selected: Set<string>;
-      categories: Record<string, number | null>;
+      overrides: Record<string, string>;
       done: { imported: number; skipped: number } | null;
     }>
   ) => {
@@ -84,29 +88,38 @@ export function ImportWizard({
     setEdits({
       preview,
       selected: active?.selected ?? defaultSelected,
-      categories: active?.categories ?? {},
+      overrides: active?.overrides ?? {},
       done: active?.done ?? null,
       ...changes,
     });
   };
 
-  const categoryOf = (row: PreviewRow) =>
-    active && row.hash in active.categories ? active.categories[row.hash] : row.categoryId;
+  // The rule-suggested outcome for a row, encoded the same way an override is.
+  const defaultSelectionOf = (row: PreviewRow) =>
+    row.transferAccountId ? `transfer:${row.transferAccountId}` : `cat:${row.categoryId ?? NO_CATEGORY}`;
+
+  const selectionOf = (row: PreviewRow) =>
+    active && row.hash in active.overrides ? active.overrides[row.hash] : defaultSelectionOf(row);
 
   const commit = () => {
     if (!preview) return;
     const rows = preview.rows
       .filter((row) => selected.has(row.hash))
-      .map((row) => ({
-        date: row.date,
-        amountCents: row.amountCents,
-        description: row.description,
-        counterparty: row.counterparty,
-        bankReference: row.bankReference,
-        hash: row.hash,
-        categoryId: row.transferAccountId ? null : categoryOf(row),
-        transferAccountId: row.transferAccountId,
-      }));
+      .map((row) => {
+        const [kind, idPart] = selectionOf(row).split(":");
+        const categoryId = kind === "cat" && idPart !== NO_CATEGORY ? parseInt(idPart, 10) : null;
+        const transferAccountId = kind === "transfer" ? parseInt(idPart, 10) : null;
+        return {
+          date: row.date,
+          amountCents: row.amountCents,
+          description: row.description,
+          counterparty: row.counterparty,
+          bankReference: row.bankReference,
+          hash: row.hash,
+          categoryId,
+          transferAccountId,
+        };
+      });
 
     startCommit(async () => {
       const result = await commitImportAction({
@@ -400,14 +413,12 @@ export function ImportWizard({
                         <td className="p-2">
                           {row.isAdopted ? (
                             <Badge variant="secondary">Wird mit Umbuchung verknüpft</Badge>
-                          ) : row.transferAccountId ? (
-                            <Badge variant="secondary">→ Umbuchung: {row.transferAccountName}</Badge>
                           ) : (
                             <Combobox
                               className="h-8"
-                              value={String(categoryOf(row) ?? NO_CATEGORY)}
+                              value={selectionOf(row)}
                               options={[
-                                { value: NO_CATEGORY, label: "Ohne Kategorie" },
+                                { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
                                 ...categories
                                   .filter((category) =>
                                     row.amountCents >= 0
@@ -415,20 +426,23 @@ export function ImportWizard({
                                       : category.kind === "Expense"
                                   )
                                   .map((category) => ({
-                                    value: String(category.id),
+                                    value: `cat:${category.id}`,
                                     label: category.label,
+                                  })),
+                                ...accounts
+                                  .filter((account) => account.id !== preview.accountId)
+                                  .map((account) => ({
+                                    value: `transfer:${account.id}`,
+                                    label: `→ Umbuchung: ${account.name}`,
                                   })),
                               ]}
                               onValueChange={(value) =>
                                 update({
-                                  categories: {
-                                    ...(active?.categories ?? {}),
-                                    [row.hash]: value === NO_CATEGORY ? null : parseInt(value, 10),
-                                  },
+                                  overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
                                 })
                               }
-                              searchPlaceholder="Kategorie suchen…"
-                              emptyText="Keine Kategorie gefunden."
+                              searchPlaceholder="Kategorie oder Umbuchung suchen…"
+                              emptyText="Nichts gefunden."
                             />
                           )}
                         </td>

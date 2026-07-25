@@ -215,6 +215,38 @@ export function RuleDialog({
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="rule-min-amount">Mindestbetrag (optional)</Label>
+              <Input
+                id="rule-min-amount"
+                name="minAmount"
+                inputMode="decimal"
+                placeholder="0.00"
+                defaultValue={
+                  rule?.minAmountCents != null ? (rule.minAmountCents / 100).toFixed(2) : ""
+                }
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="rule-max-amount">Maximalbetrag (optional)</Label>
+              <Input
+                id="rule-max-amount"
+                name="maxAmount"
+                inputMode="decimal"
+                placeholder="100.00"
+                defaultValue={
+                  rule?.maxAmountCents != null ? (rule.maxAmountCents / 100).toFixed(2) : ""
+                }
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Grenzt die Regel auf einen Betragsbereich ein — nützlich, wenn dasselbe Suchmuster
+            (z. B. &bdquo;Revolut&ldquo;) sowohl auf einen kleinen wiederkehrenden Transfer als
+            auch auf grössere Buchungen zutrifft.
+          </p>
+
           {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
 
           <DialogFooter>

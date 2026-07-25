@@ -24,6 +24,10 @@ function fieldValue(transaction: ParsedTransaction, field: ImportRule["field"]):
  * invalid pattern must not take down the whole import, it just never matches.
  */
 export function ruleMatches(rule: ImportRule, transaction: ParsedTransaction): boolean {
+  const magnitude = Math.abs(transaction.amountCents);
+  if (rule.minAmountCents !== null && magnitude < rule.minAmountCents) return false;
+  if (rule.maxAmountCents !== null && magnitude > rule.maxAmountCents) return false;
+
   const value = fieldValue(transaction, rule.field);
   if (!value) return false;
   const pattern = rule.pattern.toLowerCase();

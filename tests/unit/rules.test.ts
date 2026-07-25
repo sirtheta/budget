@@ -12,6 +12,8 @@ function rule(overrides: Partial<ImportRule> = {}): ImportRule {
     pattern: "migros",
     categoryId: 10,
     transferAccountId: null,
+    minAmountCents: null,
+    maxAmountCents: null,
     priority: 0,
     isActive: true,
     createdAt: new Date(),
@@ -56,6 +58,24 @@ describe("ruleMatches", () => {
 
   it("survives an invalid regex instead of breaking the import", () => {
     expect(ruleMatches(rule({ matchType: "Regex", pattern: "([unclosed" }), tx())).toBe(false);
+  });
+
+  it("respects an amount range, so the same pattern can be split by size", () => {
+    // Same beneficiary ("Revolut") for both a small recurring transfer and a
+    // larger one — only distinguishable by amount, not by pattern.
+    const pocketMoney = rule({ pattern: "revolut", minAmountCents: null, maxAmountCents: 2000 });
+    const creditCard = rule({ pattern: "revolut", minAmountCents: 2001, maxAmountCents: null });
+
+    expect(ruleMatches(pocketMoney, tx({ description: "Revolut", amountCents: -700 }))).toBe(true);
+    expect(ruleMatches(pocketMoney, tx({ description: "Revolut", amountCents: -15000 }))).toBe(false);
+    expect(ruleMatches(creditCard, tx({ description: "Revolut", amountCents: -15000 }))).toBe(true);
+    expect(ruleMatches(creditCard, tx({ description: "Revolut", amountCents: -700 }))).toBe(false);
+  });
+
+  it("treats the amount bound as inclusive and ignores sign", () => {
+    expect(ruleMatches(rule({ maxAmountCents: 700 }), tx({ amountCents: -700 }))).toBe(true);
+    expect(ruleMatches(rule({ maxAmountCents: 699 }), tx({ amountCents: -700 }))).toBe(false);
+    expect(ruleMatches(rule({ minAmountCents: 700 }), tx({ amountCents: 700 }))).toBe(true);
   });
 });
 

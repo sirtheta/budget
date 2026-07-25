@@ -9,6 +9,7 @@ import { logAudit } from "@/lib/audit";
 import { matchRule } from "@/lib/import/rules";
 import { applyAutoTransfer } from "@/lib/transactions";
 import { seedDefaultImportRules } from "@/lib/import/default-rules";
+import { parseMoney } from "@/lib/money";
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -20,13 +21,28 @@ const ruleSchema = z
     pattern: z.string().trim().min(1, "Suchmuster darf nicht leer sein.").max(200),
     categoryId: z.coerce.number().int().nullable(),
     transferAccountId: z.coerce.number().int().nullable(),
+    minAmountCents: z.number().int().min(0).nullable(),
+    maxAmountCents: z.number().int().min(0).nullable(),
     priority: z.coerce.number().int().min(0).max(999),
   })
   // A rule either auto-categorises or auto-transfers, never both — mirrors
   // the schema comment on ImportRule.
   .refine((data) => (data.categoryId === null) !== (data.transferAccountId === null), {
     message: "Bitte entweder eine Kategorie oder ein Umbuchungs-Konto wählen.",
-  });
+  })
+  .refine(
+    (data) =>
+      data.minAmountCents === null || data.maxAmountCents === null || data.minAmountCents <= data.maxAmountCents,
+    { message: "Mindestbetrag darf nicht grösser als Maximalbetrag sein." }
+  );
+
+/** Parses an optional CHF amount field into absolute Rappen; empty means "no bound". */
+function parseOptionalAmount(raw: FormDataEntryValue | null): number | null | "invalid" {
+  const str = String(raw ?? "").trim();
+  if (!str) return null;
+  const cents = parseMoney(str);
+  return cents === null ? "invalid" : Math.abs(cents);
+}
 
 export async function saveImportRuleAction(
   _prevState: ActionState | undefined,
@@ -36,6 +52,11 @@ export async function saveImportRuleAction(
 
   const categoryIdRaw = formData.get("categoryId");
   const transferAccountIdRaw = formData.get("transferAccountId");
+  const minAmountCents = parseOptionalAmount(formData.get("minAmount"));
+  if (minAmountCents === "invalid") return { error: "Mindestbetrag ist keine gültige Zahl." };
+  const maxAmountCents = parseOptionalAmount(formData.get("maxAmount"));
+  if (maxAmountCents === "invalid") return { error: "Maximalbetrag ist keine gültige Zahl." };
+
   const parsed = ruleSchema.safeParse({
     name: formData.get("name") ?? "",
     field: formData.get("field") ?? "Description",
@@ -43,6 +64,8 @@ export async function saveImportRuleAction(
     pattern: formData.get("pattern") ?? "",
     categoryId: categoryIdRaw ? categoryIdRaw : null,
     transferAccountId: transferAccountIdRaw ? transferAccountIdRaw : null,
+    minAmountCents,
+    maxAmountCents,
     priority: formData.get("priority") ?? 0,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };

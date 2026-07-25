@@ -4,6 +4,7 @@ import { requireEditor } from "@/lib/permissions";
 import { categoryOptions } from "@/lib/categories";
 import { formatDateCH } from "@/lib/date";
 import { MATCH_TYPE_LABELS, RULE_FIELD_LABELS } from "@/lib/import/rules";
+import { formatMoney } from "@/lib/money";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -127,6 +128,15 @@ export default async function ImportPage() {
                         <code className="rounded bg-muted px-1 py-0.5 text-xs">
                           {rule.pattern}
                         </code>
+                        {(rule.minAmountCents !== null || rule.maxAmountCents !== null) && (
+                          <span className="block text-xs mt-0.5">
+                            {rule.minAmountCents !== null && rule.maxAmountCents !== null
+                              ? `${formatMoney(rule.minAmountCents, { withCurrency: true })} – ${formatMoney(rule.maxAmountCents, { withCurrency: true })}`
+                              : rule.minAmountCents !== null
+                                ? `ab ${formatMoney(rule.minAmountCents, { withCurrency: true })}`
+                                : `bis ${formatMoney(rule.maxAmountCents!, { withCurrency: true })}`}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm">
                         {rule.transferAccount ? (

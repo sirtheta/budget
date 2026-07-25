@@ -176,6 +176,8 @@ CREATE TABLE "ImportRule" (
     "pattern" TEXT NOT NULL,
     "categoryId" INTEGER,
     "transferAccountId" INTEGER,
+    "minAmountCents" INTEGER,
+    "maxAmountCents" INTEGER,
     "priority" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

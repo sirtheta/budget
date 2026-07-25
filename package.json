@@ -10,6 +10,7 @@
     "lint": "eslint",
     "postinstall": "prisma generate",
     "db:seed": "prisma db seed",
+    "db:seed:users": "prisma db seed -- --users-only",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

@@ -4,6 +4,10 @@
  * Realistic volume matters here — budget evaluations, the category donut and
  * the net-worth trend all look fine with three rows and only reveal their
  * problems with a year of data.
+ *
+ * Run `npm run db:seed` for the full seed, or `npm run db:seed:users` to
+ * only (re)create the two dev users — handy when testing account/CSV import
+ * against an otherwise empty database.
  */
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
@@ -13,6 +17,8 @@ import { randomUUID } from "crypto";
 
 const url = (process.env.DATABASE_URL ?? "file:./data/budget.db").replace(/^file:/, "");
 const prisma = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url }) });
+
+const usersOnly = process.argv.includes("--users-only");
 
 const CHF = (francs: number) => Math.round(francs * 100);
 
@@ -50,6 +56,11 @@ async function main() {
   await prisma.user.create({
     data: { email: "partner@example.com", name: "Partner", passwordHash: partnerPasswordHash, role: "Editor" },
   });
+
+  if (usersOnly) {
+    console.log("\n--users-only: Rest übersprungen. Login: admin@example.com / admin123");
+    return;
+  }
 
   console.log("Konten…");
   const privat = await prisma.account.create({

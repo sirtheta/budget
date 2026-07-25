@@ -139,7 +139,13 @@ function BookingForm({
 
   useEffect(() => {
     if (state?.success) {
-      toast.success(transaction ? "Buchung gespeichert." : "Buchung erfasst.");
+      toast.success(
+        state.autoApplied
+          ? `Buchung gespeichert. Regel erstellt, ${state.autoApplied} weitere Buchung(en) automatisch kategorisiert.`
+          : transaction
+            ? "Buchung gespeichert."
+            : "Buchung erfasst."
+      );
       onDone();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -162,6 +168,7 @@ function BookingForm({
         name="categoryId"
         value={categoryId === NO_CATEGORY ? "" : categoryId}
       />
+      <input type="hidden" name="counterparty" value={transaction?.counterparty ?? ""} />
 
       <div className="flex gap-1 rounded-lg bg-muted p-1">
         {(
@@ -262,6 +269,24 @@ function BookingForm({
           </Select>
         </div>
       </div>
+
+      {transaction?.counterparty && categoryId !== NO_CATEGORY && (
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="createRule"
+            defaultChecked
+            className="mt-1 size-4 accent-primary"
+          />
+          <span>
+            Regel erstellen
+            <span className="block text-xs text-muted-foreground">
+              Künftige und bestehende Buchungen von „{transaction.counterparty}“ automatisch als „
+              {categories.find((c) => String(c.id) === categoryId)?.label ?? ""}“ kategorisieren.
+            </span>
+          </span>
+        </label>
+      )}
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="notes">Notiz (optional)</Label>

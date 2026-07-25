@@ -2,14 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { CategoryKind } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { parseMoney } from "@/lib/money";
 import { isValidDateString } from "@/lib/date";
 import { createTransfer, deleteTransfer, updateTransfer } from "@/lib/transactions";
+import { categorize } from "@/lib/import/rules";
 
-export type ActionState = { error?: string; success?: boolean };
+export type ActionState = { error?: string; success?: boolean; autoApplied?: number };
 
 const baseSchema = z.object({
   date: z.string().refine(isValidDateString, "Ungültiges Datum."),
@@ -61,6 +63,7 @@ export async function saveTransactionAction(
   const direction = formData.get("direction") === "income" ? 1 : -1;
   const amountCents = direction * Math.abs(magnitude);
 
+  let categoryKind: CategoryKind | null = null;
   if (categoryId !== null) {
     const category = await prisma.category.findUnique({ where: { id: categoryId } });
     if (!category) return { error: "Kategorie nicht gefunden." };
@@ -72,7 +75,9 @@ export async function saveTransactionAction(
     if (category.kind === "Expense" && amountCents > 0) {
       return { error: `"${category.name}" ist eine Ausgabekategorie — bitte Ausgabe wählen.` };
     }
+    categoryKind = category.kind;
   }
+  const createRule = formData.get("createRule") === "on";
 
   const idRaw = formData.get("id");
   const id = idRaw ? parseInt(String(idRaw), 10) : null;
@@ -87,6 +92,7 @@ export async function saveTransactionAction(
     notes: parsed.data.notes || null,
   };
 
+  let transactionId: number;
   if (id) {
     const existing = await prisma.transaction.findUnique({ where: { id } });
     if (!existing) return { error: "Buchung nicht gefunden." };
@@ -95,15 +101,62 @@ export async function saveTransactionAction(
     }
     await prisma.transaction.update({ where: { id }, data });
     await logAudit(session, "UPDATE", "Transaction", id, data);
+    transactionId = id;
   } else {
     const created = await prisma.transaction.create({
       data: { ...data, source: "Manual", createdById: parseInt(session.user.id, 10) },
     });
     await logAudit(session, "CREATE", "Transaction", created.id, data);
+    transactionId = created.id;
+  }
+
+  // Turns categorising one booking into a rule for the rest: a checked box
+  // creates a Counterparty rule and immediately sweeps every other
+  // uncategorised booking it now matches — the fast path out of a backlog
+  // left by a large historical import.
+  let autoApplied: number | undefined;
+  if (createRule && categoryId !== null && data.counterparty) {
+    const pattern = data.counterparty;
+    const dupe = await prisma.importRule.findFirst({
+      where: { field: "Counterparty", matchType: "Contains", pattern },
+    });
+    if (!dupe) {
+      const rule = await prisma.importRule.create({
+        data: {
+          name: `Auto: ${pattern}`.slice(0, 80),
+          field: "Counterparty",
+          matchType: "Contains",
+          pattern,
+          categoryId,
+          priority: 0,
+        },
+      });
+      await logAudit(session, "CREATE", "ImportRule", rule.id, { name: rule.name, auto: true });
+
+      const pending = await prisma.transaction.findMany({
+        where: { categoryId: null, transferGroupId: null, id: { not: transactionId } },
+        select: { id: true, description: true, counterparty: true, amountCents: true, date: true },
+      });
+      autoApplied = 0;
+      for (const t of pending) {
+        const matchId = categorize([rule], {
+          date: t.date,
+          amountCents: t.amountCents,
+          description: t.description,
+          counterparty: t.counterparty,
+          bankReference: null,
+        });
+        if (matchId === null) continue;
+        if (categoryKind === "Income" && t.amountCents < 0) continue;
+        if (categoryKind === "Expense" && t.amountCents > 0) continue;
+        await prisma.transaction.update({ where: { id: t.id }, data: { categoryId: matchId } });
+        autoApplied++;
+      }
+    }
   }
 
   revalidateAll();
-  return { success: true };
+  return { success: true, autoApplied };
 }
 
 /** Creates or updates a transfer between two of the household's own accounts. */

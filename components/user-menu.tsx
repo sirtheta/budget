@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { KeyRound, LogOut, User as UserIcon } from "lucide-react";
+import { KeyRound, LogOut, ShieldCheck, User as UserIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,10 +11,20 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChangePasswordDialog } from "@/components/change-password-dialog";
+import { TwoFactorDialog } from "@/components/two-factor-dialog";
 import { signOutAction } from "@/app/(app)/actions";
 
-export function UserMenu({ name, email }: { name: string; email: string }) {
+export function UserMenu({
+  name,
+  email,
+  twoFactorEnabled,
+}: {
+  name: string;
+  email: string;
+  twoFactorEnabled: boolean;
+}) {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [twoFactorDialogOpen, setTwoFactorDialogOpen] = useState(false);
 
   const initials = name
     .split(" ")
@@ -45,6 +55,10 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
           <DropdownMenuItem onSelect={() => setPasswordDialogOpen(true)}>
             <KeyRound className="mr-2 inline h-4 w-4" /> Passwort ändern
           </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setTwoFactorDialogOpen(true)}>
+            <ShieldCheck className="mr-2 inline h-4 w-4" />
+            Zwei-Faktor-Authentifizierung{twoFactorEnabled ? " (aktiv)" : ""}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => signOutAction()}>
             <LogOut className="mr-2 inline h-4 w-4" /> Abmelden
@@ -52,6 +66,11 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
         </DropdownMenuContent>
       </DropdownMenu>
       <ChangePasswordDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen} />
+      <TwoFactorDialog
+        open={twoFactorDialogOpen}
+        onOpenChange={setTwoFactorDialogOpen}
+        enabled={twoFactorEnabled}
+      />
     </>
   );
 }

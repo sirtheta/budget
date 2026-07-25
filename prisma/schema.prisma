@@ -22,6 +22,16 @@ model User {
   role         UserRole @default(Viewer)
   isActive     Boolean  @default(true)
 
+  // TOTP secret, AES-encrypted at rest (see lib/crypto.ts). Set as soon as
+  // setup starts but only trusted once twoFactorEnabled is true — an
+  // unconfirmed secret must not let a stale setup attempt grant access.
+  twoFactorSecret String?
+  twoFactorEnabled Boolean @default(false)
+  // JSON array of bcrypt hashes, one per one-time recovery code. Codes are
+  // removed from the array as they're consumed, same as a password hash
+  // rather than the plaintext so a DB leak can't be used for login.
+  twoFactorBackupCodes String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

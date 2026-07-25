@@ -1,23 +1,33 @@
 "use server";
 
 import { signIn } from "@/lib/auth";
-import { AuthError } from "next-auth";
+import { AuthError, CredentialsSignin } from "next-auth";
 import logger from "@/lib/logger";
 
 const log = logger.child({ module: "login" });
 
+export type LoginState = { error?: string; needsTwoFactor?: boolean };
+
 export async function loginAction(
-  _prevState: { error?: string } | undefined,
+  _prevState: LoginState | undefined,
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<LoginState> {
   try {
     await signIn("credentials", {
       email: formData.get("email"),
       password: formData.get("password"),
+      code: formData.get("code") ?? undefined,
       redirectTo: "/dashboard",
     });
     return {};
   } catch (err) {
+    if (err instanceof CredentialsSignin) {
+      if (err.code === "two-factor-required") return { needsTwoFactor: true };
+      if (err.code === "invalid-two-factor-code") {
+        return { needsTwoFactor: true, error: "Code ist ungültig oder abgelaufen." };
+      }
+      return { error: "E-Mail oder Passwort ist falsch." };
+    }
     if (err instanceof AuthError) {
       return { error: "E-Mail oder Passwort ist falsch." };
     }

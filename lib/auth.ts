@@ -1,10 +1,12 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
 import { UserRole } from "@prisma/client";
 import { dummyCompare } from "@/lib/password";
+import { decryptSecret } from "@/lib/crypto";
+import { verifyTwoFactorToken, consumeBackupCode } from "@/lib/two-factor";
 import logger from "@/lib/logger";
 import { checkRateLimit, resetRateLimit } from "@/lib/rate-limit";
 import { config } from "@/lib/config";
@@ -14,7 +16,17 @@ const log = logger.child({ module: "auth" });
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  code: z.string().optional(),
 });
+
+/** Thrown from authorize() so the login form can ask for the code separately
+ * instead of only re-showing the password field. */
+export class TwoFactorRequiredError extends CredentialsSignin {
+  code = "two-factor-required";
+}
+export class InvalidTwoFactorCodeError extends CredentialsSignin {
+  code = "invalid-two-factor-code";
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -22,12 +34,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       credentials: {
         email: { label: "E-Mail", type: "email" },
         password: { label: "Passwort", type: "password" },
+        code: { label: "Code", type: "text" },
       },
       async authorize(credentials, request) {
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
-        const { email, password } = parsed.data;
+        const { email, password, code } = parsed.data;
 
         // Normalized only for the rate-limit key (DB lookup stays exact),
         // so "User@x.ch" and "user@x.ch " share one bucket.
@@ -57,6 +70,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!passwordValid) {
           log.warn({ email }, "login failed: wrong password");
           return null;
+        }
+
+        if (user.twoFactorEnabled) {
+          if (!code) throw new TwoFactorRequiredError();
+
+          const secret = user.twoFactorSecret ? decryptSecret(user.twoFactorSecret) : "";
+          const totpValid = secret && verifyTwoFactorToken(secret, code);
+          if (!totpValid) {
+            const backup = await consumeBackupCode(user.twoFactorBackupCodes, code);
+            if (!backup?.ok) {
+              log.warn({ email }, "login failed: invalid 2FA code");
+              throw new InvalidTwoFactorCodeError();
+            }
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { twoFactorBackupCodes: backup.remaining },
+            });
+            log.info({ email, userId: user.id }, "login: backup code consumed");
+          }
         }
 
         resetRateLimit(rateLimitKey);

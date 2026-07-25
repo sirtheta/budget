@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/permissions";
+import prisma from "@/lib/prisma";
 import { NavLinks } from "@/components/nav-links";
 import { MobileNav } from "@/components/mobile-nav";
 import { UserMenu } from "@/components/user-menu";
@@ -8,6 +9,10 @@ import { AppFooter } from "@/components/app-footer";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
+  const user = await prisma.user.findUnique({
+    where: { id: parseInt(session.user.id, 10) },
+    select: { twoFactorEnabled: true },
+  });
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -27,7 +32,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <ThemeToggle />
-            <UserMenu name={session.user.name ?? ""} email={session.user.email ?? ""} />
+            <UserMenu
+              name={session.user.name ?? ""}
+              email={session.user.email ?? ""}
+              twoFactorEnabled={user?.twoFactorEnabled ?? false}
+            />
           </div>
         </div>
       </header>

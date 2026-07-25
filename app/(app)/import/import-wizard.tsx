@@ -104,7 +104,8 @@ export function ImportWizard({
         counterparty: row.counterparty,
         bankReference: row.bankReference,
         hash: row.hash,
-        categoryId: categoryOf(row),
+        categoryId: row.transferAccountId ? null : categoryOf(row),
+        transferAccountId: row.transferAccountId,
       }));
 
     startCommit(async () => {
@@ -397,33 +398,39 @@ export function ImportWizard({
                           </span>
                         </td>
                         <td className="p-2">
-                          <Combobox
-                            className="h-8"
-                            value={String(categoryOf(row) ?? NO_CATEGORY)}
-                            options={[
-                              { value: NO_CATEGORY, label: "Ohne Kategorie" },
-                              ...categories
-                                .filter((category) =>
-                                  row.amountCents >= 0
-                                    ? category.kind === "Income"
-                                    : category.kind === "Expense"
-                                )
-                                .map((category) => ({
-                                  value: String(category.id),
-                                  label: category.label,
-                                })),
-                            ]}
-                            onValueChange={(value) =>
-                              update({
-                                categories: {
-                                  ...(active?.categories ?? {}),
-                                  [row.hash]: value === NO_CATEGORY ? null : parseInt(value, 10),
-                                },
-                              })
-                            }
-                            searchPlaceholder="Kategorie suchen…"
-                            emptyText="Keine Kategorie gefunden."
-                          />
+                          {row.isAdopted ? (
+                            <Badge variant="secondary">Wird mit Umbuchung verknüpft</Badge>
+                          ) : row.transferAccountId ? (
+                            <Badge variant="secondary">→ Umbuchung: {row.transferAccountName}</Badge>
+                          ) : (
+                            <Combobox
+                              className="h-8"
+                              value={String(categoryOf(row) ?? NO_CATEGORY)}
+                              options={[
+                                { value: NO_CATEGORY, label: "Ohne Kategorie" },
+                                ...categories
+                                  .filter((category) =>
+                                    row.amountCents >= 0
+                                      ? category.kind === "Income"
+                                      : category.kind === "Expense"
+                                  )
+                                  .map((category) => ({
+                                    value: String(category.id),
+                                    label: category.label,
+                                  })),
+                              ]}
+                              onValueChange={(value) =>
+                                update({
+                                  categories: {
+                                    ...(active?.categories ?? {}),
+                                    [row.hash]: value === NO_CATEGORY ? null : parseInt(value, 10),
+                                  },
+                                })
+                              }
+                              searchPlaceholder="Kategorie suchen…"
+                              emptyText="Keine Kategorie gefunden."
+                            />
+                          )}
                         </td>
                         <td className="p-2 text-right font-medium whitespace-nowrap">
                           <Money cents={row.amountCents} colored />

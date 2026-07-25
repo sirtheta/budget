@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ImportRule } from "@prisma/client";
-import { categorize, categorizeAll, ruleMatches } from "@/lib/import/rules";
+import { matchRule, ruleMatches } from "@/lib/import/rules";
 import type { ParsedTransaction } from "@/lib/import/types";
 
 function rule(overrides: Partial<ImportRule> = {}): ImportRule {
@@ -11,6 +11,7 @@ function rule(overrides: Partial<ImportRule> = {}): ImportRule {
     matchType: "Contains",
     pattern: "migros",
     categoryId: 10,
+    transferAccountId: null,
     priority: 0,
     isActive: true,
     createdAt: new Date(),
@@ -58,9 +59,9 @@ describe("ruleMatches", () => {
   });
 });
 
-describe("categorize", () => {
+describe("matchRule", () => {
   it("returns null when nothing matches", () => {
-    expect(categorize([rule({ pattern: "coop" })], tx())).toBeNull();
+    expect(matchRule([rule({ pattern: "coop" })], tx())).toBeNull();
   });
 
   it("lets the lowest priority win, so a specific rule beats a catch-all", () => {
@@ -68,7 +69,7 @@ describe("categorize", () => {
       rule({ id: 1, pattern: "einkauf", categoryId: 99, priority: 50 }),
       rule({ id: 2, pattern: "migros", categoryId: 10, priority: 1 }),
     ];
-    expect(categorize(rules, tx())).toBe(10);
+    expect(matchRule(rules, tx())?.categoryId).toBe(10);
   });
 
   it("falls back to id order when priorities tie", () => {
@@ -76,18 +77,19 @@ describe("categorize", () => {
       rule({ id: 5, pattern: "migros", categoryId: 55, priority: 0 }),
       rule({ id: 2, pattern: "einkauf", categoryId: 22, priority: 0 }),
     ];
-    expect(categorize(rules, tx())).toBe(22);
+    expect(matchRule(rules, tx())?.categoryId).toBe(22);
   });
 
   it("ignores inactive rules", () => {
-    expect(categorize([rule({ isActive: false })], tx())).toBeNull();
+    expect(matchRule([rule({ isActive: false })], tx())).toBeNull();
   });
-});
 
-describe("categorizeAll", () => {
-  it("keeps the input order and attaches the resolved category", () => {
-    const rules = [rule({ pattern: "migros", categoryId: 10 })];
-    const result = categorizeAll(rules, [tx(), tx({ description: "Coop" })]);
-    expect(result.map((row) => row.categoryId)).toEqual([10, null]);
+  it("returns a transfer-account rule as-is, without a category", () => {
+    const matched = matchRule(
+      [rule({ pattern: "revolut", categoryId: null, transferAccountId: 7 })],
+      tx({ description: "Zahlung an Revolut" })
+    );
+    expect(matched?.transferAccountId).toBe(7);
+    expect(matched?.categoryId).toBeNull();
   });
 });

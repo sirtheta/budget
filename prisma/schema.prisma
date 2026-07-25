@@ -98,6 +98,7 @@ model Account {
   reserves         Reserve[]
   savingsGoals     SavingsGoal[]
   importBatches    ImportBatch[]
+  transferRules    ImportRule[]
 
   @@index([sortOrder])
 }
@@ -355,22 +356,31 @@ enum RuleMatch {
 
 /// Auto-categorisation for imported transactions. The first matching rule
 /// (lowest `priority`) wins — see lib/import/rules.ts.
+/// Exactly one of `categoryId` / `transferAccountId` is set — enforced in the
+/// Server Action, since SQLite can't express a cross-column CHECK here. A
+/// category rule auto-categorises; a transfer-account rule instead marks the
+/// match as one leg of a transfer to that account (see lib/transactions.ts
+/// applyAutoTransfer), which is what lets "Revolut" or "Kreditkarte" as
+/// beneficiary book itself as a transfer instead of an expense.
 model ImportRule {
-  id         Int       @id @default(autoincrement())
-  name       String
-  field      RuleField @default(Description)
-  matchType  RuleMatch @default(Contains)
-  pattern    String
-  categoryId Int
-  priority   Int       @default(0)
-  isActive   Boolean   @default(true)
+  id                Int       @id @default(autoincrement())
+  name              String
+  field             RuleField @default(Description)
+  matchType         RuleMatch @default(Contains)
+  pattern           String
+  categoryId        Int?
+  transferAccountId Int?
+  priority          Int       @default(0)
+  isActive          Boolean   @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category        Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  transferAccount Account?  @relation(fields: [transferAccountId], references: [id], onDelete: Cascade)
 
   @@index([priority])
+  @@index([transferAccountId])
 }
 
 /// Column layout of one bank's CSV export, saved so the same file format can

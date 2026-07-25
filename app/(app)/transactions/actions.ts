@@ -8,8 +8,8 @@ import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { parseMoney } from "@/lib/money";
 import { isValidDateString } from "@/lib/date";
-import { createTransfer, deleteTransfer, updateTransfer } from "@/lib/transactions";
-import { categorize } from "@/lib/import/rules";
+import { applyAutoTransfer, createTransfer, deleteTransfer, updateTransfer } from "@/lib/transactions";
+import { matchRule } from "@/lib/import/rules";
 
 export type ActionState = { error?: string; success?: boolean; autoApplied?: number };
 
@@ -139,17 +139,20 @@ export async function saveTransactionAction(
       });
       autoApplied = 0;
       for (const t of pending) {
-        const matchId = categorize([rule], {
+        const matched = matchRule([rule], {
           date: t.date,
           amountCents: t.amountCents,
           description: t.description,
           counterparty: t.counterparty,
           bankReference: null,
         });
-        if (matchId === null) continue;
+        if (matched === null) continue;
         if (categoryKind === "Income" && t.amountCents < 0) continue;
         if (categoryKind === "Expense" && t.amountCents > 0) continue;
-        await prisma.transaction.update({ where: { id: t.id }, data: { categoryId: matchId } });
+        await prisma.transaction.update({
+          where: { id: t.id },
+          data: { categoryId: matched.categoryId },
+        });
         autoApplied++;
       }
     }
@@ -209,6 +212,107 @@ export async function saveTransferAction(
 
   revalidateAll();
   return { success: true };
+}
+
+const convertToTransferSchema = z.object({
+  id: z.coerce.number().int(),
+  targetAccountId: z.coerce.number().int(),
+});
+
+/**
+ * Turns an already-booked, non-transfer transaction into one leg of a
+ * transfer — the manual counterpart to a transfer-rule match, for the
+ * one-off case that isn't worth a rule of its own. Delegates to the same
+ * applyAutoTransfer() used by import: it either links a matching booking
+ * already sitting on the target account, or creates the counterpart leg.
+ */
+export async function convertToTransferAction(
+  _prevState: ActionState | undefined,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const parsed = convertToTransferSchema.safeParse({
+    id: formData.get("id"),
+    targetAccountId: formData.get("targetAccountId"),
+  });
+  if (!parsed.success) return { error: "Bitte ein Gegenkonto wählen." };
+
+  const existing = await prisma.transaction.findUnique({ where: { id: parsed.data.id } });
+  if (!existing) return { error: "Buchung nicht gefunden." };
+  if (existing.transferGroupId) return { error: "Buchung ist bereits eine Umbuchung." };
+
+  try {
+    await applyAutoTransfer(prisma, {
+      transactionId: parsed.data.id,
+      targetAccountId: parsed.data.targetAccountId,
+    });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Umwandlung fehlgeschlagen." };
+  }
+
+  await logAudit(session, "UPDATE", "Transaction", parsed.data.id, {
+    action: "convertToTransfer",
+    targetAccountId: parsed.data.targetAccountId,
+  });
+
+  // Same "turn one fix into a rule" pattern as saveTransactionAction: a
+  // checked box creates a transfer-rule from the counterparty and sweeps
+  // every other pending booking it now matches, so the next import of the
+  // same counterparty never needs this manual step again.
+  let autoApplied: number | undefined;
+  const createRule = formData.get("createRule") === "on";
+  if (createRule && existing.counterparty) {
+    const pattern = existing.counterparty;
+    const dupe = await prisma.importRule.findFirst({
+      where: { field: "Counterparty", matchType: "Contains", pattern },
+    });
+    if (!dupe) {
+      const rule = await prisma.importRule.create({
+        data: {
+          name: `Auto: ${pattern}`.slice(0, 80),
+          field: "Counterparty",
+          matchType: "Contains",
+          pattern,
+          transferAccountId: parsed.data.targetAccountId,
+          priority: 0,
+        },
+      });
+      await logAudit(session, "CREATE", "ImportRule", rule.id, { name: rule.name, auto: true });
+
+      const pending = await prisma.transaction.findMany({
+        where: { categoryId: null, transferGroupId: null, id: { not: parsed.data.id } },
+        select: {
+          id: true,
+          accountId: true,
+          description: true,
+          counterparty: true,
+          amountCents: true,
+          date: true,
+        },
+      });
+      autoApplied = 0;
+      for (const t of pending) {
+        const matched = matchRule([rule], {
+          date: t.date,
+          amountCents: t.amountCents,
+          description: t.description,
+          counterparty: t.counterparty,
+          bankReference: null,
+        });
+        if (!matched || matched.transferAccountId === null) continue;
+        if (matched.transferAccountId === t.accountId) continue;
+        await applyAutoTransfer(prisma, {
+          transactionId: t.id,
+          targetAccountId: matched.transferAccountId,
+        });
+        autoApplied++;
+      }
+    }
+  }
+
+  revalidateAll();
+  return { success: true, autoApplied };
 }
 
 export async function deleteTransactionAction(id: number): Promise<ActionState> {

@@ -7,11 +7,17 @@ import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
-import { isValidDateString } from "@/lib/date";
+import { addDays, isValidDateString } from "@/lib/date";
 import { parseCamt053 } from "@/lib/import/camt";
 import { detectDelimiter, parseCsvStatement, previewRows } from "@/lib/import/csv";
 import { withHashes } from "@/lib/import/dedupe";
-import { categorize } from "@/lib/import/rules";
+import { matchRule } from "@/lib/import/rules";
+import {
+  TRANSFER_MATCH_TOLERANCE_DAYS,
+  adoptTransferLeg,
+  applyAutoTransfer,
+  findAdoptableTransferLeg,
+} from "@/lib/transactions";
 import type { ParsedStatement } from "@/lib/import/types";
 
 export type ActionState = { error?: string; success?: boolean };
@@ -24,6 +30,13 @@ export interface PreviewRow {
   bankReference: string | null;
   hash: string;
   categoryId: number | null;
+  /** Set when an import rule targets a transfer instead of a category. */
+  transferAccountId: number | null;
+  transferAccountName: string | null;
+  /** True when this row's date/amount matches an existing, not-yet-real
+   *  transfer leg on this account (see applyAutoTransfer) — it will be merged
+   *  into that leg instead of creating a new transaction. */
+  isAdopted: boolean;
   isDuplicate: boolean;
 }
 
@@ -106,25 +119,53 @@ export async function previewImportAction(
   if (!account) return { error: "Konto nicht gefunden." };
 
   const hashed = withHashes(accountId, statement.transactions);
-  const [existing, rules] = await Promise.all([
+  const [existing, rules, adoptCandidates] = await Promise.all([
     prisma.transaction.findMany({
       where: { importHash: { in: hashed.map((row) => row.hash) } },
       select: { importHash: true },
     }),
     prisma.importRule.findMany({ where: { isActive: true } }),
+    // Synthetic transfer legs on this account still waiting to be confirmed
+    // by a real import (see lib/transactions.ts applyAutoTransfer).
+    prisma.transaction.findMany({
+      where: { accountId, importHash: null, transferGroupId: { not: null } },
+      select: { id: true, date: true, amountCents: true },
+    }),
   ]);
   const existingHashes = new Set(existing.map((row) => row.importHash));
+  const transferAccountIds = [...new Set(rules.map((rule) => rule.transferAccountId).filter((id) => id !== null))];
+  const transferAccounts = transferAccountIds.length
+    ? await prisma.account.findMany({
+        where: { id: { in: transferAccountIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const transferAccountNames = new Map(transferAccounts.map((a) => [a.id, a.name]));
 
-  const rows: PreviewRow[] = hashed.map((row) => ({
-    date: row.date,
-    amountCents: row.amountCents,
-    description: row.description,
-    counterparty: row.counterparty,
-    bankReference: row.bankReference,
-    hash: row.hash,
-    categoryId: categorize(rules, row),
-    isDuplicate: existingHashes.has(row.hash),
-  }));
+  const rows: PreviewRow[] = hashed.map((row) => {
+    const isAdopted = adoptCandidates.some(
+      (candidate) =>
+        candidate.amountCents === row.amountCents &&
+        candidate.date >= addDays(row.date, -TRANSFER_MATCH_TOLERANCE_DAYS) &&
+        candidate.date <= addDays(row.date, TRANSFER_MATCH_TOLERANCE_DAYS)
+    );
+    const rule = isAdopted ? null : matchRule(rules, row);
+    return {
+      date: row.date,
+      amountCents: row.amountCents,
+      description: row.description,
+      counterparty: row.counterparty,
+      bankReference: row.bankReference,
+      hash: row.hash,
+      categoryId: rule?.categoryId ?? null,
+      transferAccountId: rule?.transferAccountId ?? null,
+      transferAccountName: rule?.transferAccountId
+        ? (transferAccountNames.get(rule.transferAccountId) ?? null)
+        : null,
+      isAdopted,
+      isDuplicate: existingHashes.has(row.hash),
+    };
+  });
 
   const fresh = rows.filter((row) => !row.isDuplicate);
 
@@ -152,7 +193,9 @@ export async function previewImportAction(
       rows,
       warnings: statement.warnings,
       duplicateCount: rows.length - fresh.length,
-      uncategorizedCount: fresh.filter((row) => row.categoryId === null).length,
+      uncategorizedCount: fresh.filter(
+        (row) => row.categoryId === null && row.transferAccountId === null && !row.isAdopted
+      ).length,
       closingBalanceCents: statement.closingBalanceCents,
       periodFrom: statement.periodFrom,
       periodTo: statement.periodTo,
@@ -169,6 +212,7 @@ const commitRowSchema = z.object({
   bankReference: z.string().nullable(),
   hash: z.string().min(1),
   categoryId: z.number().int().nullable(),
+  transferAccountId: z.number().int().nullable(),
 });
 
 const commitSchema = z.object({
@@ -226,21 +270,48 @@ export async function commitImportAction(
     },
   });
 
-  await prisma.transaction.createMany({
-    data: fresh.map((row) => ({
-      date: row.date,
-      amountCents: row.amountCents,
-      accountId,
-      categoryId: row.categoryId,
-      description: row.description,
-      counterparty: row.counterparty,
-      bankReference: row.bankReference,
-      importHash: row.hash,
-      importBatchId: batch.id,
-      source: "Import" as const,
-      createdById: parseInt(session.user.id, 10),
-    })),
-  });
+  // Each row may (a) adopt an existing synthetic transfer leg left behind by
+  // an earlier auto-transfer on this account, (b) trigger a new auto-transfer
+  // to another account, or (c) land as a plain, possibly categorised booking
+  // — see lib/transactions.ts for what each of those does.
+  const userId = parseInt(session.user.id, 10);
+  for (const row of fresh) {
+    const adoptable = await findAdoptableTransferLeg(prisma, accountId, row.amountCents, row.date);
+    if (adoptable) {
+      await adoptTransferLeg(prisma, adoptable.id, {
+        date: row.date,
+        description: row.description,
+        counterparty: row.counterparty,
+        bankReference: row.bankReference,
+        importHash: row.hash,
+        importBatchId: batch.id,
+      });
+      continue;
+    }
+
+    const created = await prisma.transaction.create({
+      data: {
+        date: row.date,
+        amountCents: row.amountCents,
+        accountId,
+        categoryId: row.transferAccountId ? null : row.categoryId,
+        description: row.description,
+        counterparty: row.counterparty,
+        bankReference: row.bankReference,
+        importHash: row.hash,
+        importBatchId: batch.id,
+        source: "Import" as const,
+        createdById: userId,
+      },
+    });
+
+    if (row.transferAccountId && row.transferAccountId !== accountId) {
+      await applyAutoTransfer(prisma, {
+        transactionId: created.id,
+        targetAccountId: row.transferAccountId,
+      });
+    }
+  }
 
   await logAudit(session, "IMPORT", "Transaction", batch.id, {
     filename,
@@ -269,7 +340,24 @@ export async function deleteImportBatchAction(id: number): Promise<ActionState &
   const batch = await prisma.importBatch.findUnique({ where: { id } });
   if (!batch) return { error: "Import nicht gefunden." };
 
-  const { count } = await prisma.transaction.deleteMany({ where: { importBatchId: id } });
+  // A row from this batch may be one leg of an auto-created transfer whose
+  // counterpart (the synthetic leg, or a leg adopted from another batch) is
+  // not itself part of this batch. Deleting only the batch's own rows would
+  // leave that counterpart dangling, so every transfer group touched by this
+  // batch is removed in full — same rule as deleteTransfer().
+  const rows = await prisma.transaction.findMany({
+    where: { importBatchId: id },
+    select: { transferGroupId: true },
+  });
+  const transferGroupIds = [
+    ...new Set(rows.map((row) => row.transferGroupId).filter((groupId): groupId is string => groupId !== null)),
+  ];
+
+  const { count } = await prisma.transaction.deleteMany({
+    where: {
+      OR: [{ importBatchId: id }, ...(transferGroupIds.length ? [{ transferGroupId: { in: transferGroupIds } }] : [])],
+    },
+  });
   await prisma.importBatch.delete({ where: { id } });
 
   await logAudit(session, "DELETE", "Transaction", id, {

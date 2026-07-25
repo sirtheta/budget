@@ -48,32 +48,23 @@ export function ruleMatches(rule: ImportRule, transaction: ParsedTransaction): b
 }
 
 /**
- * Category for a transaction, or null when no rule applies. Rules are
+ * The rule that applies to a transaction, or null when none does. Rules are
  * evaluated by ascending `priority`, so a specific rule can be placed ahead of
- * a broad catch-all.
+ * a broad catch-all. Returns the whole rule rather than just a category id
+ * because a rule's action is either `categoryId` (auto-categorise) or
+ * `transferAccountId` (auto-transfer) — the caller decides which.
  */
-export function categorize(
+export function matchRule(
   rules: ImportRule[],
   transaction: ParsedTransaction
-): number | null {
+): ImportRule | null {
   const active = rules
     .filter((rule) => rule.isActive)
     .sort((a, b) => a.priority - b.priority || a.id - b.id);
   for (const rule of active) {
-    if (ruleMatches(rule, transaction)) return rule.categoryId;
+    if (ruleMatches(rule, transaction)) return rule;
   }
   return null;
-}
-
-/** Applies `categorize` to a whole batch, keeping the input order. */
-export function categorizeAll<T extends ParsedTransaction>(
-  rules: ImportRule[],
-  transactions: T[]
-): (T & { categoryId: number | null })[] {
-  return transactions.map((transaction) => ({
-    ...transaction,
-    categoryId: categorize(rules, transaction),
-  }));
 }
 
 export { MATCH_TYPE_LABELS, RULE_FIELD_LABELS } from "@/lib/import/rule-labels";

@@ -42,7 +42,10 @@ export default async function ImportPage() {
     prisma.csvMapping.findMany({ orderBy: { name: "asc" } }),
     prisma.importRule.findMany({
       orderBy: [{ priority: "asc" }, { name: "asc" }],
-      include: { category: { select: { name: true, parent: { select: { name: true } } } } },
+      include: {
+        category: { select: { name: true, parent: { select: { name: true } } } },
+        transferAccount: { select: { name: true } },
+      },
     }),
     prisma.importBatch.findMany({
       orderBy: { createdAt: "desc" },
@@ -84,6 +87,7 @@ export default async function ImportPage() {
             {rules.length > 0 && <ApplyRulesButton />}
             <RuleDialog
               categories={categories}
+              accounts={accounts}
               trigger={
                 <Button size="sm">
                   <Plus className="h-3.5 w-3.5" /> Neue Regel
@@ -124,12 +128,18 @@ export default async function ImportPage() {
                         </code>
                       </TableCell>
                       <TableCell className="text-sm">
-                        {rule.category.parent && (
-                          <span className="text-muted-foreground">
-                            {rule.category.parent.name} ›{" "}
-                          </span>
+                        {rule.transferAccount ? (
+                          <Badge variant="secondary">→ Umbuchung: {rule.transferAccount.name}</Badge>
+                        ) : (
+                          <>
+                            {rule.category?.parent && (
+                              <span className="text-muted-foreground">
+                                {rule.category.parent.name} ›{" "}
+                              </span>
+                            )}
+                            {rule.category?.name}
+                          </>
                         )}
-                        {rule.category.name}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end">
@@ -137,6 +147,7 @@ export default async function ImportPage() {
                           <RuleDialog
                             rule={rule}
                             categories={categories}
+                            accounts={accounts}
                             trigger={
                               <Button
                                 variant="ghost"

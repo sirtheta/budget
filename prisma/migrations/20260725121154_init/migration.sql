@@ -174,12 +174,14 @@ CREATE TABLE "ImportRule" (
     "field" TEXT NOT NULL DEFAULT 'Description',
     "matchType" TEXT NOT NULL DEFAULT 'Contains',
     "pattern" TEXT NOT NULL,
-    "categoryId" INTEGER NOT NULL,
+    "categoryId" INTEGER,
+    "transferAccountId" INTEGER,
     "priority" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "ImportRule_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "ImportRule_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "ImportRule_transferAccountId_fkey" FOREIGN KEY ("transferAccountId") REFERENCES "Account" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -288,6 +290,9 @@ CREATE INDEX "ImportBatch_createdAt_idx" ON "ImportBatch"("createdAt");
 
 -- CreateIndex
 CREATE INDEX "ImportRule_priority_idx" ON "ImportRule"("priority");
+
+-- CreateIndex
+CREATE INDEX "ImportRule_transferAccountId_idx" ON "ImportRule"("transferAccountId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "CsvMapping_name_key" ON "CsvMapping"("name");

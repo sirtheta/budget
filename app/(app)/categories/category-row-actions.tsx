@@ -7,6 +7,7 @@ import type { Category } from "@prisma/client";
 import { deleteCategoryAction, toggleCategoryActiveAction } from "./actions";
 import { CategoryFormDialog } from "./category-form-dialog";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +23,7 @@ export function CategoryRowActions({
   parents: Pick<Category, "id" | "name" | "kind" | "color">[];
 }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const toggleActive = () => {
     startTransition(async () => {
@@ -31,8 +33,8 @@ export function CategoryRowActions({
     });
   };
 
-  const remove = () => {
-    if (!confirm(`Kategorie "${category.name}" wirklich löschen?`)) return;
+  const remove = async () => {
+    if (!(await confirm({ description: `Kategorie "${category.name}" wirklich löschen?` }))) return;
     startTransition(async () => {
       const result = await deleteCategoryAction(category.id);
       if (result.error) toast.error(result.error);

@@ -7,6 +7,7 @@ import type { User } from "@prisma/client";
 import { deleteUserAction, toggleUserActiveAction } from "./actions";
 import { UserFormDialog } from "./user-form-dialog";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +17,7 @@ import {
 
 export function UserRowActions({ user, isSelf }: { user: User; isSelf: boolean }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const run = (fn: () => Promise<{ error?: string }>, success: string) =>
     startTransition(async () => {
@@ -66,8 +68,8 @@ export function UserRowActions({ user, isSelf }: { user: User; isSelf: boolean }
           </DropdownMenuItem>
           <DropdownMenuItem
             className="text-destructive"
-            onSelect={() => {
-              if (!confirm(`Benutzer "${user.name}" wirklich löschen?`)) return;
+            onSelect={async () => {
+              if (!(await confirm({ description: `Benutzer "${user.name}" wirklich löschen?` }))) return;
               run(() => deleteUserAction(user.id), "Benutzer gelöscht.");
             }}
           >

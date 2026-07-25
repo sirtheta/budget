@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ConfirmProvider } from "@/components/confirm-dialog";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -52,8 +53,10 @@ export default async function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
-          {children}
-          <Toaster position="bottom-right" richColors closeButton />
+          <ConfirmProvider>
+            {children}
+            <Toaster position="bottom-right" richColors closeButton />
+          </ConfirmProvider>
         </ThemeProvider>
       </body>
     </html>

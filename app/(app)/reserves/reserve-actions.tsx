@@ -12,6 +12,7 @@ import {
 } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useConfirm } from "@/components/confirm-dialog";
 
 /**
  * Inline "einzahlen" field. Deliberately a delta rather than an absolute
@@ -72,14 +73,22 @@ export function AddToPot({
 
 export function SettleReserveButton({ id, name }: { id: number; name: string }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   return (
     <Button
       variant="outline"
       size="sm"
       disabled={pending}
-      onClick={() => {
-        if (!confirm(`"${name}" als bezahlt markieren? Die Fälligkeit rückt eine Periode weiter.`))
+      onClick={async () => {
+        if (
+          !(await confirm({
+            title: "Als bezahlt markieren?",
+            description: `"${name}" als bezahlt markieren? Die Fälligkeit rückt eine Periode weiter.`,
+            confirmLabel: "Markieren",
+            variant: "default",
+          }))
+        )
           return;
         startTransition(async () => {
           const result = await settleReserveAction(id);
@@ -103,6 +112,7 @@ export function DeletePotButton({
   kind: "reserve" | "goal";
 }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   return (
     <Button
@@ -111,8 +121,8 @@ export function DeletePotButton({
       className="size-8 text-destructive"
       aria-label="Löschen"
       disabled={pending}
-      onClick={() => {
-        if (!confirm(`"${name}" wirklich löschen?`)) return;
+      onClick={async () => {
+        if (!(await confirm({ description: `"${name}" wirklich löschen?` }))) return;
         startTransition(async () => {
           const action = kind === "reserve" ? deleteReserveAction : deleteGoalAction;
           const result = await action(id);

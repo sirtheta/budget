@@ -20,6 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useConfirm } from "@/components/confirm-dialog";
 
 export function RecurringRowActions({
   recurring,
@@ -33,6 +34,7 @@ export function RecurringRowActions({
   today: string;
 }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const run = (fn: () => Promise<{ error?: string }>, success: string) =>
     startTransition(async () => {
@@ -90,8 +92,8 @@ export function RecurringRowActions({
           </DropdownMenuItem>
           <DropdownMenuItem
             className="text-destructive"
-            onSelect={() => {
-              if (!confirm(`"${recurring.name}" wirklich löschen?`)) return;
+            onSelect={async () => {
+              if (!(await confirm({ description: `"${recurring.name}" wirklich löschen?` }))) return;
               run(() => deleteRecurringAction(recurring.id), "Gelöscht.");
             }}
           >

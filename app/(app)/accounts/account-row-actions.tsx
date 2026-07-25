@@ -7,6 +7,7 @@ import type { Account } from "@prisma/client";
 import { deleteAccountAction, toggleAccountActiveAction } from "./actions";
 import { AccountFormDialog } from "./account-form-dialog";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +17,7 @@ import {
 
 export function AccountRowActions({ account }: { account: Account }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const toggleActive = () => {
     startTransition(async () => {
@@ -25,8 +27,8 @@ export function AccountRowActions({ account }: { account: Account }) {
     });
   };
 
-  const remove = () => {
-    if (!confirm(`Konto "${account.name}" wirklich löschen?`)) return;
+  const remove = async () => {
+    if (!(await confirm({ description: `Konto "${account.name}" wirklich löschen?` }))) return;
     startTransition(async () => {
       const result = await deleteAccountAction(account.id);
       if (result.error) toast.error(result.error);

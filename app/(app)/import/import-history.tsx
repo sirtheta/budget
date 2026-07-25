@@ -9,6 +9,7 @@ import {
 import { deleteImportBatchAction } from "./actions";
 import { deleteImportRuleAction, toggleImportRuleAction } from "./rule-actions";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/confirm-dialog";
 
 export function DeleteBatchButton({
   id,
@@ -20,6 +21,7 @@ export function DeleteBatchButton({
   count: number;
 }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   return (
     <Button
@@ -28,11 +30,12 @@ export function DeleteBatchButton({
       className="size-8 text-destructive"
       aria-label="Import rückgängig machen"
       disabled={pending}
-      onClick={() => {
+      onClick={async () => {
         if (
-          !confirm(
-            `Import "${filename}" rückgängig machen? Die ${count} daraus entstandenen Buchungen werden gelöscht.`
-          )
+          !(await confirm({
+            description: `Import "${filename}" rückgängig machen? Die ${count} daraus entstandenen Buchungen werden gelöscht.`,
+            confirmLabel: "Rückgängig machen",
+          }))
         )
           return;
         startTransition(async () => {
@@ -49,6 +52,7 @@ export function DeleteBatchButton({
 
 export function DeleteMappingButton({ id, name }: { id: number; name: string }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   return (
     <Button
@@ -57,8 +61,8 @@ export function DeleteMappingButton({ id, name }: { id: number; name: string }) 
       className="size-8 text-destructive"
       aria-label="Mapping löschen"
       disabled={pending}
-      onClick={() => {
-        if (!confirm(`Mapping "${name}" wirklich löschen?`)) return;
+      onClick={async () => {
+        if (!(await confirm({ description: `Mapping "${name}" wirklich löschen?` }))) return;
         startTransition(async () => {
           const result = await deleteCsvMappingAction(id);
           if (result.error) toast.error(result.error);
@@ -93,6 +97,7 @@ export function RuleToggle({ id, isActive }: { id: number; isActive: boolean }) 
 
 export function DeleteRuleButton({ id, name }: { id: number; name: string }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   return (
     <Button
@@ -101,8 +106,8 @@ export function DeleteRuleButton({ id, name }: { id: number; name: string }) {
       className="size-8 text-destructive"
       aria-label="Regel löschen"
       disabled={pending}
-      onClick={() => {
-        if (!confirm(`Regel "${name}" wirklich löschen?`)) return;
+      onClick={async () => {
+        if (!(await confirm({ description: `Regel "${name}" wirklich löschen?` }))) return;
         startTransition(async () => {
           const result = await deleteImportRuleAction(id);
           if (result.error) toast.error(result.error);

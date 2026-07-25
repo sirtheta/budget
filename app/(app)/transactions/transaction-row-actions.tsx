@@ -8,6 +8,7 @@ import { deleteTransactionAction } from "./actions";
 import { TransactionFormDialog, type AccountOption } from "./transaction-form-dialog";
 import type { CategoryOption } from "@/lib/categories";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/confirm-dialog";
 
 export function TransactionRowActions({
   transaction,
@@ -21,12 +22,13 @@ export function TransactionRowActions({
   today: string;
 }) {
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
-  const remove = () => {
+  const remove = async () => {
     const message = transaction.transferGroupId
       ? "Umbuchung löschen? Beide Seiten werden entfernt."
       : `Buchung "${transaction.description}" wirklich löschen?`;
-    if (!confirm(message)) return;
+    if (!(await confirm({ description: message }))) return;
     startTransition(async () => {
       const result = await deleteTransactionAction(transaction.id);
       if (result.error) toast.error(result.error);

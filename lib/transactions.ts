@@ -114,3 +114,70 @@ export async function deleteTransfer(
 export function isTransfer(transaction: Pick<Transaction, "transferGroupId">): boolean {
   return transaction.transferGroupId !== null;
 }
+
+/**
+ * Records a Bitcoin purchase: money leaving a normal account and BTC landing
+ * in a wallet.
+ *
+ * This is deliberately not a transfer. A transfer moves the same value
+ * between two Rappen balances; a BTC purchase moves CHF for an amount of a
+ * different asset, chosen by the user because only the exchange knows the
+ * exact price and fee actually paid — the app's own rate lookup is an
+ * approximation (see lib/crypto-price.ts). The CHF leg is a normal booking
+ * (categorisable, shows up in budget/analytics as a real outflow) and the
+ * wallet's `btcAmount` is incremented directly rather than derived, since a
+ * crypto account carries no transaction ledger of its own.
+ */
+export interface BtcPurchaseInput {
+  sourceAccountId: number;
+  cryptoAccountId: number;
+  date: string;
+  /** Total CHF that left the source account, including any fee, in Rappen. */
+  chfAmountCents: number;
+  /** BTC actually received, as reported by the exchange. */
+  btcAmount: number;
+  categoryId?: number | null;
+  description: string;
+  notes?: string | null;
+  createdById?: number | null;
+}
+
+export async function recordBtcPurchase(
+  prisma: PrismaClient,
+  input: BtcPurchaseInput
+): Promise<Transaction> {
+  if (input.chfAmountCents <= 0) throw new Error("Der CHF-Betrag muss positiv sein.");
+  if (input.btcAmount <= 0) throw new Error("Die BTC-Menge muss positiv sein.");
+
+  const [source, cryptoAccount] = await Promise.all([
+    prisma.account.findUnique({ where: { id: input.sourceAccountId } }),
+    prisma.account.findUnique({ where: { id: input.cryptoAccountId } }),
+  ]);
+  if (!source || source.type === "Crypto") {
+    throw new Error("Quellkonto ist kein gültiges CHF-Konto.");
+  }
+  if (!cryptoAccount || cryptoAccount.type !== "Crypto") {
+    throw new Error("Zielkonto ist kein Bitcoin-Wallet.");
+  }
+
+  const [transaction] = await prisma.$transaction([
+    prisma.transaction.create({
+      data: {
+        date: input.date,
+        amountCents: -input.chfAmountCents,
+        accountId: input.sourceAccountId,
+        categoryId: input.categoryId ?? null,
+        description: input.description,
+        notes: input.notes ?? null,
+        source: "Manual",
+        createdById: input.createdById ?? null,
+      },
+    }),
+    prisma.account.update({
+      where: { id: input.cryptoAccountId },
+      data: { btcAmount: (cryptoAccount.btcAmount ?? 0) + input.btcAmount },
+    }),
+  ]);
+
+  return transaction;
+}

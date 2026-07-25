@@ -1,7 +1,11 @@
-import { Plus } from "lucide-react";
+import { Plus, Bitcoin } from "lucide-react";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { ACCOUNT_TYPE_LABELS, accountBalances, netWorthCents } from "@/lib/balances";
+import { categoryOptions } from "@/lib/categories";
+import { todayInZone } from "@/lib/date";
+import { config } from "@/lib/config";
+import { btcChfRate } from "@/lib/crypto-price";
 import { PageHeader } from "@/components/page-header";
 import { Money } from "@/components/money";
 import { Button } from "@/components/ui/button";
@@ -17,18 +21,25 @@ import {
 } from "@/components/ui/table";
 import { AccountFormDialog } from "./account-form-dialog";
 import { AccountRowActions } from "./account-row-actions";
+import { BtcPurchaseDialog } from "./btc-purchase-dialog";
 
 export const dynamic = "force-dynamic";
 
 export default async function AccountsPage() {
   await requireEditor();
 
-  const [accounts, balances] = await Promise.all([
+  const [accounts, balances, categories] = await Promise.all([
     prisma.account.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     accountBalances(prisma, { includeInactive: true }),
+    categoryOptions(prisma),
   ]);
   const balanceById = new Map(balances.map((b) => [b.id, b.balanceCents]));
   const btcById = new Map(balances.map((b) => [b.id, { amount: b.btcAmount, rate: b.btcRateChf }]));
+  const sourceAccounts = accounts
+    .filter((a) => a.isActive && a.type !== "Crypto")
+    .map((a) => ({ id: a.id, name: a.name }));
+  const today = todayInZone(config.recurring.timezone);
+  const currentRateChf = accounts.some((a) => a.type === "Crypto") ? await btcChfRate() : null;
   const activeNetWorth = netWorthCents(balances.filter((b) => accounts.find((a) => a.id === b.id)?.isActive));
 
   return (
@@ -109,7 +120,27 @@ export default async function AccountsPage() {
                         <Money cents={balanceById.get(account.id) ?? 0} colored />
                       </TableCell>
                       <TableCell>
-                        <AccountRowActions account={account} />
+                        <div className="flex justify-end">
+                          {account.type === "Crypto" && sourceAccounts.length > 0 && (
+                            <BtcPurchaseDialog
+                              cryptoAccountId={account.id}
+                              sourceAccounts={sourceAccounts}
+                              categories={categories}
+                              currentRateChf={currentRateChf}
+                              today={today}
+                              trigger={
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label="Bitcoin-Kauf erfassen"
+                                >
+                                  <Bitcoin className="h-4 w-4" />
+                                </Button>
+                              }
+                            />
+                          )}
+                          <AccountRowActions account={account} />
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

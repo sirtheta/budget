@@ -7,6 +7,8 @@ import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { parseMoney } from "@/lib/money";
+import { recordBtcPurchase } from "@/lib/transactions";
+import { isValidDateString } from "@/lib/date";
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -119,6 +121,81 @@ function isUniqueViolation(err: unknown): boolean {
     "code" in err &&
     (err as { code?: string }).code === "P2002"
   );
+}
+
+const btcPurchaseSchema = z.object({
+  date: z.string().refine(isValidDateString, "Ungültiges Datum."),
+  description: z.string().trim().min(1, "Beschreibung darf nicht leer sein.").max(200),
+  notes: z.string().trim().max(500).optional(),
+});
+
+/**
+ * Books a Bitcoin purchase: CHF leaves a normal account (categorisable, a
+ * real outflow in budget/analytics), BTC lands in the wallet. See
+ * lib/transactions.ts for why this isn't modelled as a transfer.
+ */
+export async function recordBtcPurchaseAction(
+  _prevState: ActionState | undefined,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const parsed = btcPurchaseSchema.safeParse({
+    date: formData.get("date") ?? "",
+    description: formData.get("description") ?? "",
+    notes: formData.get("notes") ?? undefined,
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };
+
+  const sourceAccountId = parseInt(String(formData.get("sourceAccountId") ?? ""), 10);
+  const cryptoAccountId = parseInt(String(formData.get("cryptoAccountId") ?? ""), 10);
+  if (!Number.isInteger(sourceAccountId) || !Number.isInteger(cryptoAccountId)) {
+    return { error: "Bitte Quellkonto und Wallet auswählen." };
+  }
+
+  const chfAmountCents = parseMoney(String(formData.get("chfAmount") ?? ""));
+  if (chfAmountCents === null || chfAmountCents <= 0) {
+    return { error: "CHF-Betrag ist keine gültige Zahl." };
+  }
+
+  const btcRaw = String(formData.get("btcAmount") ?? "").trim().replace(",", ".");
+  const btcAmount = Number(btcRaw);
+  if (!Number.isFinite(btcAmount) || btcAmount <= 0) {
+    return { error: "BTC-Menge ist keine gültige Zahl." };
+  }
+
+  const categoryRaw = formData.get("categoryId");
+  const categoryId =
+    categoryRaw && categoryRaw !== "" ? parseInt(String(categoryRaw), 10) : null;
+
+  try {
+    const transaction = await recordBtcPurchase(prisma, {
+      sourceAccountId,
+      cryptoAccountId,
+      date: parsed.data.date,
+      chfAmountCents,
+      btcAmount,
+      categoryId,
+      description: parsed.data.description,
+      notes: parsed.data.notes ?? null,
+      createdById: parseInt(session.user.id, 10),
+    });
+    await logAudit(session, "CREATE", "Transaction", transaction.id, {
+      btcPurchase: true,
+      chfAmountCents,
+      btcAmount,
+      cryptoAccountId,
+    });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Kauf konnte nicht erfasst werden." };
+  }
+
+  revalidatePath("/accounts");
+  revalidatePath("/dashboard");
+  revalidatePath("/transactions");
+  revalidatePath("/budget");
+  revalidatePath("/analytics");
+  return { success: true };
 }
 
 export async function toggleAccountActiveAction(id: number, isActive: boolean): Promise<ActionState> {

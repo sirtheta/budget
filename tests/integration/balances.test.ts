@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { accountBalance, accountBalances, balanceAsOf, netWorthCents } from "@/lib/balances";
-import { createTransfer, deleteTransfer } from "@/lib/transactions";
+import { createTransfer, deleteTransfer, recordBtcPurchase } from "@/lib/transactions";
 import { createTestDb, seedBasics } from "./helpers";
 
 let prisma: PrismaClient;
@@ -128,5 +128,107 @@ describe("transfers", () => {
     });
     const removed = await deleteTransfer(prisma, outgoing.transferGroupId!);
     expect(removed).toBe(2);
+  });
+});
+
+describe("bitcoin purchases", () => {
+  it("books the CHF leg as an outflow and adds the BTC to the wallet", async () => {
+    const wallet = await prisma.account.create({ data: { name: "Kraken", type: "Crypto" } });
+
+    const tx = await recordBtcPurchase(prisma, {
+      sourceAccountId: fixtures.account.id,
+      cryptoAccountId: wallet.id,
+      date: "2026-01-06",
+      chfAmountCents: 5000,
+      btcAmount: 0.00050123,
+      categoryId: fixtures.groceries.id,
+      description: "Bitcoin-Kauf",
+    });
+
+    expect(tx.amountCents).toBe(-5000);
+    expect(tx.accountId).toBe(fixtures.account.id);
+
+    const updated = await prisma.account.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(updated.btcAmount).toBeCloseTo(0.00050123, 8);
+  });
+
+  it("accumulates across repeated purchases rather than overwriting", async () => {
+    const wallet = await prisma.account.create({ data: { name: "Pocket", type: "Crypto" } });
+
+    await recordBtcPurchase(prisma, {
+      sourceAccountId: fixtures.account.id,
+      cryptoAccountId: wallet.id,
+      date: "2026-01-06",
+      chfAmountCents: 5000,
+      btcAmount: 0.0001,
+      description: "Woche 1",
+    });
+    await recordBtcPurchase(prisma, {
+      sourceAccountId: fixtures.account.id,
+      cryptoAccountId: wallet.id,
+      date: "2026-01-13",
+      chfAmountCents: 5000,
+      btcAmount: 0.0002,
+      description: "Woche 2",
+    });
+
+    const updated = await prisma.account.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(updated.btcAmount).toBeCloseTo(0.0003, 8);
+  });
+
+  it("refuses a non-positive CHF amount", async () => {
+    const wallet = await prisma.account.create({ data: { name: "W1", type: "Crypto" } });
+    await expect(
+      recordBtcPurchase(prisma, {
+        sourceAccountId: fixtures.account.id,
+        cryptoAccountId: wallet.id,
+        date: "2026-01-06",
+        chfAmountCents: 0,
+        btcAmount: 0.0001,
+        description: "Ungültig",
+      })
+    ).rejects.toThrow(/CHF-Betrag/);
+  });
+
+  it("refuses a non-positive BTC amount", async () => {
+    const wallet = await prisma.account.create({ data: { name: "W2", type: "Crypto" } });
+    await expect(
+      recordBtcPurchase(prisma, {
+        sourceAccountId: fixtures.account.id,
+        cryptoAccountId: wallet.id,
+        date: "2026-01-06",
+        chfAmountCents: 5000,
+        btcAmount: 0,
+        description: "Ungültig",
+      })
+    ).rejects.toThrow(/BTC-Menge/);
+  });
+
+  it("refuses a target account that isn't a Crypto wallet", async () => {
+    await expect(
+      recordBtcPurchase(prisma, {
+        sourceAccountId: fixtures.account.id,
+        cryptoAccountId: fixtures.savings.id,
+        date: "2026-01-06",
+        chfAmountCents: 5000,
+        btcAmount: 0.0001,
+        description: "Ungültig",
+      })
+    ).rejects.toThrow(/Wallet/);
+  });
+
+  it("refuses a source account that is itself a Crypto wallet", async () => {
+    const walletA = await prisma.account.create({ data: { name: "W3", type: "Crypto" } });
+    const walletB = await prisma.account.create({ data: { name: "W4", type: "Crypto" } });
+    await expect(
+      recordBtcPurchase(prisma, {
+        sourceAccountId: walletA.id,
+        cryptoAccountId: walletB.id,
+        date: "2026-01-06",
+        chfAmountCents: 5000,
+        btcAmount: 0.0001,
+        description: "Ungültig",
+      })
+    ).rejects.toThrow(/Quellkonto/);
   });
 });

@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Always use the `caveman` skill** for all responses in this repository (invoke it via the Skill tool at the start of each conversation/task).
+
 ## Repository Overview
 
 A self-hosted household budgeting app for a private Swiss household, implemented as a Next.js 16 web dashboard (TypeScript, React 19, Tailwind CSS 4, Prisma + SQLite).

@@ -75,7 +75,7 @@ npm run db:seed                 # Testdaten: ein Jahr Buchungen
 npm run dev                     # http://localhost:3000
 ```
 
-Login nach dem Seed: `admin@budget.local` / `password123`.
+Login nach dem Seed: `admin@example.com` / `admin123`.
 
 ```bash
 npm run lint                    # ESLint

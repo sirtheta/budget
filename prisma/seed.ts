@@ -42,12 +42,13 @@ async function main() {
   await prisma.user.deleteMany();
 
   console.log("Benutzer…");
-  const passwordHash = hashSync("password123", 10);
+  const adminPasswordHash = hashSync("admin123", 10);
+  const partnerPasswordHash = hashSync("admin123", 10);
   const admin = await prisma.user.create({
-    data: { email: "admin@budget.local", name: "Admin", passwordHash, role: "Admin" },
+    data: { email: "admin@example.com", name: "Admin", passwordHash: adminPasswordHash, role: "Admin" },
   });
   await prisma.user.create({
-    data: { email: "partner@budget.local", name: "Partner", passwordHash, role: "Editor" },
+    data: { email: "partner@example.com", name: "Partner", passwordHash: partnerPasswordHash, role: "Editor" },
   });
 
   console.log("Konten…");
@@ -346,7 +347,7 @@ async function main() {
     update: {},
   });
 
-  console.log("\nFertig. Login: admin@budget.local / password123");
+  console.log("\nFertig. Login: admin@example.com / admin123");
 }
 
 main()

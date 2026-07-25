@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 
 const ALL = "all";
 
@@ -101,45 +102,37 @@ export function TransactionFilters({
         <Label htmlFor="filter-account" className="text-xs">
           Konto
         </Label>
-        <Select
+        <Combobox
+          id="filter-account"
+          className="w-44"
           value={params.get("accountId") ?? ALL}
           onValueChange={(value) => apply({ accountId: value })}
-        >
-          <SelectTrigger id="filter-account" className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Alle Konten</SelectItem>
-            {accounts.map((account) => (
-              <SelectItem key={account.id} value={String(account.id)}>
-                {account.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          options={[
+            { value: ALL, label: "Alle Konten" },
+            ...accounts.map((account) => ({ value: String(account.id), label: account.name })),
+          ]}
+          searchPlaceholder="Konto suchen…"
+          emptyText="Kein Konto gefunden."
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="filter-category" className="text-xs">
           Kategorie
         </Label>
-        <Select
+        <Combobox
+          id="filter-category"
+          className="w-52"
           value={params.get("categoryId") ?? ALL}
           onValueChange={(value) => apply({ categoryId: value })}
-        >
-          <SelectTrigger id="filter-category" className="w-52">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Alle Kategorien</SelectItem>
-            <SelectItem value="none">Ohne Kategorie</SelectItem>
-            {categories.map((category) => (
-              <SelectItem key={category.id} value={String(category.id)}>
-                {category.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          options={[
+            { value: ALL, label: "Alle Kategorien" },
+            { value: "none", label: "Ohne Kategorie" },
+            ...categories.map((category) => ({ value: String(category.id), label: category.label })),
+          ]}
+          searchPlaceholder="Kategorie suchen…"
+          emptyText="Keine Kategorie gefunden."
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">

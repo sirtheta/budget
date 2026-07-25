@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { cn } from "@/lib/utils";
 
 const AUTO_ACCOUNT = "auto";
@@ -190,21 +191,22 @@ export function ImportWizard({
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="import-account">Zielkonto</Label>
-                <Select value={accountId} onValueChange={setAccountId}>
-                  <SelectTrigger id="import-account">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {format === "Camt053" && (
-                      <SelectItem value={AUTO_ACCOUNT}>Automatisch (über IBAN)</SelectItem>
-                    )}
-                    {accounts.map((account) => (
-                      <SelectItem key={account.id} value={String(account.id)}>
-                        {account.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  id="import-account"
+                  value={accountId}
+                  onValueChange={setAccountId}
+                  options={[
+                    ...(format === "Camt053"
+                      ? [{ value: AUTO_ACCOUNT, label: "Automatisch (über IBAN)" }]
+                      : []),
+                    ...accounts.map((account) => ({
+                      value: String(account.id),
+                      label: account.name,
+                    })),
+                  ]}
+                  searchPlaceholder="Konto suchen…"
+                  emptyText="Kein Konto gefunden."
+                />
               </div>
             </div>
 
@@ -395,8 +397,22 @@ export function ImportWizard({
                           </span>
                         </td>
                         <td className="p-2">
-                          <Select
+                          <Combobox
+                            className="h-8"
                             value={String(categoryOf(row) ?? NO_CATEGORY)}
+                            options={[
+                              { value: NO_CATEGORY, label: "Ohne Kategorie" },
+                              ...categories
+                                .filter((category) =>
+                                  row.amountCents >= 0
+                                    ? category.kind === "Income"
+                                    : category.kind === "Expense"
+                                )
+                                .map((category) => ({
+                                  value: String(category.id),
+                                  label: category.label,
+                                })),
+                            ]}
                             onValueChange={(value) =>
                               update({
                                 categories: {
@@ -405,25 +421,9 @@ export function ImportWizard({
                                 },
                               })
                             }
-                          >
-                            <SelectTrigger className="h-8">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={NO_CATEGORY}>Ohne Kategorie</SelectItem>
-                              {categories
-                                .filter((category) =>
-                                  row.amountCents >= 0
-                                    ? category.kind === "Income"
-                                    : category.kind === "Expense"
-                                )
-                                .map((category) => (
-                                  <SelectItem key={category.id} value={String(category.id)}>
-                                    {category.label}
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
+                            searchPlaceholder="Kategorie suchen…"
+                            emptyText="Keine Kategorie gefunden."
+                          />
                         </td>
                         <td className="p-2 text-right font-medium whitespace-nowrap">
                           <Money cents={row.amountCents} colored />

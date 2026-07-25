@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 
 export function RuleDialog({
   rule,
@@ -48,7 +49,7 @@ export function RuleDialog({
   const [categoryId, setCategoryId] = useState(String(rule?.categoryId ?? ""));
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} modal={false}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -131,18 +132,18 @@ export function RuleDialog({
           <div className="grid grid-cols-[1fr_auto] gap-3">
             <div className="flex flex-col gap-2">
               <Label htmlFor="rule-category">Kategorie</Label>
-              <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger id="rule-category">
-                  <SelectValue placeholder="Kategorie wählen" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((category) => (
-                    <SelectItem key={category.id} value={String(category.id)}>
-                      {category.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="rule-category"
+                value={categoryId}
+                onValueChange={setCategoryId}
+                options={categories.map((category) => ({
+                  value: String(category.id),
+                  label: category.label,
+                }))}
+                placeholder="Kategorie wählen"
+                searchPlaceholder="Kategorie suchen…"
+                emptyText="Keine Kategorie gefunden."
+              />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="rule-priority">Priorität</Label>

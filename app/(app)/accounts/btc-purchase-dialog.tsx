@@ -17,13 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 
 export interface AccountOption {
   id: number;
@@ -73,7 +67,7 @@ export function BtcPurchaseDialog({
       : null;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} modal={false}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -142,34 +136,36 @@ export function BtcPurchaseDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">
               <Label htmlFor="source-trigger">Von Konto</Label>
-              <Select value={sourceAccountId} onValueChange={setSourceAccountId}>
-                <SelectTrigger id="source-trigger">
-                  <SelectValue placeholder="Quellkonto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sourceAccounts.map((account) => (
-                    <SelectItem key={account.id} value={String(account.id)}>
-                      {account.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="source-trigger"
+                value={sourceAccountId}
+                onValueChange={setSourceAccountId}
+                options={sourceAccounts.map((account) => ({
+                  value: String(account.id),
+                  label: account.name,
+                }))}
+                placeholder="Quellkonto"
+                searchPlaceholder="Konto suchen…"
+                emptyText="Kein Konto gefunden."
+              />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="category-trigger">Kategorie (optional)</Label>
-              <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger id="category-trigger">
-                  <SelectValue placeholder="Kategorie wählen" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_CATEGORY}>Ohne Kategorie</SelectItem>
-                  {expenseCategories.map((category) => (
-                    <SelectItem key={category.id} value={String(category.id)}>
-                      {category.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="category-trigger"
+                value={categoryId}
+                onValueChange={setCategoryId}
+                options={[
+                  { value: NO_CATEGORY, label: "Ohne Kategorie" },
+                  ...expenseCategories.map((category) => ({
+                    value: String(category.id),
+                    label: category.label,
+                  })),
+                ]}
+                placeholder="Kategorie wählen"
+                searchPlaceholder="Kategorie suchen…"
+                emptyText="Keine Kategorie gefunden."
+              />
             </div>
           </div>
 

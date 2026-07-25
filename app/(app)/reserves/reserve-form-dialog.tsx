@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 
 const NONE = "none";
 
@@ -53,7 +54,7 @@ export function ReserveFormDialog({
   const [categoryId, setCategoryId] = useState(String(reserve?.categoryId ?? NONE));
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} modal={false}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -135,37 +136,33 @@ export function ReserveFormDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">
               <Label htmlFor="reserve-category">Kategorie (optional)</Label>
-              <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger id="reserve-category">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>Keine</SelectItem>
-                  {categories
+              <Combobox
+                id="reserve-category"
+                value={categoryId}
+                onValueChange={setCategoryId}
+                options={[
+                  { value: NONE, label: "Keine" },
+                  ...categories
                     .filter((category) => category.kind === "Expense")
-                    .map((category) => (
-                      <SelectItem key={category.id} value={String(category.id)}>
-                        {category.label}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+                    .map((category) => ({ value: String(category.id), label: category.label })),
+                ]}
+                searchPlaceholder="Kategorie suchen…"
+                emptyText="Keine Kategorie gefunden."
+              />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="reserve-account">Konto (optional)</Label>
-              <Select value={accountId} onValueChange={setAccountId}>
-                <SelectTrigger id="reserve-account">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>Keines</SelectItem>
-                  {accounts.map((account) => (
-                    <SelectItem key={account.id} value={String(account.id)}>
-                      {account.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="reserve-account"
+                value={accountId}
+                onValueChange={setAccountId}
+                options={[
+                  { value: NONE, label: "Keines" },
+                  ...accounts.map((account) => ({ value: String(account.id), label: account.name })),
+                ]}
+                searchPlaceholder="Konto suchen…"
+                emptyText="Kein Konto gefunden."
+              />
             </div>
           </div>
 

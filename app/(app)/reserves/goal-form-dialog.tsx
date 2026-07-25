@@ -18,13 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 
 const NONE = "none";
 
@@ -45,7 +39,7 @@ export function GoalFormDialog({
   const [accountId, setAccountId] = useState(String(goal?.accountId ?? NONE));
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} modal={false}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -117,19 +111,17 @@ export function GoalFormDialog({
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="goal-account">Konto (optional)</Label>
-            <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger id="goal-account">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>Keines</SelectItem>
-                {accounts.map((account) => (
-                  <SelectItem key={account.id} value={String(account.id)}>
-                    {account.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              id="goal-account"
+              value={accountId}
+              onValueChange={setAccountId}
+              options={[
+                { value: NONE, label: "Keines" },
+                ...accounts.map((account) => ({ value: String(account.id), label: account.name })),
+              ]}
+              searchPlaceholder="Konto suchen…"
+              emptyText="Kein Konto gefunden."
+            />
           </div>
 
           <div className="flex flex-col gap-2">

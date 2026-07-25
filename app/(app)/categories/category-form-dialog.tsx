@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 
 const NO_PARENT = "none";
 
@@ -62,7 +63,7 @@ export function CategoryFormDialog({
   const effectiveKind = selectedParent?.kind ?? kind;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} modal={false}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -89,21 +90,19 @@ export function CategoryFormDialog({
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="parent-trigger">Übergeordnete Gruppe</Label>
-            <Select value={parentId} onValueChange={setParentId}>
-              <SelectTrigger id="parent-trigger">
-                <SelectValue placeholder="Keine (eigene Gruppe)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_PARENT}>Keine (eigene Gruppe)</SelectItem>
-                {parents
+            <Combobox
+              id="parent-trigger"
+              value={parentId}
+              onValueChange={setParentId}
+              options={[
+                { value: NO_PARENT, label: "Keine (eigene Gruppe)" },
+                ...parents
                   .filter((p) => p.id !== category?.id)
-                  .map((parent) => (
-                    <SelectItem key={parent.id} value={String(parent.id)}>
-                      {parent.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+                  .map((parent) => ({ value: String(parent.id), label: parent.name })),
+              ]}
+              searchPlaceholder="Gruppe suchen…"
+              emptyText="Keine Gruppe gefunden."
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

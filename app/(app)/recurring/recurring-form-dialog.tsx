@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { cn } from "@/lib/utils";
 
 const NONE = "none";
@@ -70,7 +71,7 @@ export function RecurringFormDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen} modal={false}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -189,51 +190,52 @@ export function RecurringFormDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">
               <Label htmlFor="rec-account">{mode === "transfer" ? "Von Konto" : "Konto"}</Label>
-              <Select value={accountId} onValueChange={setAccountId}>
-                <SelectTrigger id="rec-account">
-                  <SelectValue placeholder="Konto wählen" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((account) => (
-                    <SelectItem key={account.id} value={String(account.id)}>
-                      {account.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="rec-account"
+                value={accountId}
+                onValueChange={setAccountId}
+                options={accounts.map((account) => ({
+                  value: String(account.id),
+                  label: account.name,
+                }))}
+                placeholder="Konto wählen"
+                searchPlaceholder="Konto suchen…"
+                emptyText="Kein Konto gefunden."
+              />
             </div>
             {mode === "transfer" ? (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="rec-counter">Auf Konto</Label>
-                <Select value={counterAccountId} onValueChange={setCounterAccountId}>
-                  <SelectTrigger id="rec-counter">
-                    <SelectValue placeholder="Zielkonto" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((account) => (
-                      <SelectItem key={account.id} value={String(account.id)}>
-                        {account.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  id="rec-counter"
+                  value={counterAccountId}
+                  onValueChange={setCounterAccountId}
+                  options={accounts.map((account) => ({
+                    value: String(account.id),
+                    label: account.name,
+                  }))}
+                  placeholder="Zielkonto"
+                  searchPlaceholder="Konto suchen…"
+                  emptyText="Kein Konto gefunden."
+                />
               </div>
             ) : (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="rec-category">Kategorie</Label>
-                <Select value={categoryId} onValueChange={setCategoryId}>
-                  <SelectTrigger id="rec-category">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Ohne Kategorie</SelectItem>
-                    {visibleCategories.map((category) => (
-                      <SelectItem key={category.id} value={String(category.id)}>
-                        {category.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  id="rec-category"
+                  value={categoryId}
+                  onValueChange={setCategoryId}
+                  options={[
+                    { value: NONE, label: "Ohne Kategorie" },
+                    ...visibleCategories.map((category) => ({
+                      value: String(category.id),
+                      label: category.label,
+                    })),
+                  ]}
+                  searchPlaceholder="Kategorie suchen…"
+                  emptyText="Keine Kategorie gefunden."
+                />
               </div>
             )}
           </div>

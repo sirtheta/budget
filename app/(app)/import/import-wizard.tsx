@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState, useTransition } from "react";
+import { startTransition, useActionState, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Upload } from "lucide-react";
 import type { CsvMapping } from "@prisma/client";
@@ -158,15 +158,21 @@ export function ImportWizard({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={formAction} className="flex flex-col gap-4">
-            <input type="hidden" name="format" value={format} />
-            <input
-              type="hidden"
-              name="accountId"
-              value={accountId === AUTO_ACCOUNT ? "" : accountId}
-            />
-            {format === "Csv" && <input type="hidden" name="mappingId" value={mappingId} />}
-
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              // Built from current state rather than left to the DOM's hidden
+              // inputs: React resets a <form action> back to its mount-time
+              // values on every submit, which silently reverted accountId/
+              // mappingId to their first-render defaults on a second import.
+              const data = new FormData(event.currentTarget);
+              data.set("format", format);
+              data.set("accountId", accountId === AUTO_ACCOUNT ? "" : accountId);
+              if (format === "Csv") data.set("mappingId", mappingId);
+              startTransition(() => formAction(data));
+            }}
+            className="flex flex-col gap-4"
+          >
             <div className="flex gap-1 rounded-lg bg-muted p-1 self-start">
               {(
                 [
@@ -208,7 +214,18 @@ export function ImportWizard({
                 <Combobox
                   id="import-account"
                   value={accountId}
-                  onValueChange={setAccountId}
+                  onValueChange={(value) => {
+                    setAccountId(value);
+                    const account = accounts.find((a) => String(a.id) === value);
+                    const match =
+                      account &&
+                      mappings.find(
+                        (mapping) =>
+                          mapping.name.toLowerCase().includes(account.name.toLowerCase()) ||
+                          account.name.toLowerCase().includes(mapping.name.toLowerCase())
+                      );
+                    if (match) setMappingId(String(match.id));
+                  }}
                   options={[
                     ...(format === "Camt053"
                       ? [{ value: AUTO_ACCOUNT, label: "Automatisch (über IBAN)" }]

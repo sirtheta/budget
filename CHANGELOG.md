@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.3](https://github.com/sirtheta/budget/compare/budget-v0.1.2...budget-v0.1.3) (2026-07-26)
+
+
+### Bug Fixes
+
+* **auth:** revoke existing sessions when credentials change ([2381dc6](https://github.com/sirtheta/budget/commit/2381dc64a8dcccec136aec325b2e184f07a2be83))
+* **auth:** stop deriving rate-limit keys from a spoofable header ([eb77605](https://github.com/sirtheta/budget/commit/eb77605fc83f81237cf5683a0a2bb1753ff406fe))
+* **auth:** throttle the password checks on the account settings actions ([a4ec377](https://github.com/sirtheta/budget/commit/a4ec377d792117926fe5a9748ced4d28f6e61dc8))
+* **auth:** warn when production runs without an https AUTH_URL ([0a8e14c](https://github.com/sirtheta/budget/commit/0a8e14c0266c9940ef1fd9aadc77f3e96f816eba))
+* **email:** validate the SMTP sender fields before building the From header ([c12878f](https://github.com/sirtheta/budget/commit/c12878f3a348ac80a2aeede60e5899c7383d8702))
+* **export:** neutralise spreadsheet formulas in the CSV export ([19ff819](https://github.com/sirtheta/budget/commit/19ff819eca782b69814bbc14e9c47452b93c9a93))
+* **import:** re-derive row fingerprints instead of trusting the client ([2e4088a](https://github.com/sirtheta/budget/commit/2e4088a828c319e9a6facce719ac2d89fe11f88c))
+* **import:** refuse regex rules that can backtrack catastrophically ([cec303d](https://github.com/sirtheta/budget/commit/cec303d82e80f3223dcc7cf686162562f70dcdf1))
+* **logging:** log unexpected errors in transfer, BTC purchase, and import paths ([0df3a9a](https://github.com/sirtheta/budget/commit/0df3a9a334a73c9bab030eac8a02442c5e9354c1))
+* **logging:** mask email addresses and redact secrets in log output ([9b8d9ec](https://github.com/sirtheta/budget/commit/9b8d9ece0ca1a92e7a4202af077a3a8a8a161ef9))
+* **proxy:** redirect signed-in users to /dashboard, not /calendar ([c0fa748](https://github.com/sirtheta/budget/commit/c0fa7482565b2a27e268dea63f3f5a3bd6341983))
+* **settings:** keep the encrypted SMTP password off the client ([201c589](https://github.com/sirtheta/budget/commit/201c5894b1af2bcc68acb09b12884ee0a97141fa))
+* **users:** stop sending password hashes to the browser ([fbed3ed](https://github.com/sirtheta/budget/commit/fbed3eda3b5696ce8e689a9b4eadb65ec04ba80b))
+
 ## [0.1.2](https://github.com/sirtheta/budget/compare/budget-v0.1.1...budget-v0.1.2) (2026-07-26)
 
 

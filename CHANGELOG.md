@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.5](https://github.com/sirtheta/budget/compare/budget-v0.1.4...budget-v0.1.5) (2026-07-26)
+
+
+### Features
+
+* **import:** match rules by transaction sign ([afda97e](https://github.com/sirtheta/budget/commit/afda97e0e9318a7a4edc67f9f63908982d470bbe))
+
+
+### Bug Fixes
+
+* **settings:** clarify single-currency hint text ([ae79172](https://github.com/sirtheta/budget/commit/ae7917242d65c822413dd3cb9175420852da4244))
+
 ## [0.1.4](https://github.com/sirtheta/budget/compare/budget-v0.1.3...budget-v0.1.4) (2026-07-26)
 
 

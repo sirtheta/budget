@@ -44,7 +44,7 @@ export async function proxy(request: NextRequest) {
       pathname.startsWith("/reset-password");
 
     if (isLoggedIn && isAuthPage) {
-      return NextResponse.redirect(new URL("/calendar", request.url));
+      return NextResponse.redirect(new URL("/dashboard", request.url));
     }
     if (!isLoggedIn && !isAuthPage) {
       return NextResponse.redirect(new URL("/login", request.url));

@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
-import logger from "@/lib/logger";
+import logger, { maskEmail } from "@/lib/logger";
 import { config } from "@/lib/config";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/client-ip";
@@ -38,13 +38,13 @@ export async function requestPasswordResetAction(
       maxAttempts: config.rateLimit.maxAttempts * 10,
     });
   if (!emailAllowed || !ipAllowed) {
-    log.warn({ email, ip }, "password reset blocked: rate limit exceeded");
+    log.warn({ email: maskEmail(email), ip }, "password reset blocked: rate limit exceeded");
     return { success: true };
   }
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || !user.isActive) {
-    log.info({ email }, "password reset requested for unknown or inactive account");
+    log.info({ email: maskEmail(email) }, "password reset requested for unknown or inactive account");
     return { success: true };
   }
 

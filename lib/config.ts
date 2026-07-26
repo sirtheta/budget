@@ -38,4 +38,9 @@ export const config = {
     // Upload guard for CAMT.053/CSV files, in bytes.
     maxFileSizeBytes: envInt(process.env.IMPORT_MAX_FILE_SIZE_BYTES, 10 * 1024 * 1024),
   },
+  customerManagement: {
+    // Sibling app's public URL. Unset disables the payment-matching integration.
+    url: process.env.CUSTOMER_MANAGEMENT_URL || null,
+    apiKey: process.env.CUSTOMER_MANAGEMENT_API_KEY || null,
+  },
 } as const;

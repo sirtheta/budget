@@ -7,6 +7,7 @@ import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
+import { matchInvoicePayment } from "@/lib/invoicing";
 import { addDays, isValidDateString } from "@/lib/date";
 import { parseCamt053 } from "@/lib/import/camt";
 import { detectDelimiter, parseCsvStatement, previewRows, type CsvParseResult } from "@/lib/import/csv";
@@ -278,6 +279,8 @@ export async function commitImportAction(
   // calling out to lib/transactions.ts (which needs to read state between
   // rows, e.g. whether an earlier row in this same batch already claimed a
   // synthetic transfer leg) does not, unless it's wrapped explicitly.
+  const incomePayments: { transactionId: number; description: string; amountCents: number; bookingDate: string }[] = [];
+
   const batch = await prisma.$transaction(async (tx) => {
     const created = await tx.importBatch.create({
       data: {
@@ -332,6 +335,13 @@ export async function commitImportAction(
           transactionId: transaction.id,
           targetAccountId: row.transferAccountId,
         });
+      } else if (row.amountCents > 0) {
+        incomePayments.push({
+          transactionId: transaction.id,
+          description: row.description,
+          amountCents: row.amountCents,
+          bookingDate: row.date,
+        });
       }
     }
 
@@ -343,6 +353,13 @@ export async function commitImportAction(
     imported: fresh.length,
     skipped: rows.length - fresh.length,
   });
+
+  // Best-effort: check newly imported income against CustomerManagement's open
+  // invoices. Runs after the transaction has committed and never affects the
+  // result returned below — see lib/invoicing.ts for the never-throw contract.
+  await Promise.allSettled(
+    incomePayments.map((payment) => matchInvoicePayment(session, payment))
+  );
 
   revalidatePath("/import");
   revalidatePath("/transactions");

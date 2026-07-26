@@ -74,14 +74,14 @@ export default async function ImportPage() {
         CSV-Mappings
       </h2>
       <Card className="mb-8">
-        <CardHeader className="flex-row items-start justify-between gap-2">
+        <CardHeader className="flex-row items-start justify-between gap-2 flex-wrap">
           <div>
             <CardTitle className="text-base">Spaltenzuordnung pro Bank</CardTitle>
             <CardDescription>
               Nur nötig für CSV-Import — CAMT.053 braucht keine Zuordnung.
             </CardDescription>
           </div>
-          <div className="flex gap-2 shrink-0">
+          <div className="flex gap-2 flex-wrap w-full sm:w-auto sm:shrink-0">
             {mappings.length === 0 && <SeedDefaultMappingsButton />}
             <CsvMappingDialog
               trigger={
@@ -99,7 +99,8 @@ export default async function ImportPage() {
               <SeedDefaultMappingsButton />
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -149,6 +150,43 @@ export default async function ImportPage() {
                 </TableBody>
               </Table>
             </div>
+
+            <ul className="md:hidden divide-y">
+              {mappings.map((mapping) => (
+                <li key={mapping.id} className="flex items-start justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <p className="font-medium">{mapping.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Trennzeichen {mapping.delimiter === "\t" ? "Tab" : mapping.delimiter} ·{" "}
+                      {mapping.dateFormat}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Datum {mapping.dateColumn} · Text {mapping.descriptionColumn} ·{" "}
+                      {mapping.amountColumn !== null
+                        ? `Betrag ${mapping.amountColumn}`
+                        : `Soll ${mapping.debitColumn ?? "—"} / Haben ${mapping.creditColumn ?? "—"}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center shrink-0">
+                    <CsvMappingDialog
+                      mapping={mapping}
+                      trigger={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          aria-label="Mapping bearbeiten"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      }
+                    />
+                    <DeleteMappingButton id={mapping.id} name={mapping.name} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            </>
           )}
         </CardContent>
       </Card>
@@ -163,7 +201,8 @@ export default async function ImportPage() {
               Noch nichts importiert.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -212,6 +251,35 @@ export default async function ImportPage() {
                 </TableBody>
               </Table>
             </div>
+
+            <ul className="md:hidden divide-y">
+              {batches.map((batch) => (
+                <li key={batch.id} className="flex items-start justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">
+                      {batch.filename}
+                      <Badge variant="outline" className="ml-2">
+                        {batch.format === "Camt053" ? "CAMT.053" : "CSV"}
+                      </Badge>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {batch.account?.name ?? "—"}
+                      {batch.periodFrom && batch.periodTo &&
+                        ` · ${formatDateCH(batch.periodFrom)} – ${formatDateCH(batch.periodTo)}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {batch.importedCount} importiert · {batch.skippedCount} übersprungen
+                    </p>
+                  </div>
+                  <DeleteBatchButton
+                    id={batch.id}
+                    filename={batch.filename}
+                    count={batch.importedCount}
+                  />
+                </li>
+              ))}
+            </ul>
+            </>
           )}
         </CardContent>
       </Card>

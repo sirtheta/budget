@@ -63,14 +63,14 @@ export function RulesTable({
 
   return (
     <Card className="mb-8">
-      <CardHeader className="flex-row items-start justify-between gap-2">
+      <CardHeader className="flex-row items-start justify-between gap-2 flex-wrap">
         <div>
           <CardTitle className="text-base">Automatische Kategorisierung</CardTitle>
           <CardDescription>
             Die erste passende Regel gewinnt. Ohne Regeln landet jeder Import ohne Kategorie.
           </CardDescription>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 flex-wrap w-full sm:w-auto sm:shrink-0">
           {rules.length === 0 && <SeedDefaultRulesButton />}
           {rules.length > 0 && <ApplyRulesButton />}
           <RuleDialog
@@ -106,7 +106,8 @@ export function RulesTable({
                 Keine Regel passt zu „{query}“.
               </p>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="hidden md:block overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -184,6 +185,76 @@ export function RulesTable({
                   </TableBody>
                 </Table>
               </div>
+
+              <ul className="md:hidden divide-y">
+                {filteredRules.map((rule) => (
+                  <li key={rule.id} className={`p-4 ${rule.isActive ? "" : "opacity-55"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium">
+                          {rule.priority}. {rule.name}
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-0.5">
+                          {RULE_FIELD_LABELS[rule.field]} {MATCH_TYPE_LABELS[rule.matchType]}{" "}
+                          <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                            {rule.pattern}
+                          </code>
+                        </p>
+                        {(rule.minAmountCents !== null || rule.maxAmountCents !== null) && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {rule.minAmountCents !== null && rule.maxAmountCents !== null
+                              ? `${formatMoney(rule.minAmountCents, { withCurrency: true })} – ${formatMoney(rule.maxAmountCents, { withCurrency: true })}`
+                              : rule.minAmountCents !== null
+                                ? `ab ${formatMoney(rule.minAmountCents, { withCurrency: true })}`
+                                : `bis ${formatMoney(rule.maxAmountCents!, { withCurrency: true })}`}
+                          </p>
+                        )}
+                        {rule.sign !== "Any" && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {RULE_SIGN_LABELS[rule.sign]}
+                          </p>
+                        )}
+                        <p className="text-sm mt-1">
+                          {rule.transferAccount ? (
+                            <Badge variant="secondary">
+                              → Umbuchung: {rule.transferAccount.name}
+                            </Badge>
+                          ) : (
+                            <>
+                              {rule.category?.parent && (
+                                <span className="text-muted-foreground">
+                                  {rule.category.parent.name} ›{" "}
+                                </span>
+                              )}
+                              {rule.category?.name}
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end mt-2">
+                      <RuleToggle id={rule.id} isActive={rule.isActive} />
+                      <RuleDialog
+                        rule={rule}
+                        categories={categories}
+                        accounts={accounts}
+                        trigger={
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            aria-label="Regel bearbeiten"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        }
+                      />
+                      <DeleteRuleButton id={rule.id} name={rule.name} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              </>
             )}
           </>
         )}

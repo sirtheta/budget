@@ -47,15 +47,15 @@ export function TransactionFilters({
   );
 
   return (
-    <div className="flex flex-wrap items-end gap-3 mb-4">
+    <div className="grid grid-cols-2 gap-3 mb-4 sm:flex sm:flex-wrap sm:items-end">
       <form
-        className="flex items-end gap-2"
+        className="col-span-2 flex items-end gap-2 sm:col-span-1"
         onSubmit={(event) => {
           event.preventDefault();
           apply({ q: query });
         }}
       >
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-1 flex-col gap-1.5 sm:flex-none">
           <Label htmlFor="q" className="text-xs">
             Suche
           </Label>
@@ -64,10 +64,10 @@ export function TransactionFilters({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Beschreibung oder Gegenpartei"
-            className="w-56"
+            className="w-full sm:w-56"
           />
         </div>
-        <Button type="submit" variant="secondary" size="icon" aria-label="Suchen">
+        <Button type="submit" variant="secondary" size="icon" aria-label="Suchen" className="shrink-0">
           <Search className="h-4 w-4" />
         </Button>
       </form>
@@ -81,7 +81,7 @@ export function TransactionFilters({
           type="date"
           defaultValue={params.get("from") ?? ""}
           onChange={(event) => apply({ from: event.target.value })}
-          className="w-40"
+          className="w-full sm:w-40"
         />
       </div>
 
@@ -94,7 +94,7 @@ export function TransactionFilters({
           type="date"
           defaultValue={params.get("to") ?? ""}
           onChange={(event) => apply({ to: event.target.value })}
-          className="w-40"
+          className="w-full sm:w-40"
         />
       </div>
 
@@ -104,7 +104,7 @@ export function TransactionFilters({
         </Label>
         <Combobox
           id="filter-account"
-          className="w-44"
+          className="w-full sm:w-44"
           value={params.get("accountId") ?? ALL}
           onValueChange={(value) => apply({ accountId: value })}
           options={[
@@ -122,7 +122,7 @@ export function TransactionFilters({
         </Label>
         <Combobox
           id="filter-category"
-          className="w-52"
+          className="w-full sm:w-52"
           value={params.get("categoryId") ?? ALL}
           onValueChange={(value) => apply({ categoryId: value })}
           options={[
@@ -143,7 +143,7 @@ export function TransactionFilters({
           value={params.get("type") ?? ALL}
           onValueChange={(value) => apply({ type: value })}
         >
-          <SelectTrigger id="filter-type" className="w-40">
+          <SelectTrigger id="filter-type" className="w-full sm:w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -158,6 +158,7 @@ export function TransactionFilters({
       {hasFilters && (
         <Button
           variant="ghost"
+          className="col-span-2 sm:col-span-1"
           onClick={() => {
             setQuery("");
             startTransition(() => router.push("/transactions"));

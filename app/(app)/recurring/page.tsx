@@ -88,7 +88,8 @@ export default async function RecurringPage() {
               Sparkonto.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -168,6 +169,73 @@ export default async function RecurringPage() {
                 </TableBody>
               </Table>
             </div>
+
+            <ul className="md:hidden divide-y">
+              {rows.map((row) => {
+                const isDue = row.isActive && row.nextDate <= today;
+                return (
+                  <li key={row.id} className={`p-4 ${row.isActive ? "" : "opacity-55"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {row.counterAccountId && (
+                            <ArrowLeftRight
+                              className="h-3.5 w-3.5 text-muted-foreground shrink-0"
+                              aria-label="Umbuchung"
+                            />
+                          )}
+                          <span className="font-medium">{row.name}</span>
+                          {!row.isActive && <Badge variant="outline">Pausiert</Badge>}
+                          {!row.autoPost && <Badge variant="secondary">Nur Vorschlag</Badge>}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {intervalLabel(row.intervalMonths)} · nächste {formatDateCH(row.nextDate)}
+                          {isDue && (
+                            <Badge variant="destructive" className="ml-2">
+                              Fällig
+                            </Badge>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {row.account.name}
+                          {row.counterAccount ? (
+                            <> → {row.counterAccount.name}</>
+                          ) : row.category ? (
+                            <>
+                              {" · "}
+                              {row.category.parent && `${row.category.parent.name} › `}
+                              {row.category.name}
+                            </>
+                          ) : (
+                            " · ohne Kategorie"
+                          )}
+                        </p>
+                        {row.endDate && (
+                          <p className="text-xs text-muted-foreground">
+                            endet am {formatDateCH(row.endDate)}
+                          </p>
+                        )}
+                      </div>
+                      <p className="font-medium shrink-0">
+                        <Money
+                          cents={row.counterAccountId ? -Math.abs(row.amountCents) : row.amountCents}
+                          colored={!row.counterAccountId}
+                        />
+                      </p>
+                    </div>
+                    <div className="flex justify-end mt-2">
+                      <RecurringRowActions
+                        recurring={row}
+                        accounts={accounts}
+                        categories={categories}
+                        today={today}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            </>
           )}
         </CardContent>
       </Card>

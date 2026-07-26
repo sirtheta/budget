@@ -389,7 +389,7 @@ export function ImportWizard({
               </p>
             </div>
 
-            <div className="overflow-x-auto max-h-[32rem] overflow-y-auto rounded-md border">
+            <div className="hidden md:block overflow-x-auto max-h-[32rem] overflow-y-auto rounded-md border">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-card border-b">
                   <tr className="text-left">
@@ -494,6 +494,105 @@ export function ImportWizard({
                   })}
                 </tbody>
               </table>
+            </div>
+
+            <div className="md:hidden max-h-[32rem] overflow-y-auto rounded-md border divide-y">
+              {preview.rows.map((row) => {
+                const isSelected = selected.has(row.hash);
+                return (
+                  <div
+                    key={row.hash}
+                    className={cn(
+                      "p-3 flex flex-col gap-2",
+                      !isSelected && "opacity-50",
+                      row.isDuplicate && "bg-muted/40"
+                    )}
+                  >
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        aria-label="Buchung importieren"
+                        className="size-4 accent-primary mt-0.5 shrink-0"
+                        onChange={(event) => {
+                          const next = new Set(selected);
+                          if (event.target.checked) next.add(row.hash);
+                          else next.delete(row.hash);
+                          update({ selected: next });
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="truncate font-medium text-sm">{row.description}</span>
+                          <span className="shrink-0 font-medium text-sm whitespace-nowrap">
+                            <Money cents={row.amountCents} colored />
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                          <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                            {formatDateCH(row.date)}
+                          </span>
+                          {row.counterparty && (
+                            <span className="text-xs text-muted-foreground truncate">
+                              {row.counterparty}
+                            </span>
+                          )}
+                          {row.isDuplicate && <Badge variant="secondary">Bereits importiert</Badge>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {row.isAdopted ? (
+                      <Badge variant="secondary" className="self-start">
+                        Wird mit Umbuchung verknüpft
+                      </Badge>
+                    ) : (
+                      <div className="space-y-1 pl-6">
+                        <Combobox
+                          className="h-8 w-full"
+                          value={selectionOf(row)}
+                          options={[
+                            { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
+                            ...categories
+                              .filter((category) =>
+                                row.amountCents >= 0
+                                  ? category.kind === "Income"
+                                  : category.kind === "Expense"
+                              )
+                              .map((category) => ({
+                                value: `cat:${category.id}`,
+                                label: category.label,
+                              })),
+                            ...accounts
+                              .filter((account) => account.id !== preview.accountId)
+                              .map((account) => ({
+                                value: `transfer:${account.id}`,
+                                label: `→ Umbuchung: ${account.name}`,
+                              })),
+                          ]}
+                          onValueChange={(value) =>
+                            update({
+                              overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
+                            })
+                          }
+                          searchPlaceholder="Kategorie oder Umbuchung suchen…"
+                          emptyText="Nichts gefunden."
+                        />
+                        {row.categorySource === "history" &&
+                          !(active && row.hash in active.overrides) && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px]"
+                              title="Kategorie aus früherer Buchung mit gleichem Empfänger übernommen"
+                            >
+                              Verlauf
+                            </Badge>
+                          )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="flex justify-end">

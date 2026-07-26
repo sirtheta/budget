@@ -367,6 +367,12 @@ enum RuleMatch {
   Regex
 }
 
+enum RuleSign {
+  Any
+  Positive
+  Negative
+}
+
 /// Auto-categorisation for imported transactions. The first matching rule
 /// (lowest `priority`) wins — see lib/import/rules.ts.
 /// Exactly one of `categoryId` / `transferAccountId` is set — enforced in the
@@ -389,6 +395,10 @@ model ImportRule {
   /// distinguishable by pattern alone.
   minAmountCents    Int?
   maxAmountCents    Int?
+  /// Restricts the rule to credits (Positive) or debits (Negative) — e.g. a
+  /// "Krankenkasse" pattern that matches both a premium payment and a refund,
+  /// distinguishable only by sign.
+  sign              RuleSign  @default(Any)
   priority          Int       @default(0)
   isActive          Boolean   @default(true)
 

@@ -14,6 +14,7 @@ function rule(overrides: Partial<ImportRule> = {}): ImportRule {
     transferAccountId: null,
     minAmountCents: null,
     maxAmountCents: null,
+    sign: "Any",
     priority: 0,
     isActive: true,
     createdAt: new Date(),
@@ -76,6 +77,32 @@ describe("ruleMatches", () => {
     expect(ruleMatches(rule({ maxAmountCents: 700 }), tx({ amountCents: -700 }))).toBe(true);
     expect(ruleMatches(rule({ maxAmountCents: 699 }), tx({ amountCents: -700 }))).toBe(false);
     expect(ruleMatches(rule({ minAmountCents: 700 }), tx({ amountCents: 700 }))).toBe(true);
+  });
+
+  it("respects sign, so the same pattern can split a refund from a payment", () => {
+    // Same counterparty ("Krankenkasse") for both the premium debit and a
+    // refund credit — only distinguishable by sign, not by pattern.
+    const payment = rule({ pattern: "krankenkasse", sign: "Negative" });
+    const refund = rule({ pattern: "krankenkasse", sign: "Positive" });
+
+    expect(
+      ruleMatches(payment, tx({ description: "Krankenkasse", amountCents: -30000 }))
+    ).toBe(true);
+    expect(
+      ruleMatches(payment, tx({ description: "Krankenkasse", amountCents: 5000 }))
+    ).toBe(false);
+    expect(
+      ruleMatches(refund, tx({ description: "Krankenkasse", amountCents: 5000 }))
+    ).toBe(true);
+    expect(
+      ruleMatches(refund, tx({ description: "Krankenkasse", amountCents: -30000 }))
+    ).toBe(false);
+  });
+
+  it("excludes a zero amount from either explicit sign", () => {
+    expect(ruleMatches(rule({ sign: "Positive" }), tx({ amountCents: 0 }))).toBe(false);
+    expect(ruleMatches(rule({ sign: "Negative" }), tx({ amountCents: 0 }))).toBe(false);
+    expect(ruleMatches(rule({ sign: "Any" }), tx({ amountCents: 0 }))).toBe(true);
   });
 });
 

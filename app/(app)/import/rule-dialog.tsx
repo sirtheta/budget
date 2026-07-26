@@ -4,10 +4,10 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Wand2 } from "lucide-react";
 import type { ImportRule } from "@prisma/client";
-import { RuleField, RuleMatch } from "@prisma/client";
+import { RuleField, RuleMatch, RuleSign } from "@prisma/client";
 import { applyRulesToUncategorizedAction, saveImportRuleAction } from "./rule-actions";
 import { useDialogFormAction } from "@/components/use-dialog-form";
-import { MATCH_TYPE_LABELS, RULE_FIELD_LABELS } from "@/lib/import/rule-labels";
+import { MATCH_TYPE_LABELS, RULE_FIELD_LABELS, RULE_SIGN_LABELS } from "@/lib/import/rule-labels";
 import type { CategoryOption } from "@/lib/categories";
 import type { AccountOption } from "@/app/(app)/transactions/transaction-form-dialog";
 import { cn } from "@/lib/utils";
@@ -52,6 +52,7 @@ export function RuleDialog({
   });
   const [field, setField] = useState<RuleField>(rule?.field ?? "Description");
   const [matchType, setMatchType] = useState<RuleMatch>(rule?.matchType ?? "Contains");
+  const [sign, setSign] = useState<RuleSign>(rule?.sign ?? "Any");
   const [mode, setMode] = useState<RuleMode>(rule?.transferAccountId ? "transfer" : "category");
   const [categoryId, setCategoryId] = useState(String(rule?.categoryId ?? ""));
   const [transferAccountId, setTransferAccountId] = useState(String(rule?.transferAccountId ?? ""));
@@ -75,6 +76,7 @@ export function RuleDialog({
           {rule && <input type="hidden" name="id" value={rule.id} />}
           <input type="hidden" name="field" value={field} />
           <input type="hidden" name="matchType" value={matchType} />
+          <input type="hidden" name="sign" value={sign} />
           <input type="hidden" name="categoryId" value={mode === "category" ? categoryId : ""} />
           <input
             type="hidden"
@@ -213,6 +215,27 @@ export function RuleDialog({
                 className="w-24"
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="rule-sign">Vorzeichen</Label>
+            <Select value={sign} onValueChange={(value) => setSign(value as RuleSign)}>
+              <SelectTrigger id="rule-sign">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.values(RuleSign).map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {RULE_SIGN_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Grenzt auf Gutschriften oder Belastungen ein — nützlich, wenn dasselbe Suchmuster
+              (z. B. &bdquo;Krankenkasse&ldquo;) sowohl auf eine Prämienzahlung als auch auf eine
+              Rückerstattung zutrifft.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -180,6 +180,7 @@ CREATE TABLE "ImportRule" (
     "transferAccountId" INTEGER,
     "minAmountCents" INTEGER,
     "maxAmountCents" INTEGER,
+    "sign" TEXT NOT NULL DEFAULT 'Any',
     "priority" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

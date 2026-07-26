@@ -103,6 +103,8 @@ export function ruleMatches(rule: ImportRule, transaction: ParsedTransaction): b
   const magnitude = Math.abs(transaction.amountCents);
   if (rule.minAmountCents !== null && magnitude < rule.minAmountCents) return false;
   if (rule.maxAmountCents !== null && magnitude > rule.maxAmountCents) return false;
+  if (rule.sign === "Positive" && transaction.amountCents <= 0) return false;
+  if (rule.sign === "Negative" && transaction.amountCents >= 0) return false;
 
   const value = fieldValue(transaction, rule.field);
   if (!value) return false;

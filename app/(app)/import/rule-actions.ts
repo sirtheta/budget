@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { RuleField, RuleMatch } from "@prisma/client";
+import { RuleField, RuleMatch, RuleSign } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
@@ -23,6 +23,7 @@ const ruleSchema = z
     transferAccountId: z.coerce.number().int().nullable(),
     minAmountCents: z.number().int().min(0).nullable(),
     maxAmountCents: z.number().int().min(0).nullable(),
+    sign: z.enum(RuleSign),
     priority: z.coerce.number().int().min(0).max(999),
   })
   // A rule either auto-categorises or auto-transfers, never both — mirrors
@@ -66,6 +67,7 @@ export async function saveImportRuleAction(
     transferAccountId: transferAccountIdRaw ? transferAccountIdRaw : null,
     minAmountCents,
     maxAmountCents,
+    sign: formData.get("sign") ?? "Any",
     priority: formData.get("priority") ?? 0,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };

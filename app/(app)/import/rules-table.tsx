@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Pencil, Plus, Search } from "lucide-react";
 import type { ImportRule } from "@prisma/client";
-import { MATCH_TYPE_LABELS, RULE_FIELD_LABELS } from "@/lib/import/rule-labels";
+import { MATCH_TYPE_LABELS, RULE_FIELD_LABELS, RULE_SIGN_LABELS } from "@/lib/import/rule-labels";
 import { formatMoney } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -137,6 +137,9 @@ export function RulesTable({
                                   ? `ab ${formatMoney(rule.minAmountCents, { withCurrency: true })}`
                                   : `bis ${formatMoney(rule.maxAmountCents!, { withCurrency: true })}`}
                             </span>
+                          )}
+                          {rule.sign !== "Any" && (
+                            <span className="block text-xs mt-0.5">{RULE_SIGN_LABELS[rule.sign]}</span>
                           )}
                         </TableCell>
                         <TableCell className="text-sm">

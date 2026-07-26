@@ -442,36 +442,48 @@ export function ImportWizard({
                           {row.isAdopted ? (
                             <Badge variant="secondary">Wird mit Umbuchung verknüpft</Badge>
                           ) : (
-                            <Combobox
-                              className="h-8"
-                              value={selectionOf(row)}
-                              options={[
-                                { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
-                                ...categories
-                                  .filter((category) =>
-                                    row.amountCents >= 0
-                                      ? category.kind === "Income"
-                                      : category.kind === "Expense"
-                                  )
-                                  .map((category) => ({
-                                    value: `cat:${category.id}`,
-                                    label: category.label,
-                                  })),
-                                ...accounts
-                                  .filter((account) => account.id !== preview.accountId)
-                                  .map((account) => ({
-                                    value: `transfer:${account.id}`,
-                                    label: `→ Umbuchung: ${account.name}`,
-                                  })),
-                              ]}
-                              onValueChange={(value) =>
-                                update({
-                                  overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
-                                })
-                              }
-                              searchPlaceholder="Kategorie oder Umbuchung suchen…"
-                              emptyText="Nichts gefunden."
-                            />
+                            <div className="space-y-1">
+                              <Combobox
+                                className="h-8"
+                                value={selectionOf(row)}
+                                options={[
+                                  { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
+                                  ...categories
+                                    .filter((category) =>
+                                      row.amountCents >= 0
+                                        ? category.kind === "Income"
+                                        : category.kind === "Expense"
+                                    )
+                                    .map((category) => ({
+                                      value: `cat:${category.id}`,
+                                      label: category.label,
+                                    })),
+                                  ...accounts
+                                    .filter((account) => account.id !== preview.accountId)
+                                    .map((account) => ({
+                                      value: `transfer:${account.id}`,
+                                      label: `→ Umbuchung: ${account.name}`,
+                                    })),
+                                ]}
+                                onValueChange={(value) =>
+                                  update({
+                                    overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
+                                  })
+                                }
+                                searchPlaceholder="Kategorie oder Umbuchung suchen…"
+                                emptyText="Nichts gefunden."
+                              />
+                              {row.categorySource === "history" &&
+                                !(active && row.hash in active.overrides) && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px]"
+                                    title="Kategorie aus früherer Buchung mit gleichem Empfänger übernommen"
+                                  >
+                                    Verlauf
+                                  </Badge>
+                                )}
+                            </div>
                           )}
                         </td>
                         <td className="p-2 text-right font-medium whitespace-nowrap">

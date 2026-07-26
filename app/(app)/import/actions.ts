@@ -11,7 +11,8 @@ import { matchInvoicePayment } from "@/lib/invoicing";
 import { addDays, isValidDateString } from "@/lib/date";
 import { parseCamt053 } from "@/lib/import/camt";
 import { detectDelimiter, parseCsvStatement, previewRows, type CsvParseResult } from "@/lib/import/csv";
-import { verifyImportHash, withHashes } from "@/lib/import/dedupe";
+import { normalize, verifyImportHash, withHashes } from "@/lib/import/dedupe";
+import { loadHistoryCategorySuggestions } from "@/lib/import/history";
 import { matchRule } from "@/lib/import/rules";
 import {
   TRANSFER_MATCH_TOLERANCE_DAYS,
@@ -34,6 +35,10 @@ export interface PreviewRow {
   bankReference: string | null;
   hash: string;
   categoryId: number | null;
+  /** Where `categoryId` came from — an explicit rule, or a prior manually
+   *  categorised transaction with the same counterparty. Null when neither
+   *  matched, or when the row will be adopted into an existing transfer. */
+  categorySource: "rule" | "history" | null;
   /** Set when an import rule targets a transfer instead of a category. */
   transferAccountId: number | null;
   transferAccountName: string | null;
@@ -129,7 +134,7 @@ export async function previewImportAction(
   if (!account) return { error: "Konto nicht gefunden." };
 
   const hashed = withHashes(accountId, statement.transactions);
-  const [existing, rules, adoptCandidates] = await Promise.all([
+  const [existing, rules, adoptCandidates, historySuggestions] = await Promise.all([
     prisma.transaction.findMany({
       where: { importHash: { in: hashed.map((row) => row.hash) } },
       select: { importHash: true },
@@ -141,6 +146,7 @@ export async function previewImportAction(
       where: { accountId, importHash: null, transferGroupId: { not: null } },
       select: { id: true, date: true, amountCents: true },
     }),
+    loadHistoryCategorySuggestions(prisma),
   ]);
   const existingHashes = new Set(existing.map((row) => row.importHash));
   const transferAccountIds = [...new Set(rules.map((rule) => rule.transferAccountId).filter((id) => id !== null))];
@@ -167,6 +173,10 @@ export async function previewImportAction(
     // the row as the fallback categorisation for whichever row doesn't get
     // adopted, instead of silently falling through to "ohne Kategorie".
     const rule = matchRule(rules, row);
+    // History only fills in when no rule matched at all — a transfer rule is
+    // still an explicit decision for this counterparty and must not be
+    // second-guessed by a past category.
+    const historyCategoryId = rule ? null : (historySuggestions.get(normalize(row.counterparty)) ?? null);
     return {
       date: row.date,
       amountCents: row.amountCents,
@@ -174,7 +184,8 @@ export async function previewImportAction(
       counterparty: row.counterparty,
       bankReference: row.bankReference,
       hash: row.hash,
-      categoryId: rule?.categoryId ?? null,
+      categoryId: rule?.categoryId ?? historyCategoryId ?? null,
+      categorySource: rule?.categoryId != null ? "rule" : historyCategoryId != null ? "history" : null,
       transferAccountId: rule?.transferAccountId ?? null,
       transferAccountName: rule?.transferAccountId
         ? (transferAccountNames.get(rule.transferAccountId) ?? null)

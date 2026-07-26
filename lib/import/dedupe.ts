@@ -18,7 +18,7 @@ import type { ParsedTransaction } from "@/lib/import/types";
  */
 
 /** Normalises free text so trivial formatting differences don't defeat matching. */
-function normalize(value: string | null): string {
+export function normalize(value: string | null): string {
   return (value ?? "")
     .toLowerCase()
     .replace(/\s+/g, " ")

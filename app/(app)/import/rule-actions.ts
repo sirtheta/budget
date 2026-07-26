@@ -6,7 +6,7 @@ import { RuleField, RuleMatch } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
-import { matchRule } from "@/lib/import/rules";
+import { hasNestedQuantifier, matchRule } from "@/lib/import/rules";
 import { applyAutoTransfer } from "@/lib/transactions";
 import { seedDefaultImportRules } from "@/lib/import/default-rules";
 import { parseMoney } from "@/lib/money";
@@ -78,6 +78,15 @@ export async function saveImportRuleAction(
     } catch (err) {
       return {
         error: `Ungültiger regulärer Ausdruck: ${err instanceof Error ? err.message : "Syntaxfehler"}`,
+      };
+    }
+    // Nested repetition can backtrack for effectively forever, and this pattern
+    // would then run against every row of every future import.
+    if (hasNestedQuantifier(parsed.data.pattern)) {
+      return {
+        error:
+          "Dieses Suchmuster verschachtelt Wiederholungen (z. B. \"(a+)+\") und kann den Import " +
+          "blockieren. Bitte ohne verschachtelte Wiederholung formulieren.",
       };
     }
   }

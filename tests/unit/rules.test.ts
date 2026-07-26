@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ImportRule } from "@prisma/client";
-import { matchRule, ruleMatches } from "@/lib/import/rules";
+import { hasNestedQuantifier, matchRule, ruleMatches } from "@/lib/import/rules";
 import type { ParsedTransaction } from "@/lib/import/types";
 
 function rule(overrides: Partial<ImportRule> = {}): ImportRule {
@@ -111,5 +111,47 @@ describe("matchRule", () => {
     );
     expect(matched?.transferAccountId).toBe(7);
     expect(matched?.categoryId).toBeNull();
+  });
+});
+
+describe("hasNestedQuantifier", () => {
+  it.each([
+    "(a+)+",
+    "(a*)*",
+    "(a|aa)+",
+    "(\d+)+$",
+    "^(x+x+)+y$",
+    "([a-z]+)*",
+    "(ab{2,})+",
+  ])("flags %j", (pattern) => {
+    expect(hasNestedQuantifier(pattern)).toBe(true);
+  });
+
+  it.each([
+    "MIGROS",
+    "^COOP.*ZUERICH$",
+    "(MIGROS|COOP)",       // alternation without outer repetition
+    "(a+){2}",             // bounded outer repetition cannot blow up
+    "\\(\\+41\\)+", // escaped parens and plus are literal text, not structure
+    "[+*]+",               // quantifiers inside a character class are literal
+    "(abc)+",              // repeated group with no inner repetition
+  ])("accepts %j", (pattern) => {
+    expect(hasNestedQuantifier(pattern)).toBe(false);
+  });
+});
+
+describe("regex rules at runtime", () => {
+  it("matches a sound pattern", () => {
+    expect(ruleMatches(rule({ matchType: "Regex", pattern: "^einkauf migros" }), tx())).toBe(true);
+  });
+
+  it("never matches a nested-quantifier pattern instead of hanging", () => {
+    // Handed to the regex engine, this backtracks for effectively forever; the
+    // test completing at all is the assertion that matters.
+    const evil = rule({ matchType: "Regex", pattern: "(a+)+$" });
+    const bait = tx({ description: "a".repeat(40) + "b" });
+    const started = Date.now();
+    expect(ruleMatches(evil, bait)).toBe(false);
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 });

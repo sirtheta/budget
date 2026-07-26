@@ -50,16 +50,27 @@ export async function changeOwnPasswordAction(
 }
 
 /**
- * Starts (or restarts) 2FA setup: generates a fresh secret and stores it
- * encrypted, but `twoFactorEnabled` stays false until confirmTwoFactorSetupAction
- * verifies the user actually scanned it — an unconfirmed secret must never be
- * enough to gate login.
+ * Starts 2FA setup: generates a fresh secret and stores it encrypted, but
+ * `twoFactorEnabled` stays false until confirmTwoFactorSetupAction verifies
+ * the user actually scanned it — an unconfirmed secret must never be enough
+ * to gate login.
+ *
+ * Refuses to run while 2FA is already active: without this, a stolen session
+ * could call this action directly (it isn't reachable from the UI once 2FA
+ * is on, but is a plain server action underneath) and silently re-key or
+ * disable 2FA without ever supplying the password disableTwoFactorAction
+ * requires. Re-enabling has to go through disable first.
  */
 export async function startTwoFactorSetupAction(): Promise<
   { error?: string; secret?: string; qrDataUrl?: string }
 > {
   const session = await requireSession();
   const userId = parseInt(session.user.id, 10);
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (user?.twoFactorEnabled) {
+    return { error: "Zwei-Faktor-Authentifizierung ist bereits aktiv. Bitte zuerst deaktivieren." };
+  }
 
   const secret = generateTwoFactorSecret();
   await prisma.user.update({

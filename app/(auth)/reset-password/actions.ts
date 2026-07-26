@@ -43,9 +43,16 @@ export async function resetPasswordAction(
     return { error: "Der Link ist ungültig oder abgelaufen. Bitte fordere einen neuen an." };
   }
 
+  // Bumping sessionEpoch revokes every JWT issued before this reset. Someone
+  // resetting a password is usually doing it because another party has access;
+  // leaving their sessions alive for the rest of SESSION_MAX_AGE_SEC would make
+  // the reset pointless.
   const user = await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash: await hash(parsed.data.password, bcryptRounds) },
+    data: {
+      passwordHash: await hash(parsed.data.password, bcryptRounds),
+      sessionEpoch: { increment: 1 },
+    },
   });
   log.info({ userId }, "password reset completed");
 

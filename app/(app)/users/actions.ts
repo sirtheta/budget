@@ -53,9 +53,18 @@ export async function saveUserAction(
         where: { id },
         data: {
           ...parsed.data,
-          ...(password ? { passwordHash: await hash(password, bcryptRounds) } : {}),
+          // An admin-set password revokes that user's existing sessions and any
+          // reset link still sitting in their inbox — same reasoning as a
+          // self-service reset (see User.sessionEpoch).
+          ...(password
+            ? {
+                passwordHash: await hash(password, bcryptRounds),
+                sessionEpoch: { increment: 1 },
+              }
+            : {}),
         },
       });
+      if (password) await prisma.passwordResetToken.deleteMany({ where: { userId: id } });
       await logAudit(session, "UPDATE", "User", id, { email: parsed.data.email });
     } else {
       const created = await prisma.user.create({

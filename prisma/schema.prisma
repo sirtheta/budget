@@ -22,6 +22,14 @@ model User {
   role         UserRole @default(Viewer)
   isActive     Boolean  @default(true)
 
+  // Incremented whenever the credentials change (password reset, own password
+  // change, admin-set password, 2FA disabled). Sessions are JWTs, so there is
+  // no server-side session table to delete from: the token carries the epoch it
+  // was issued under and lib/auth.ts rejects it once this value has moved on.
+  // Without it, resetting a password left a stolen session valid for the rest
+  // of SESSION_MAX_AGE_SEC — which defeats the point of resetting it.
+  sessionEpoch Int @default(0)
+
   // TOTP secret, AES-encrypted at rest (see lib/crypto.ts). Set as soon as
   // setup starts but only trusted once twoFactorEnabled is true — an
   // unconfirmed secret must not let a stale setup attempt grant access.

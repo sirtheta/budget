@@ -4,13 +4,40 @@ import { config } from "@/lib/config";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SettingsForm } from "./settings-form";
+import type { EditableSettings } from "./types";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   await requireAdmin();
 
-  const settings = await prisma.systemSettings.findUnique({ where: { id: 1 } });
+  // Explicit select, without smtpPassword: the row is passed to a Client
+  // Component, so anything selected here is serialized into the RSC payload.
+  // The stored credential stays on the server; the form only learns whether
+  // one exists (hasSmtpPassword below).
+  const stored = await prisma.systemSettings.findUnique({
+    where: { id: 1 },
+    select: {
+      currency: true,
+      smtpHost: true,
+      smtpPort: true,
+      smtpUser: true,
+      smtpFromName: true,
+      smtpFromAddress: true,
+      smtpPassword: true,
+    },
+  });
+  const settings: EditableSettings | null = stored
+    ? {
+        currency: stored.currency,
+        smtpHost: stored.smtpHost,
+        smtpPort: stored.smtpPort,
+        smtpUser: stored.smtpUser,
+        smtpFromName: stored.smtpFromName,
+        smtpFromAddress: stored.smtpFromAddress,
+      }
+    : null;
+
   const [transactionCount, accountCount, categoryCount] = await Promise.all([
     prisma.transaction.count(),
     prisma.account.count(),
@@ -21,7 +48,7 @@ export default async function SettingsPage() {
     <>
       <PageHeader title="Einstellungen" />
 
-      <SettingsForm settings={settings} hasSmtpPassword={!!settings?.smtpPassword} />
+      <SettingsForm settings={settings} hasSmtpPassword={!!stored?.smtpPassword} />
 
       <div className="grid gap-6 md:grid-cols-2 mt-6">
         <Card>

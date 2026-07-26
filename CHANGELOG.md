@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/sirtheta/budget/compare/budget-v0.1.1...budget-v0.1.2) (2026-07-26)
+
+
+### Bug Fixes
+
+* **docker:** remove dead COPY of nonexistent public directory ([3f3b360](https://github.com/sirtheta/budget/commit/3f3b36021fb8533c48d0536bfb495c5f3376629c))
+
 ## [0.1.1](https://github.com/sirtheta/budget/compare/budget-v0.1.0...budget-v0.1.1) (2026-07-26)
 
 

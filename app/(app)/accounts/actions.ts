@@ -28,6 +28,7 @@ const accountSchema = z.object({
     .transform((value) => value || null),
   openingBalance: z.string(),
   btcAmount: z.string(),
+  btcCostBasis: z.string(),
   color: z.string().trim().max(20).optional(),
   excludeFromBudget: z.boolean(),
   notes: z.string().trim().max(500).optional(),
@@ -40,6 +41,7 @@ function readForm(formData: FormData) {
     iban: formData.get("iban") ?? "",
     openingBalance: String(formData.get("openingBalance") ?? "0"),
     btcAmount: String(formData.get("btcAmount") ?? "0"),
+    btcCostBasis: String(formData.get("btcCostBasis") ?? ""),
     color: formData.get("color") ?? undefined,
     excludeFromBudget: formData.get("excludeFromBudget") === "on",
     notes: formData.get("notes") ?? undefined,
@@ -59,6 +61,7 @@ export async function saveAccountAction(
 
   let openingBalanceCents = 0;
   let btcAmount: number | null = null;
+  let btcCostBasisCents: number | null = null;
   let iban: string | null = parsed.data.iban;
 
   if (isCrypto) {
@@ -66,6 +69,12 @@ export async function saveAccountAction(
     btcAmount = raw === "" ? 0 : Number(raw);
     if (!Number.isFinite(btcAmount) || btcAmount < 0) {
       return { error: "BTC-Bestand ist keine gültige Zahl." };
+    }
+    const costRaw = parsed.data.btcCostBasis.trim();
+    if (costRaw !== "") {
+      const cents = parseMoney(costRaw);
+      if (cents === null) return { error: "Einstandswert ist keine gültige Zahl." };
+      btcCostBasisCents = cents;
     }
     iban = null; // crypto wallets don't have one, and IBAN is unique
   } else {
@@ -83,6 +92,7 @@ export async function saveAccountAction(
     iban,
     openingBalanceCents,
     btcAmount,
+    btcCostBasisCents,
     color: parsed.data.color || null,
     excludeFromBudget: parsed.data.excludeFromBudget,
     notes: parsed.data.notes || null,

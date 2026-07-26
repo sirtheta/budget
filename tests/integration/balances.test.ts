@@ -1,8 +1,15 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { accountBalance, accountBalances, balanceAsOf, netWorthCents } from "@/lib/balances";
 import { createTransfer, deleteTransfer, recordBtcPurchase } from "@/lib/transactions";
 import { createTestDb, seedBasics } from "./helpers";
+
+// Deterministic rate so gain/loss assertions don't depend on the live
+// CoinGecko response (or a network call in CI at all).
+vi.mock("@/lib/crypto-price", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/crypto-price")>();
+  return { ...actual, btcChfRate: vi.fn().mockResolvedValue(60000) };
+});
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -150,6 +157,7 @@ describe("bitcoin purchases", () => {
 
     const updated = await prisma.account.findUniqueOrThrow({ where: { id: wallet.id } });
     expect(updated.btcAmount).toBeCloseTo(0.00050123, 8);
+    expect(updated.btcCostBasisCents).toBe(5000);
   });
 
   it("accumulates across repeated purchases rather than overwriting", async () => {
@@ -174,6 +182,38 @@ describe("bitcoin purchases", () => {
 
     const updated = await prisma.account.findUniqueOrThrow({ where: { id: wallet.id } });
     expect(updated.btcAmount).toBeCloseTo(0.0003, 8);
+    expect(updated.btcCostBasisCents).toBe(10000);
+  });
+
+  it("reports gain/loss against the live rate once a purchase is recorded", async () => {
+    const wallet = await prisma.account.create({ data: { name: "Ledger", type: "Crypto" } });
+
+    await recordBtcPurchase(prisma, {
+      sourceAccountId: fixtures.account.id,
+      cryptoAccountId: wallet.id,
+      date: "2026-01-06",
+      chfAmountCents: 5000, // 50 CHF paid
+      btcAmount: 0.001,
+      description: "Kauf",
+    });
+
+    // Mocked rate is 60'000 CHF/BTC, so 0.001 BTC is worth 60 CHF now.
+    const balances = await accountBalances(prisma);
+    const balance = balances.find((b) => b.id === wallet.id)!;
+    expect(balance.btcCostBasisCents).toBe(5000);
+    expect(balance.balanceCents).toBe(6000);
+    expect(balance.btcGainLossCents).toBe(1000);
+  });
+
+  it("hides gain/loss for a wallet with no recorded cost basis", async () => {
+    const wallet = await prisma.account.create({
+      data: { name: "Altbestand", type: "Crypto", btcAmount: 0.01 },
+    });
+
+    const balances = await accountBalances(prisma);
+    const balance = balances.find((b) => b.id === wallet.id)!;
+    expect(balance.btcCostBasisCents).toBeNull();
+    expect(balance.btcGainLossCents).toBeNull();
   });
 
   it("refuses a non-positive CHF amount", async () => {

@@ -33,6 +33,7 @@ CREATE TABLE "Account" (
     "iban" TEXT,
     "openingBalanceCents" INTEGER NOT NULL DEFAULT 0,
     "btcAmount" REAL,
+    "btcCostBasisCents" INTEGER,
     "color" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,

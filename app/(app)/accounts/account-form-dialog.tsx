@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Pencil, Plus } from "lucide-react";
 import type { Account } from "@prisma/client";
 import { AccountType } from "@prisma/client";
 import { saveAccountAction } from "./actions";
@@ -27,13 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export function AccountFormDialog({
-  account,
-  trigger,
-}: {
-  account?: Account;
-  trigger: React.ReactNode;
-}) {
+export function AccountFormDialog({ account }: { account?: Account }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useDialogFormAction(saveAccountAction, {
     onSuccess: () => setOpen(false),
@@ -43,7 +38,17 @@ export function AccountFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>
+        {account ? (
+          <Button variant="ghost" size="icon" aria-label="Konto bearbeiten">
+            <Pencil className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button>
+            <Plus className="h-4 w-4" /> Neues Konto
+          </Button>
+        )}
+      </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{account ? "Konto bearbeiten" : "Neues Konto"}</DialogTitle>
@@ -106,6 +111,25 @@ export function AccountFormDialog({
                   defaultValue={account?.color ?? "#6366f1"}
                   className="h-9 p-1"
                 />
+              </div>
+              <div className="col-span-2 flex flex-col gap-2">
+                <Label htmlFor="btcCostBasis">Einstandswert (CHF, optional)</Label>
+                <Input
+                  id="btcCostBasis"
+                  name="btcCostBasis"
+                  inputMode="decimal"
+                  defaultValue={
+                    account?.btcCostBasisCents != null
+                      ? (account.btcCostBasisCents / 100).toFixed(2)
+                      : ""
+                  }
+                  placeholder="z. B. 500.00"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Total tatsächlich bezahlter CHF-Betrag für den aktuellen BTC-Bestand. Nur nötig,
+                  um Gewinn/Verlust für einen Bestand anzuzeigen, der nicht über den
+                  Bitcoin-Kauf-Dialog erfasst wurde. Wird durch spätere Käufe automatisch erhöht.
+                </p>
               </div>
             </div>
           ) : (

@@ -209,7 +209,7 @@ export async function recordBtcPurchase(
     // so two concurrent purchases (double-click, two tabs) could both start
     // from the same value and the second write would silently discard the
     // first's BTC.
-    prisma.$executeRaw`UPDATE "Account" SET "btcAmount" = COALESCE("btcAmount", 0) + ${input.btcAmount} WHERE "id" = ${input.cryptoAccountId}`,
+    prisma.$executeRaw`UPDATE "Account" SET "btcAmount" = COALESCE("btcAmount", 0) + ${input.btcAmount}, "btcCostBasisCents" = COALESCE("btcCostBasisCents", 0) + ${input.chfAmountCents} WHERE "id" = ${input.cryptoAccountId}`,
   ]);
 
   return transaction;

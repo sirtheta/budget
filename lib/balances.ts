@@ -15,6 +15,10 @@ export interface AccountBalance {
   btcAmount: number | null;
   /** Crypto accounts only; null if the rate could not be fetched. */
   btcRateChf: number | null;
+  /** Crypto accounts only; CHF paid for the held BTC, null until a purchase is recorded. */
+  btcCostBasisCents: number | null;
+  /** Crypto accounts only; balanceCents minus cost basis, null if either is unknown. */
+  btcGainLossCents: number | null;
 }
 
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
@@ -54,6 +58,8 @@ export async function accountBalances(
   return accounts.map((account) => {
     if (account.type === "Crypto") {
       const btcAmount = account.btcAmount ?? 0;
+      const balanceCents = btcToCents(btcAmount, rate) ?? 0;
+      const btcCostBasisCents = account.btcCostBasisCents ?? null;
       return {
         id: account.id,
         name: account.name,
@@ -61,9 +67,12 @@ export async function accountBalances(
         color: colorFor(account.id, account.color),
         excludeFromBudget: account.excludeFromBudget,
         openingBalanceCents: 0,
-        balanceCents: btcToCents(btcAmount, rate) ?? 0,
+        balanceCents,
         btcAmount,
         btcRateChf: rate,
+        btcCostBasisCents,
+        btcGainLossCents:
+          btcCostBasisCents !== null && rate !== null ? balanceCents - btcCostBasisCents : null,
       };
     }
     return {
@@ -76,6 +85,8 @@ export async function accountBalances(
       balanceCents: account.openingBalanceCents + (byAccount.get(account.id) ?? 0),
       btcAmount: null,
       btcRateChf: null,
+      btcCostBasisCents: null,
+      btcGainLossCents: null,
     };
   });
 }

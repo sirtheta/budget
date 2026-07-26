@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { toast } from "sonner";
-import { Eye, EyeOff, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Eye, EyeOff, MoreHorizontal, Trash2 } from "lucide-react";
 import type { Account } from "@prisma/client";
 import { deleteAccountAction, toggleAccountActiveAction } from "./actions";
 import { AccountFormDialog } from "./account-form-dialog";
@@ -38,14 +38,7 @@ export function AccountRowActions({ account }: { account: Account }) {
 
   return (
     <div className="flex justify-end">
-      <AccountFormDialog
-        account={account}
-        trigger={
-          <Button variant="ghost" size="icon" aria-label="Konto bearbeiten">
-            <Pencil className="h-4 w-4" />
-          </Button>
-        }
-      />
+      <AccountFormDialog account={account} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" aria-label="Weitere Aktionen" disabled={pending}>

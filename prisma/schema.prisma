@@ -88,6 +88,11 @@ model Account {
   // balance is this times the live rate (see lib/crypto-price.ts), not
   // openingBalanceCents + transaction sum.
   btcAmount Float?
+  // Crypto accounts only: CHF actually paid for the BTC currently held (incl.
+  // fees), in Rappen. Null until a purchase is recorded or the user backfills
+  // it for a wallet that predates this app — gain/loss stays hidden rather
+  // than comparing today's value against an invented cost of zero.
+  btcCostBasisCents Int?
   // Hex colour for charts; falls back to the palette in lib/colors.ts.
   color               String?
   sortOrder           Int     @default(0)

@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
 import { config } from "@/lib/config";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { clientIp } from "@/lib/client-ip";
 import { createPasswordResetToken } from "@/lib/password-reset";
 import { sendMail } from "@/lib/email";
 import { appOrigin } from "@/lib/origin";
@@ -27,11 +28,15 @@ export async function requestPasswordResetAction(
   if (!parsed.success) return { error: "Ungültige E-Mail-Adresse." };
   const email = parsed.data;
 
-  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  // The per-IP bucket only applies when the address can be trusted; the
+  // per-email one is what actually caps mail sent to any single account.
+  const ip = clientIp(await headers());
   const emailAllowed = checkRateLimit(`pwreset:${email.toLowerCase()}`, { maxAttempts: 3 });
-  const ipAllowed = checkRateLimit(`pwreset-ip:${ip}`, {
-    maxAttempts: config.rateLimit.maxAttempts * 10,
-  });
+  const ipAllowed =
+    ip === null ||
+    checkRateLimit(`pwreset-ip:${ip}`, {
+      maxAttempts: config.rateLimit.maxAttempts * 10,
+    });
   if (!emailAllowed || !ipAllowed) {
     log.warn({ email, ip }, "password reset blocked: rate limit exceeded");
     return { success: true };

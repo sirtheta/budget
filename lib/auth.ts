@@ -9,6 +9,7 @@ import { decryptSecret } from "@/lib/crypto";
 import { verifyTwoFactorToken, consumeBackupCode } from "@/lib/two-factor";
 import logger from "@/lib/logger";
 import { checkRateLimit, resetRateLimit } from "@/lib/rate-limit";
+import { clientIp } from "@/lib/client-ip";
 import { config } from "@/lib/config";
 
 const log = logger.child({ module: "auth" });
@@ -46,12 +47,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // so "User@x.ch" and "user@x.ch " share one bucket.
         const rateLimitKey = `login:${email.trim().toLowerCase()}`;
         // Broader per-IP bucket: limits spraying many accounts from one IP
-        // without letting one IP lock out a shared office network.
-        const ip =
-          request?.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-        const ipAllowed = checkRateLimit(`login-ip:${ip}`, {
-          maxAttempts: config.rateLimit.maxAttempts * 10,
-        });
+        // without letting one IP lock out a shared office network. Only applied
+        // when the address is trustworthy — see lib/client-ip.ts.
+        const ip = clientIp(request?.headers);
+        const ipAllowed =
+          ip === null ||
+          checkRateLimit(`login-ip:${ip}`, {
+            maxAttempts: config.rateLimit.maxAttempts * 10,
+          });
         if (!checkRateLimit(rateLimitKey) || !ipAllowed) {
           log.warn({ email, ip }, "login blocked: rate limit exceeded");
           return null;

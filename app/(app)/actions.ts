@@ -6,6 +6,7 @@ import { signOut } from "@/lib/auth";
 import { requireSession } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { bcryptRounds } from "@/lib/password";
+import { isRateLimited, recordFailedAttempt, resetRateLimit } from "@/lib/rate-limit";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
 import {
   generateTwoFactorSecret,
@@ -18,6 +19,14 @@ import prisma from "@/lib/prisma";
 
 export async function signOutAction() {
   await signOut({ redirectTo: "/login" });
+}
+
+/**
+ * Shared throttle for the two actions that verify the account's own password.
+ * One budget for both, so guessing can't simply alternate between them.
+ */
+function passwordCheckKey(userId: number): string {
+  return `password-check:${userId}`;
 }
 
 export async function changeOwnPasswordAction(
@@ -36,10 +45,22 @@ export async function changeOwnPasswordAction(
     return { error: "Neues Passwort muss mindestens 8 Zeichen lang sein." };
   }
 
+  // The current-password check is a password oracle, so it gets the same
+  // throttling as login: without it a stolen session could sit here and guess
+  // the password it needs to disable 2FA or change the address on the account.
+  // Keyed per user and counting only failures, so an honest typo-then-retry
+  // isn't punished and one account can't throttle another.
+  const limitKey = passwordCheckKey(userId);
+  if (isRateLimited(limitKey)) {
+    return { error: "Zu viele Versuche. Bitte später erneut versuchen." };
+  }
+
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || !(await compare(currentPassword, user.passwordHash))) {
+    recordFailedAttempt(limitKey);
     return { error: "Aktuelles Passwort ist falsch." };
   }
+  resetRateLimit(limitKey);
 
   await prisma.user.update({
     where: { id: userId },
@@ -130,11 +151,18 @@ export async function disableTwoFactorAction(
   const session = await requireSession();
   const userId = parseInt(session.user.id, 10);
 
+  const limitKey = passwordCheckKey(userId);
+  if (isRateLimited(limitKey)) {
+    return { error: "Zu viele Versuche. Bitte später erneut versuchen." };
+  }
+
   const password = String(formData.get("password") ?? "");
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || !(await compare(password, user.passwordHash))) {
+    recordFailedAttempt(limitKey);
     return { error: "Passwort ist falsch." };
   }
+  resetRateLimit(limitKey);
 
   await prisma.user.update({
     where: { id: userId },

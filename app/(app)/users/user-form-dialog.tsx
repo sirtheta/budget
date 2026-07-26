@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
+import type { UserListItem } from "./types";
 import { saveUserAction } from "./actions";
 import { useDialogFormAction } from "@/components/use-dialog-form";
 import {
@@ -38,7 +38,13 @@ export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
   Viewer: "Darf alles ansehen, aber nichts ändern",
 };
 
-export function UserFormDialog({ user, trigger }: { user?: User; trigger: React.ReactNode }) {
+export function UserFormDialog({
+  user,
+  trigger,
+}: {
+  user?: UserListItem;
+  trigger: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useDialogFormAction(saveUserAction, {
     onSuccess: () => setOpen(false),

@@ -3,7 +3,7 @@
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { Eye, EyeOff, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import type { User } from "@prisma/client";
+import type { UserListItem } from "./types";
 import { deleteUserAction, toggleUserActiveAction } from "./actions";
 import { UserFormDialog } from "./user-form-dialog";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-export function UserRowActions({ user, isSelf }: { user: User; isSelf: boolean }) {
+export function UserRowActions({ user, isSelf }: { user: UserListItem; isSelf: boolean }) {
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
 

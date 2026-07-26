@@ -22,7 +22,13 @@ export default async function UsersPage() {
   const session = await requireAdmin();
   const ownId = parseInt(session.user.id, 10);
 
-  const users = await prisma.user.findMany({ orderBy: [{ isActive: "desc" }, { name: "asc" }] });
+  // Explicit select: these rows are passed to Client Components, so anything
+  // listed here travels to the browser in the RSC payload. Never widen this to
+  // the whole row — it carries passwordHash and the 2FA secret/backup codes.
+  const users = await prisma.user.findMany({
+    select: { id: true, email: true, name: true, role: true, isActive: true },
+    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+  });
 
   return (
     <>

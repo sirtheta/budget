@@ -7,7 +7,7 @@ import { UserRole } from "@prisma/client";
 import { dummyCompare } from "@/lib/password";
 import { decryptSecret } from "@/lib/crypto";
 import { verifyTwoFactorToken, consumeBackupCode } from "@/lib/two-factor";
-import logger from "@/lib/logger";
+import logger, { maskEmail } from "@/lib/logger";
 import { checkRateLimit, resetRateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/client-ip";
 import { config } from "@/lib/config";
@@ -56,7 +56,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             maxAttempts: config.rateLimit.maxAttempts * 10,
           });
         if (!checkRateLimit(rateLimitKey) || !ipAllowed) {
-          log.warn({ email, ip }, "login blocked: rate limit exceeded");
+          log.warn({ email: maskEmail(email), ip }, "login blocked: rate limit exceeded");
           return null;
         }
 
@@ -65,13 +65,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           // Equalize response time with the real password check so the
           // duration does not reveal whether the email exists.
           await dummyCompare(password);
-          log.warn({ email }, "login failed: user not found or inactive");
+          log.warn({ email: maskEmail(email) }, "login failed: user not found or inactive");
           return null;
         }
 
         const passwordValid = await compare(password, user.passwordHash);
         if (!passwordValid) {
-          log.warn({ email }, "login failed: wrong password");
+          log.warn({ email: maskEmail(email) }, "login failed: wrong password");
           return null;
         }
 
@@ -83,19 +83,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (!totpValid) {
             const backup = await consumeBackupCode(user.twoFactorBackupCodes, code);
             if (!backup?.ok) {
-              log.warn({ email }, "login failed: invalid 2FA code");
+              log.warn({ email: maskEmail(email) }, "login failed: invalid 2FA code");
               throw new InvalidTwoFactorCodeError();
             }
             await prisma.user.update({
               where: { id: user.id },
               data: { twoFactorBackupCodes: backup.remaining },
             });
-            log.info({ email, userId: user.id }, "login: backup code consumed");
+            log.info({ email: maskEmail(email), userId: user.id }, "login: backup code consumed");
           }
         }
 
         resetRateLimit(rateLimitKey);
-        log.info({ email, userId: user.id }, "login success");
+        log.info({ email: maskEmail(email), userId: user.id }, "login success");
         return {
           id: String(user.id),
           name: user.name,

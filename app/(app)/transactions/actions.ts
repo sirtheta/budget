@@ -10,6 +10,9 @@ import { parseMoney } from "@/lib/money";
 import { isValidDateString } from "@/lib/date";
 import { applyAutoTransfer, createTransfer, deleteTransfer, updateTransfer } from "@/lib/transactions";
 import { matchRule } from "@/lib/import/rules";
+import logger from "@/lib/logger";
+
+const log = logger.child({ module: "transactions" });
 
 export type ActionState = { error?: string; success?: boolean; autoApplied?: number };
 
@@ -207,6 +210,7 @@ export async function saveTransferAction(
       await logAudit(session, "CREATE", "Transaction", outgoing.id, { transfer: true, ...input });
     }
   } catch (err) {
+    log.error({ err, groupId: groupId ? String(groupId) : undefined }, "Transfer failed");
     return { error: err instanceof Error ? err.message : "Umbuchung fehlgeschlagen." };
   }
 
@@ -248,6 +252,7 @@ export async function convertToTransferAction(
       targetAccountId: parsed.data.targetAccountId,
     });
   } catch (err) {
+    log.error({ err, transactionId: parsed.data.id }, "Convert to transfer failed");
     return { error: err instanceof Error ? err.message : "Umwandlung fehlgeschlagen." };
   }
 

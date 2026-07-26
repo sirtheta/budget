@@ -3,6 +3,8 @@ export async function register() {
     const { validateEnv } = await import("@/lib/env");
     validateEnv();
     const { default: prisma } = await import("@/lib/prisma");
+    const { default: logger } = await import("@/lib/logger");
+    const log = logger.child({ module: "instrumentation" });
 
     const { startRecurringScheduler } = await import("@/lib/recurring");
     startRecurringScheduler();
@@ -17,8 +19,8 @@ export async function register() {
       const forceExit = setTimeout(() => process.exit(0), 5000);
       prisma
         .$disconnect()
-        .then(() => console.log("[instrumentation] DB connection closed, WAL checkpointed."))
-        .catch((err) => console.error("[instrumentation] Error during DB disconnect:", err))
+        .then(() => log.info("DB connection closed, WAL checkpointed."))
+        .catch((err) => log.error({ err }, "Error during DB disconnect"))
         .finally(() => {
           clearTimeout(forceExit);
           process.exit(0);

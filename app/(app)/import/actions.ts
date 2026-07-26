@@ -106,6 +106,7 @@ export async function previewImportAction(
       statement = parseCamt053(text);
     }
   } catch (err) {
+    log.warn({ err, format }, "Statement parse failed");
     return { error: err instanceof Error ? err.message : "Die Datei konnte nicht gelesen werden." };
   }
 

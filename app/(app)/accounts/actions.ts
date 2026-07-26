@@ -9,6 +9,9 @@ import { logAudit } from "@/lib/audit";
 import { parseMoney } from "@/lib/money";
 import { recordBtcPurchase } from "@/lib/transactions";
 import { isValidDateString } from "@/lib/date";
+import logger from "@/lib/logger";
+
+const log = logger.child({ module: "accounts" });
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -187,6 +190,7 @@ export async function recordBtcPurchaseAction(
       cryptoAccountId,
     });
   } catch (err) {
+    log.error({ err, sourceAccountId, cryptoAccountId }, "BTC purchase failed");
     return { error: err instanceof Error ? err.message : "Kauf konnte nicht erfasst werden." };
   }
 

@@ -3,8 +3,8 @@
 import { useActionState, useEffect, useTransition } from "react";
 import { toast } from "sonner";
 import { DatabaseBackup, Mail } from "lucide-react";
-import type { SystemSettings } from "@prisma/client";
 import { runBackupNowAction, saveSettingsAction, sendTestMailAction } from "./actions";
+import type { EditableSettings } from "./types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,7 @@ export function SettingsForm({
   settings,
   hasSmtpPassword,
 }: {
-  settings: SystemSettings | null;
+  settings: EditableSettings | null;
   /** Whether a password is stored; the value itself never leaves the server. */
   hasSmtpPassword: boolean;
 }) {

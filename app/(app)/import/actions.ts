@@ -9,7 +9,7 @@ import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
 import { addDays, isValidDateString } from "@/lib/date";
 import { parseCamt053 } from "@/lib/import/camt";
-import { detectDelimiter, parseCsvStatement, previewRows } from "@/lib/import/csv";
+import { detectDelimiter, parseCsvStatement, previewRows, type CsvParseResult } from "@/lib/import/csv";
 import { withHashes } from "@/lib/import/dedupe";
 import { matchRule } from "@/lib/import/rules";
 import {
@@ -47,6 +47,8 @@ export interface ImportPreview {
   format: ImportFormat;
   rows: PreviewRow[];
   warnings: string[];
+  /** CSV rows that couldn't be interpreted, with the per-row reason. */
+  rejectedRows: CsvParseResult["rejectedRows"];
   duplicateCount: number;
   uncategorizedCount: number;
   closingBalanceCents: number | null;
@@ -86,13 +88,16 @@ export async function previewImportAction(
   const format = formData.get("format") === "Csv" ? ImportFormat.Csv : ImportFormat.Camt053;
 
   let statement: ParsedStatement;
+  let rejectedRows: CsvParseResult["rejectedRows"] = [];
   try {
     if (format === ImportFormat.Csv) {
       const mappingId = parseInt(String(formData.get("mappingId") ?? ""), 10);
       if (!Number.isInteger(mappingId)) return { error: "Bitte ein CSV-Mapping auswählen." };
       const mapping = await prisma.csvMapping.findUnique({ where: { id: mappingId } });
       if (!mapping) return { error: "CSV-Mapping nicht gefunden." };
-      statement = parseCsvStatement(text, mapping);
+      const csvResult = parseCsvStatement(text, mapping);
+      statement = csvResult;
+      rejectedRows = csvResult.rejectedRows;
     } else {
       statement = parseCamt053(text);
     }
@@ -192,6 +197,7 @@ export async function previewImportAction(
       format,
       rows,
       warnings: statement.warnings,
+      rejectedRows,
       duplicateCount: rows.length - fresh.length,
       uncategorizedCount: fresh.filter(
         (row) => row.categoryId === null && row.transferAccountId === null && !row.isAdopted

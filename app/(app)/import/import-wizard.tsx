@@ -314,10 +314,21 @@ export function ImportWizard({
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {preview.warnings.map((warning, index) => (
-              <p key={index} className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                {warning}
-              </p>
+              <div key={index} className="flex flex-col gap-1 text-sm text-amber-600 dark:text-amber-400">
+                <p className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  {warning}
+                </p>
+                {preview.rejectedRows.length > 0 && (
+                  <ul className="ml-6 list-disc text-xs text-muted-foreground">
+                    {preview.rejectedRows.map((row) => (
+                      <li key={row.line}>
+                        Zeile {row.line}: {row.reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             ))}
 
             {preview.balanceDeltaCents !== null && (

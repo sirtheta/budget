@@ -14,13 +14,32 @@ const log = logger.child({ module: "settings" });
 
 export type ActionState = { error?: string; success?: boolean };
 
+/**
+ * Rejects CR and LF. These values are interpolated into SMTP data (notably the
+ * `From` header), where a newline starts a new header — nodemailer encodes what
+ * it is given, but the malformed value should never get that far.
+ */
+const singleLine = (max: number, label: string) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .refine((value) => !/[\r\n]/.test(value), `${label} darf keine Zeilenumbrüche enthalten.`);
+
 const settingsSchema = z.object({
   currency: z.string().trim().length(3, "Währungscode besteht aus drei Buchstaben.").toUpperCase(),
-  smtpHost: z.string().trim().max(200).optional(),
+  smtpHost: singleLine(200, "SMTP-Server").optional(),
   smtpPort: z.coerce.number().int().min(1).max(65535).optional(),
-  smtpUser: z.string().trim().max(200).optional(),
-  smtpFromName: z.string().trim().max(100).optional(),
-  smtpFromAddress: z.string().trim().max(200).optional(),
+  smtpUser: singleLine(200, "SMTP-Benutzer").optional(),
+  smtpFromName: singleLine(100, "Absendername").optional(),
+  // Validated as an address, not just length: it goes into the From header, and
+  // a malformed sender is rejected by the receiving server anyway.
+  smtpFromAddress: z
+    .string()
+    .trim()
+    .max(200)
+    .email("Absenderadresse ist keine gültige E-Mail-Adresse.")
+    .optional(),
 });
 
 export async function saveSettingsAction(

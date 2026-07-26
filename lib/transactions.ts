@@ -200,10 +200,16 @@ export async function recordBtcPurchase(
         createdById: input.createdById ?? null,
       },
     }),
-    prisma.account.update({
-      where: { id: input.cryptoAccountId },
-      data: { btcAmount: (cryptoAccount.btcAmount ?? 0) + input.btcAmount },
-    }),
+    // Atomic, NULL-safe increment. `{ btcAmount: { increment } }` compiles to
+    // `SET btcAmount = btcAmount + ?`, which stays NULL for a wallet that has
+    // never held BTC before (Float? has no column default); COALESCE is what
+    // makes the first purchase land instead of vanishing. Doing this as a
+    // read (`cryptoAccount.btcAmount ?? 0`) then a plain `update` — the
+    // previous approach — read the balance before this transaction started,
+    // so two concurrent purchases (double-click, two tabs) could both start
+    // from the same value and the second write would silently discard the
+    // first's BTC.
+    prisma.$executeRaw`UPDATE "Account" SET "btcAmount" = COALESCE("btcAmount", 0) + ${input.btcAmount} WHERE "id" = ${input.cryptoAccountId}`,
   ]);
 
   return transaction;

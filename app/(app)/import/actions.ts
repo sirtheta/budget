@@ -154,7 +154,14 @@ export async function previewImportAction(
         candidate.date >= addDays(row.date, -TRANSFER_MATCH_TOLERANCE_DAYS) &&
         candidate.date <= addDays(row.date, TRANSFER_MATCH_TOLERANCE_DAYS)
     );
-    const rule = isAdopted ? null : matchRule(rules, row);
+    // Computed even when isAdopted: two fresh rows in the same batch can
+    // both fall within tolerance of a single not-yet-real leg, but only the
+    // first actually adopts it at commit time (findAdoptableTransferLeg
+    // there re-checks per row, now inside the same transaction as the
+    // create — see the atomicity fix above). The rule match travels with
+    // the row as the fallback categorisation for whichever row doesn't get
+    // adopted, instead of silently falling through to "ohne Kategorie".
+    const rule = matchRule(rules, row);
     return {
       date: row.date,
       amountCents: row.amountCents,

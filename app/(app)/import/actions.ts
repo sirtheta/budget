@@ -262,62 +262,74 @@ export async function commitImportAction(
     return { error: "Alle ausgewählten Buchungen sind bereits importiert." };
   }
 
-  const batch = await prisma.importBatch.create({
-    data: {
-      filename,
-      format,
-      accountId,
-      userId: parseInt(session.user.id, 10),
-      importedCount: fresh.length,
-      skippedCount: rows.length - fresh.length,
-      statementBalanceCents: parsed.data.closingBalanceCents,
-      periodFrom: parsed.data.periodFrom,
-      periodTo: parsed.data.periodTo,
-    },
-  });
-
-  // Each row may (a) adopt an existing synthetic transfer leg left behind by
-  // an earlier auto-transfer on this account, (b) trigger a new auto-transfer
-  // to another account, or (c) land as a plain, possibly categorised booking
-  // — see lib/transactions.ts for what each of those does.
   const userId = parseInt(session.user.id, 10);
-  for (const row of fresh) {
-    const adoptable = await findAdoptableTransferLeg(prisma, accountId, row.amountCents, row.date);
-    if (adoptable) {
-      await adoptTransferLeg(prisma, adoptable.id, {
-        date: row.date,
-        description: row.description,
-        counterparty: row.counterparty,
-        bankReference: row.bankReference,
-        importHash: row.hash,
-        importBatchId: batch.id,
-      });
-      continue;
-    }
 
-    const created = await prisma.transaction.create({
+  // The whole batch — including every row's adopt-or-create-and-transfer
+  // decision — runs as one transaction: a mid-loop failure (DB error,
+  // process kill) previously left a half-imported batch with no way back,
+  // since the old bulk `createMany` gave that guarantee but a per-row loop
+  // calling out to lib/transactions.ts (which needs to read state between
+  // rows, e.g. whether an earlier row in this same batch already claimed a
+  // synthetic transfer leg) does not, unless it's wrapped explicitly.
+  const batch = await prisma.$transaction(async (tx) => {
+    const created = await tx.importBatch.create({
       data: {
-        date: row.date,
-        amountCents: row.amountCents,
+        filename,
+        format,
         accountId,
-        categoryId: row.transferAccountId ? null : row.categoryId,
-        description: row.description,
-        counterparty: row.counterparty,
-        bankReference: row.bankReference,
-        importHash: row.hash,
-        importBatchId: batch.id,
-        source: "Import" as const,
-        createdById: userId,
+        userId,
+        importedCount: fresh.length,
+        skippedCount: rows.length - fresh.length,
+        statementBalanceCents: parsed.data.closingBalanceCents,
+        periodFrom: parsed.data.periodFrom,
+        periodTo: parsed.data.periodTo,
       },
     });
 
-    if (row.transferAccountId && row.transferAccountId !== accountId) {
-      await applyAutoTransfer(prisma, {
-        transactionId: created.id,
-        targetAccountId: row.transferAccountId,
+    // Each row may (a) adopt an existing synthetic transfer leg left behind
+    // by an earlier auto-transfer on this account, (b) trigger a new
+    // auto-transfer to another account, or (c) land as a plain, possibly
+    // categorised booking — see lib/transactions.ts for what each does.
+    for (const row of fresh) {
+      const adoptable = await findAdoptableTransferLeg(tx, accountId, row.amountCents, row.date);
+      if (adoptable) {
+        await adoptTransferLeg(tx, adoptable.id, {
+          date: row.date,
+          description: row.description,
+          counterparty: row.counterparty,
+          bankReference: row.bankReference,
+          importHash: row.hash,
+          importBatchId: created.id,
+        });
+        continue;
+      }
+
+      const transaction = await tx.transaction.create({
+        data: {
+          date: row.date,
+          amountCents: row.amountCents,
+          accountId,
+          categoryId: row.transferAccountId ? null : row.categoryId,
+          description: row.description,
+          counterparty: row.counterparty,
+          bankReference: row.bankReference,
+          importHash: row.hash,
+          importBatchId: created.id,
+          source: "Import" as const,
+          createdById: userId,
+        },
       });
+
+      if (row.transferAccountId && row.transferAccountId !== accountId) {
+        await applyAutoTransfer(tx, {
+          transactionId: transaction.id,
+          targetAccountId: row.transferAccountId,
+        });
+      }
     }
-  }
+
+    return created;
+  }, { timeout: 60_000 });
 
   await logAudit(session, "IMPORT", "Transaction", batch.id, {
     filename,

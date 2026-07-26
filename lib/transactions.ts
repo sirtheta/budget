@@ -1,6 +1,23 @@
 import { randomUUID } from "crypto";
-import type { PrismaClient, Transaction, TransactionSource } from "@prisma/client";
+import { Prisma, type PrismaClient, type Transaction, type TransactionSource } from "@prisma/client";
 import { addDays } from "@/lib/date";
+
+/**
+ * Accepted by the transfer-leg helpers below so they can run either
+ * standalone (the top-level `PrismaClient`) or nested inside a caller's own
+ * interactive transaction (a `Prisma.TransactionClient`) — see `atomic()`.
+ */
+export type Db = PrismaClient | Prisma.TransactionClient;
+
+/**
+ * Runs `fn` atomically. When `db` is the top-level client, wraps it in its
+ * own transaction; when `db` is already an interactive transaction, just
+ * runs `fn` directly against it — SQLite has no nested transactions, and the
+ * outer transaction already covers atomicity in that case.
+ */
+function atomic<T>(db: Db, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  return "$transaction" in db ? db.$transaction(fn) : fn(db);
+}
 
 /**
  * Transfers between the household's own accounts.
@@ -200,12 +217,12 @@ export async function recordBtcPurchase(
  * and a date within `TRANSFER_MATCH_TOLERANCE_DAYS`.
  */
 export function findAdoptableTransferLeg(
-  prisma: PrismaClient,
+  db: Db,
   accountId: number,
   amountCents: number,
   date: string
 ): Promise<Transaction | null> {
-  return prisma.transaction.findFirst({
+  return db.transaction.findFirst({
     where: {
       accountId,
       importHash: null,
@@ -227,7 +244,7 @@ export function findAdoptableTransferLeg(
  * is later imported for real.
  */
 export async function adoptTransferLeg(
-  prisma: PrismaClient,
+  db: Db,
   legId: number,
   realData: {
     date: string;
@@ -238,7 +255,7 @@ export async function adoptTransferLeg(
     importBatchId: number;
   }
 ): Promise<void> {
-  await prisma.transaction.update({
+  await db.transaction.update({
     where: { id: legId },
     data: { ...realData, source: "Import" },
   });
@@ -262,11 +279,8 @@ export interface AutoTransferInput {
  * statement can adopt it instead of creating a duplicate (see
  * `findAdoptableTransferLeg`).
  */
-export async function applyAutoTransfer(
-  prisma: PrismaClient,
-  input: AutoTransferInput
-): Promise<void> {
-  const source = await prisma.transaction.findUnique({ where: { id: input.transactionId } });
+export async function applyAutoTransfer(db: Db, input: AutoTransferInput): Promise<void> {
+  const source = await db.transaction.findUnique({ where: { id: input.transactionId } });
   if (!source) throw new Error("Buchung nicht gefunden.");
   if (source.transferGroupId) return;
   if (source.accountId === input.targetAccountId) {
@@ -276,7 +290,7 @@ export async function applyAutoTransfer(
   const counterpartAmount = -source.amountCents;
   const groupId = randomUUID();
 
-  const candidate = await prisma.transaction.findFirst({
+  const candidate = await db.transaction.findFirst({
     where: {
       accountId: input.targetAccountId,
       transferGroupId: null,
@@ -289,35 +303,28 @@ export async function applyAutoTransfer(
     orderBy: { date: "asc" },
   });
 
-  if (candidate) {
-    await prisma.$transaction([
-      prisma.transaction.update({
-        where: { id: source.id },
-        data: { transferGroupId: groupId, categoryId: null },
-      }),
-      prisma.transaction.update({
-        where: { id: candidate.id },
-        data: { transferGroupId: groupId, categoryId: null },
-      }),
-    ]);
-    return;
-  }
-
-  await prisma.$transaction([
-    prisma.transaction.update({
+  await atomic(db, async (tx) => {
+    await tx.transaction.update({
       where: { id: source.id },
       data: { transferGroupId: groupId, categoryId: null },
-    }),
-    prisma.transaction.create({
-      data: {
-        date: source.date,
-        amountCents: counterpartAmount,
-        accountId: input.targetAccountId,
-        description: source.description,
-        transferGroupId: groupId,
-        categoryId: null,
-        source: "Manual",
-      },
-    }),
-  ]);
+    });
+    if (candidate) {
+      await tx.transaction.update({
+        where: { id: candidate.id },
+        data: { transferGroupId: groupId, categoryId: null },
+      });
+    } else {
+      await tx.transaction.create({
+        data: {
+          date: source.date,
+          amountCents: counterpartAmount,
+          accountId: input.targetAccountId,
+          description: source.description,
+          transferGroupId: groupId,
+          categoryId: null,
+          source: "Manual",
+        },
+      });
+    }
+  });
 }

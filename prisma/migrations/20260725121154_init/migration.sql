@@ -6,6 +6,7 @@ CREATE TABLE "User" (
     "passwordHash" TEXT NOT NULL,
     "role" TEXT NOT NULL DEFAULT 'Viewer',
     "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "sessionEpoch" INTEGER NOT NULL DEFAULT 0,
     "twoFactorSecret" TEXT,
     "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false,
     "twoFactorBackupCodes" TEXT,

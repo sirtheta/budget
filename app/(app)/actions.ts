@@ -43,8 +43,16 @@ export async function changeOwnPasswordAction(
 
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash: await hash(newPassword, bcryptRounds) },
+    data: {
+      passwordHash: await hash(newPassword, bcryptRounds),
+      // Revokes older sessions (see User.sessionEpoch). This session goes with
+      // them, so the user is asked to sign in again within the minute.
+      sessionEpoch: { increment: 1 },
+    },
   });
+  // Any reset link still in an inbox was issued against the old password and
+  // must not survive a voluntary change.
+  await prisma.passwordResetToken.deleteMany({ where: { userId } });
   await logAudit(session, "UPDATE", "User", userId, { action: "changeOwnPassword" });
   return { success: true };
 }
@@ -130,7 +138,14 @@ export async function disableTwoFactorAction(
 
   await prisma.user.update({
     where: { id: userId },
-    data: { twoFactorEnabled: false, twoFactorSecret: null, twoFactorBackupCodes: null },
+    data: {
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+      twoFactorBackupCodes: null,
+      // Turning the second factor off weakens the account, so other sessions
+      // don't get to keep the access they hold.
+      sessionEpoch: { increment: 1 },
+    },
   });
   await logAudit(session, "UPDATE", "User", userId, { action: "disableTwoFactor" });
   return { success: true };

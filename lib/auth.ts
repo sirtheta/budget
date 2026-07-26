@@ -98,6 +98,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           email: user.email,
           role: user.role,
+          sessionEpoch: user.sessionEpoch,
         };
       },
     }),
@@ -115,13 +116,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = (user as { role: UserRole }).role;
+        token.sessionEpoch = (user as { sessionEpoch?: number }).sessionEpoch ?? 0;
         token.roleCheckedAt = Date.now();
         return token;
       }
-      // Re-validate against the DB so demotion, deactivation, or a profile
-      // edit (name/email) takes effect within a minute instead of only at
-      // JWT expiry (default 7 days) / next login. Returning null invalidates
-      // the session.
+      // Re-validate against the DB so demotion, deactivation, a credential
+      // change, or a profile edit (name/email) takes effect within a minute
+      // instead of only at JWT expiry (default 7 days) / next login. Returning
+      // null invalidates the session.
       const ROLE_RECHECK_MS = 60_000;
       const checkedAt = typeof token.roleCheckedAt === "number" ? token.roleCheckedAt : 0;
       if (Date.now() - checkedAt > ROLE_RECHECK_MS) {
@@ -129,10 +131,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!Number.isInteger(userId)) return null;
         const dbUser = await prisma.user.findUnique({
           where: { id: userId },
-          select: { role: true, isActive: true, name: true, email: true },
+          select: {
+            role: true,
+            isActive: true,
+            name: true,
+            email: true,
+            sessionEpoch: true,
+          },
         });
         if (!dbUser || !dbUser.isActive) {
           log.info({ userId: token.id }, "session invalidated: user missing or inactive");
+          return null;
+        }
+        // The password (or 2FA) changed after this token was issued. Whoever
+        // reset it did so to lock somebody out, so every older token dies —
+        // including, unavoidably, the one belonging to the person who changed
+        // it, since a JWT carries no per-session identity to spare.
+        const tokenEpoch = typeof token.sessionEpoch === "number" ? token.sessionEpoch : 0;
+        if (tokenEpoch !== dbUser.sessionEpoch) {
+          log.info({ userId: token.id }, "session invalidated: credentials changed");
           return null;
         }
         token.role = dbUser.role;

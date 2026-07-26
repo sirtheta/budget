@@ -11,7 +11,7 @@ import { matchInvoicePayment } from "@/lib/invoicing";
 import { addDays, isValidDateString } from "@/lib/date";
 import { parseCamt053 } from "@/lib/import/camt";
 import { detectDelimiter, parseCsvStatement, previewRows, type CsvParseResult } from "@/lib/import/csv";
-import { withHashes } from "@/lib/import/dedupe";
+import { verifyImportHash, withHashes } from "@/lib/import/dedupe";
 import { matchRule } from "@/lib/import/rules";
 import {
   TRANSFER_MATCH_TOLERANCE_DAYS,
@@ -20,6 +20,9 @@ import {
   findAdoptableTransferLeg,
 } from "@/lib/transactions";
 import type { ParsedStatement } from "@/lib/import/types";
+import logger from "@/lib/logger";
+
+const log = logger.child({ module: "import" });
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -258,6 +261,21 @@ export async function commitImportAction(
 
   const account = await prisma.account.findUnique({ where: { id: accountId } });
   if (!account) return { error: "Konto nicht gefunden." };
+
+  // The rows come back from the browser with the fingerprints the preview
+  // computed, so each one has to be re-derived from the row it claims to
+  // describe. An arbitrary hash written into the unique importHash index would
+  // reserve the fingerprint of a booking that hasn't arrived yet, and that
+  // booking would then be skipped as a duplicate on the statement it really
+  // appears on.
+  const tampered = rows.find((row) => !verifyImportHash(accountId, row, row.hash));
+  if (tampered) {
+    log.warn(
+      { accountId, date: tampered.date, amountCents: tampered.amountCents },
+      "import rejected: row fingerprint does not match its content"
+    );
+    return { error: "Die Import-Daten wurden verändert. Bitte die Datei erneut einlesen." };
+  }
 
   const existing = await prisma.transaction.findMany({
     where: { importHash: { in: rows.map((row) => row.hash) } },

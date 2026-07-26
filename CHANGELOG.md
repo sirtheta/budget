@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.4](https://github.com/sirtheta/budget/compare/budget-v0.1.3...budget-v0.1.4) (2026-07-26)
+
+
+### Features
+
+* **accounts:** show Bitcoin wallet gain/loss against cost basis ([e0b8ad7](https://github.com/sirtheta/budget/commit/e0b8ad7d41f6986a81e64bc8e02ff770612f38be))
+* **import:** suggest category from prior categorised transactions ([fb7c662](https://github.com/sirtheta/budget/commit/fb7c66267f60110a3333eb32cdd293fa889dec89))
+
+
+### Bug Fixes
+
+* **layout:** mark anti-flash inline scripts as JS data blocks ([c931183](https://github.com/sirtheta/budget/commit/c931183c4f1dabe46983ce4b78791e58f78f4f4e))
+
 ## [0.1.3](https://github.com/sirtheta/budget/compare/budget-v0.1.2...budget-v0.1.3) (2026-07-26)
 
 

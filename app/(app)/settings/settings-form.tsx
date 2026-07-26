@@ -43,7 +43,7 @@ export function SettingsForm({
               required
             />
             <p className="text-xs text-muted-foreground">
-              Wird nur für die Anzeige verwendet — die App rechnet einwährungsig.
+              Wird nur für die Anzeige verwendet — die App rechnet nur mit einer einzigen Währung.
             </p>
           </div>
         </CardContent>

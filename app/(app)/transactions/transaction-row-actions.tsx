@@ -27,7 +27,9 @@ export function TransactionRowActions({
   const remove = async () => {
     const message = transaction.transferGroupId
       ? "Umbuchung löschen? Beide Seiten werden entfernt."
-      : `Buchung "${transaction.description}" wirklich löschen?`;
+      : transaction.splitGroupId
+        ? "Aufgeteilte Buchung löschen? Alle Teile werden entfernt."
+        : `Buchung "${transaction.description}" wirklich löschen?`;
     if (!(await confirm({ description: message }))) return;
     startTransition(async () => {
       const result = await deleteTransactionAction(transaction.id);

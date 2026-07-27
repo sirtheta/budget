@@ -4,11 +4,19 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { CategoryKind } from "@prisma/client";
 import prisma from "@/lib/prisma";
-import { requireEditor } from "@/lib/permissions";
+import { requireEditor, requireSession } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { parseMoney } from "@/lib/money";
 import { isValidDateString } from "@/lib/date";
-import { applyAutoTransfer, createTransfer, deleteTransfer, updateTransfer } from "@/lib/transactions";
+import {
+  applyAutoTransfer,
+  createTransfer,
+  deleteTransfer,
+  mergeSplit,
+  splitTransaction,
+  updateTransfer,
+  type SplitPartInput,
+} from "@/lib/transactions";
 import { matchRule } from "@/lib/import/rules";
 import logger from "@/lib/logger";
 
@@ -101,6 +109,9 @@ export async function saveTransactionAction(
     if (!existing) return { error: "Buchung nicht gefunden." };
     if (existing.transferGroupId) {
       return { error: "Umbuchungen müssen über das Umbuchungs-Formular bearbeitet werden." };
+    }
+    if (existing.splitGroupId) {
+      return { error: "Aufgeteilte Buchungen müssen über das Aufteilen-Formular bearbeitet werden." };
     }
     await prisma.transaction.update({ where: { id }, data });
     await logAudit(session, "UPDATE", "Transaction", id, data);
@@ -245,6 +256,9 @@ export async function convertToTransferAction(
   const existing = await prisma.transaction.findUnique({ where: { id: parsed.data.id } });
   if (!existing) return { error: "Buchung nicht gefunden." };
   if (existing.transferGroupId) return { error: "Buchung ist bereits eine Umbuchung." };
+  if (existing.splitGroupId) {
+    return { error: "Aufgeteilte Buchungen können nicht in eine Umbuchung umgewandelt werden." };
+  }
 
   try {
     await applyAutoTransfer(prisma, {
@@ -336,6 +350,18 @@ export async function deleteTransactionAction(id: number): Promise<ActionState> 
       amountCents: existing.amountCents,
       description: existing.description,
     });
+  } else if (existing.splitGroupId) {
+    // Same reasoning as a transfer: deleting a single part would leave the
+    // remaining parts summing to less than what was actually booked.
+    const { count } = await prisma.transaction.deleteMany({
+      where: { splitGroupId: existing.splitGroupId },
+    });
+    await logAudit(session, "DELETE", "Transaction", id, {
+      split: true,
+      count,
+      date: existing.date,
+      description: existing.description,
+    });
   } else {
     await prisma.transaction.delete({ where: { id } });
     await logAudit(session, "DELETE", "Transaction", id, {
@@ -347,6 +373,79 @@ export async function deleteTransactionAction(id: number): Promise<ActionState> 
 
   revalidateAll();
   return { success: true };
+}
+
+const splitPartSchema = z.object({
+  categoryId: z.coerce.number().int(),
+  amountCents: z.coerce.number().int().positive(),
+});
+
+/**
+ * Splits (or re-splits) a booking across several categories — e.g. a 13th
+ * salary that arrives as one CAMT.053 booking but needs to be spread over
+ * two budget categories.
+ */
+export async function saveSplitAction(
+  _prevState: ActionState | undefined,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const id = parseInt(String(formData.get("id") ?? ""), 10);
+  if (!Number.isInteger(id)) return { error: "Buchung nicht gefunden." };
+
+  let rawParts: unknown;
+  try {
+    rawParts = JSON.parse(String(formData.get("parts") ?? "[]"));
+  } catch {
+    return { error: "Ungültige Aufteilung." };
+  }
+  const parsed = z.array(splitPartSchema).min(2).safeParse(rawParts);
+  if (!parsed.success) {
+    return { error: "Bitte mindestens 2 Kategorien mit gültigem Betrag angeben." };
+  }
+
+  let parts: SplitPartInput[];
+  try {
+    parts = parsed.data;
+    await splitTransaction(prisma, id, parts);
+  } catch (err) {
+    log.error({ err, id }, "Split failed");
+    return { error: err instanceof Error ? err.message : "Aufteilen fehlgeschlagen." };
+  }
+
+  await logAudit(session, "UPDATE", "Transaction", id, { action: "split", parts });
+
+  revalidateAll();
+  return { success: true };
+}
+
+/** Collapses a split booking back into a single, uncategorised booking. */
+export async function unsplitTransactionAction(splitGroupId: string): Promise<ActionState> {
+  const session = await requireEditor();
+
+  try {
+    const merged = await mergeSplit(prisma, splitGroupId);
+    await logAudit(session, "UPDATE", "Transaction", merged.id, { action: "unsplit" });
+  } catch (err) {
+    log.error({ err, splitGroupId }, "Unsplit failed");
+    return { error: err instanceof Error ? err.message : "Aufteilung aufheben fehlgeschlagen." };
+  }
+
+  revalidateAll();
+  return { success: true };
+}
+
+/** Loads the parts of a split booking, for prefilling the edit form. */
+export async function getSplitPartsAction(
+  splitGroupId: string
+): Promise<{ id: number; categoryId: number | null; amountCents: number }[]> {
+  await requireSession();
+  return prisma.transaction.findMany({
+    where: { splitGroupId },
+    orderBy: { id: "asc" },
+    select: { id: true, categoryId: true, amountCents: true },
+  });
 }
 
 /**

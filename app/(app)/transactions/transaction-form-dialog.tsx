@@ -1,11 +1,20 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { Plus, Trash2 } from "lucide-react";
 import type { Transaction } from "@prisma/client";
-import { convertToTransferAction, saveTransactionAction, saveTransferAction } from "./actions";
+import {
+  convertToTransferAction,
+  getSplitPartsAction,
+  saveSplitAction,
+  saveTransactionAction,
+  saveTransferAction,
+  unsplitTransactionAction,
+} from "./actions";
 import type { CategoryOption } from "@/lib/categories";
 import { formatDateCH } from "@/lib/date";
+import { parseMoney, splitEvenly } from "@/lib/money";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Combobox } from "@/components/ui/combobox";
 import { Money } from "@/components/money";
+import { useConfirm } from "@/components/confirm-dialog";
 import { cn } from "@/lib/utils";
 
 export interface AccountOption {
@@ -30,7 +40,7 @@ export interface AccountOption {
 
 const NO_CATEGORY = "none";
 
-type Mode = "booking" | "transfer";
+type Mode = "booking" | "transfer" | "split";
 
 export function TransactionFormDialog({
   transaction,
@@ -47,8 +57,15 @@ export function TransactionFormDialog({
   trigger: React.ReactNode;
 }) {
   const isTransfer = !!transaction?.transferGroupId;
+  const isSplit = !!transaction?.splitGroupId;
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<Mode>(isTransfer ? "transfer" : "booking");
+  const [mode, setMode] = useState<Mode>(isTransfer ? "transfer" : isSplit ? "split" : "booking");
+
+  const tabs: Array<[Mode, string]> = [
+    ["booking", "Einnahme / Ausgabe"],
+    ["transfer", "Umbuchung"],
+  ];
+  if (transaction) tabs.push(["split", "Aufteilen"]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen} modal={false}>
@@ -59,20 +76,17 @@ export function TransactionFormDialog({
           <DialogDescription>
             {mode === "booking"
               ? "Einnahme oder Ausgabe auf einem Konto."
-              : transaction && !isTransfer
-                ? "Ordnet dieser Buchung ein Gegenkonto zu, statt sie zu löschen und neu zu erfassen."
-                : "Verschiebung zwischen zwei eigenen Konten — zählt nicht als Ausgabe."}
+              : mode === "split"
+                ? "Teilt eine Buchung auf mehrere Kategorien auf, z. B. einen 13. Monatslohn."
+                : transaction && !isTransfer
+                  ? "Ordnet dieser Buchung ein Gegenkonto zu, statt sie zu löschen und neu zu erfassen."
+                  : "Verschiebung zwischen zwei eigenen Konten — zählt nicht als Ausgabe."}
           </DialogDescription>
         </DialogHeader>
 
-        {!isTransfer && (
+        {!isTransfer && !isSplit && (
           <div className="flex gap-1 rounded-lg bg-muted p-1">
-            {(
-              [
-                ["booking", "Einnahme / Ausgabe"],
-                ["transfer", "Umbuchung"],
-              ] as const
-            ).map(([value, label]) => (
+            {tabs.map(([value, label]) => (
               <button
                 key={value}
                 type="button"
@@ -96,6 +110,12 @@ export function TransactionFormDialog({
             accounts={accounts}
             categories={categories}
             today={today}
+            onDone={() => setOpen(false)}
+          />
+        ) : mode === "split" && transaction ? (
+          <SplitForm
+            transaction={transaction}
+            categories={categories}
             onDone={() => setOpen(false)}
           />
         ) : transaction && !isTransfer ? (
@@ -433,6 +453,237 @@ function TransferForm({
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+interface SplitRow {
+  categoryId: string;
+  /** Raw text as typed; parsed with parseMoney on every render. */
+  amount: string;
+}
+
+/**
+ * Splits one booking across several categories — e.g. a 13th salary that
+ * arrives as a single CAMT.053 booking but needs to be spread over two
+ * budget categories. Re-opening an already-split booking loads its existing
+ * parts (fetched by splitGroupId, since the row the user clicked is only one
+ * of several) so they can be adjusted rather than started over.
+ */
+function SplitForm({
+  transaction,
+  categories,
+  onDone,
+}: {
+  transaction: Transaction;
+  categories: CategoryOption[];
+  onDone: () => void;
+}) {
+  const [state, formAction, pending] = useActionState(saveSplitAction, undefined);
+  const isEditingSplit = !!transaction.splitGroupId;
+  const direction = transaction.amountCents < 0 ? "expense" : "income";
+  const visibleCategories = categories.filter((category) =>
+    direction === "income" ? category.kind === "Income" : category.kind === "Expense"
+  );
+
+  const [loading, setLoading] = useState(isEditingSplit);
+  const [totalCents, setTotalCents] = useState(Math.abs(transaction.amountCents));
+  const [rows, setRows] = useState<SplitRow[]>(
+    isEditingSplit
+      ? []
+      : [
+          {
+            categoryId: transaction.categoryId ? String(transaction.categoryId) : NO_CATEGORY,
+            amount: (Math.abs(transaction.amountCents) / 100).toFixed(2),
+          },
+          { categoryId: NO_CATEGORY, amount: "" },
+        ]
+  );
+
+  useEffect(() => {
+    if (!isEditingSplit || !transaction.splitGroupId) return;
+    let cancelled = false;
+    getSplitPartsAction(transaction.splitGroupId).then((parts) => {
+      if (cancelled) return;
+      setTotalCents(parts.reduce((sum, part) => sum + Math.abs(part.amountCents), 0));
+      setRows(
+        parts.map((part) => ({
+          categoryId: part.categoryId ? String(part.categoryId) : NO_CATEGORY,
+          amount: (Math.abs(part.amountCents) / 100).toFixed(2),
+        }))
+      );
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (state?.success) {
+      toast.success("Buchung aufgeteilt.");
+      onDone();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  const updateRow = (index: number, patch: Partial<SplitRow>) => {
+    setRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  };
+  const addRow = () => setRows((prev) => [...prev, { categoryId: NO_CATEGORY, amount: "" }]);
+  const removeRow = (index: number) =>
+    setRows((prev) => (prev.length > 2 ? prev.filter((_, i) => i !== index) : prev));
+  const distributeEvenly = () => {
+    const shares = splitEvenly(totalCents, rows.length);
+    setRows((prev) => prev.map((row, i) => ({ ...row, amount: (shares[i] / 100).toFixed(2) })));
+  };
+
+  const parsedAmounts = rows.map((row) => parseMoney(row.amount));
+  const sumCents = parsedAmounts.reduce((sum: number, cents) => sum + Math.abs(cents ?? 0), 0);
+  const remainingCents = totalCents - sumCents;
+  const allRowsValid =
+    parsedAmounts.every((cents) => cents !== null && cents !== 0) &&
+    rows.every((row) => row.categoryId !== NO_CATEGORY);
+  const canSubmit = !loading && allRowsValid && remainingCents === 0;
+
+  const partsJson = JSON.stringify(
+    rows.map((row, i) => ({
+      categoryId: row.categoryId === NO_CATEGORY ? null : parseInt(row.categoryId, 10),
+      amountCents: Math.abs(parsedAmounts[i] ?? 0),
+    }))
+  );
+
+  if (loading) {
+    return <p className="py-8 text-center text-sm text-muted-foreground">Lade Aufteilung…</p>;
+  }
+
+  return (
+    <form action={formAction} className="flex flex-col gap-4">
+      <input type="hidden" name="id" value={transaction.id} />
+      <input type="hidden" name="parts" value={partsJson} />
+
+      <p className="text-sm text-muted-foreground">
+        {formatDateCH(transaction.date)} · {transaction.description} ·{" "}
+        <Money cents={direction === "income" ? totalCents : -totalCents} colored />
+      </p>
+
+      <div className="flex flex-col gap-3">
+        {rows.map((row, index) => (
+          <div key={index} className="flex items-end gap-2">
+            <div className="flex flex-1 flex-col gap-2">
+              {index === 0 && <Label htmlFor={`split-category-${index}`}>Kategorie</Label>}
+              <Combobox
+                id={`split-category-${index}`}
+                value={row.categoryId}
+                onValueChange={(value) => updateRow(index, { categoryId: value })}
+                options={[
+                  { value: NO_CATEGORY, label: "Kategorie wählen" },
+                  ...visibleCategories.map((category) => ({
+                    value: String(category.id),
+                    label: category.label,
+                  })),
+                ]}
+                placeholder="Kategorie wählen"
+                searchPlaceholder="Kategorie suchen…"
+                emptyText="Keine Kategorie gefunden."
+              />
+            </div>
+            <div className="flex w-28 flex-col gap-2">
+              {index === 0 && <Label htmlFor={`split-amount-${index}`}>Betrag (CHF)</Label>}
+              <Input
+                id={`split-amount-${index}`}
+                inputMode="decimal"
+                placeholder="0.00"
+                value={row.amount}
+                onChange={(e) => updateRow(index, { amount: e.target.value })}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-9 shrink-0 text-destructive disabled:text-muted-foreground"
+              aria-label="Kategorie entfernen"
+              disabled={rows.length <= 2}
+              onClick={() => removeRow(index)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <Button type="button" variant="outline" size="sm" onClick={addRow}>
+          <Plus className="h-4 w-4" /> Kategorie hinzufügen
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={distributeEvenly}>
+          Gleichmässig aufteilen
+        </Button>
+      </div>
+
+      <p className={cn("text-sm", remainingCents === 0 ? "text-muted-foreground" : "text-destructive")}>
+        {remainingCents === 0
+          ? "Beträge ergeben zusammen die gebuchte Summe."
+          : `Noch zu verteilen: ${(remainingCents / 100).toFixed(2)} CHF`}
+      </p>
+
+      {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
+
+      <DialogFooter className="sm:justify-between">
+        {isEditingSplit && transaction.splitGroupId ? (
+          <UnsplitButton splitGroupId={transaction.splitGroupId} onDone={onDone} />
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" onClick={onDone}>
+            Abbrechen
+          </Button>
+          <Button type="submit" disabled={pending || !canSubmit}>
+            {pending ? "Speichern…" : "Aufteilen"}
+          </Button>
+        </div>
+      </DialogFooter>
+    </form>
+  );
+}
+
+/** Collapses a split booking back into a single, uncategorised booking. */
+function UnsplitButton({ splitGroupId, onDone }: { splitGroupId: string; onDone: () => void }) {
+  const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
+
+  const handleClick = async () => {
+    if (
+      !(await confirm({
+        description: "Aufteilung aufheben und zu einer einzelnen, unkategorisierten Buchung zusammenführen?",
+        confirmLabel: "Zusammenführen",
+        variant: "default",
+      }))
+    ) {
+      return;
+    }
+    startTransition(async () => {
+      const result = await unsplitTransactionAction(splitGroupId);
+      if (result.error) toast.error(result.error);
+      else {
+        toast.success("Aufteilung aufgehoben.");
+        onDone();
+      }
+    });
+  };
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      className="text-muted-foreground"
+      onClick={handleClick}
+      disabled={pending}
+    >
+      Aufteilung aufheben
+    </Button>
   );
 }
 

@@ -183,6 +183,13 @@ model Transaction {
   // income or expense.
   transferGroupId String?
 
+  // The parts of one booked amount split across several categories (e.g. a
+  // 13th salary split between "Lohn" and "Bonus") share this id. Each part
+  // is a normal row with its own amountCents and categoryId; the parts
+  // always sum back to the original amount, so balances and dedupe need no
+  // special case — only the category breakdown is split.
+  splitGroupId String?
+
   source TransactionSource @default(Manual)
 
   // Fingerprint over account + date + amount + bank reference. Unique, so a
@@ -208,6 +215,7 @@ model Transaction {
   @@index([accountId, date])
   @@index([categoryId, date])
   @@index([transferGroupId])
+  @@index([splitGroupId])
   @@index([importBatchId])
 }
 

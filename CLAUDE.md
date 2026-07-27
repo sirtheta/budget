@@ -158,7 +158,7 @@ The scope is optional but encouraged, e.g. `feat(import): support collective boo
 
 ## CI/CD
 
-The **`web.yml`** GitHub Actions workflow triggers on pushes/PRs to `main` (ignoring doc-only changes). It runs ESLint, then Vitest with coverage, then a production build, then Playwright. On push to `main`, `release-please` opens/updates a release PR (tags as `budget-v<version>`); once a release is created (or on manual `workflow_dispatch`), the job builds and pushes a Docker image to `ghcr.io/sirtheta/budget` (ARM64 target).
+The **`ci.yml`** GitHub Actions workflow triggers on PRs to `main` (ignoring doc-only changes). It runs ESLint, then Vitest with coverage, then a production build, then Playwright — this is the PR gate. The **`release.yml`** workflow triggers on push to `main`: `release-please` opens/updates a release PR (tags as `budget-v<version>`); once a release is created (or on manual `workflow_dispatch`), it re-runs the same checks and then builds and pushes a Docker image to `ghcr.io/sirtheta/budget` (ARM64 target).
 
 ---
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7](https://github.com/sirtheta/budget/compare/budget-v0.1.6...budget-v0.1.7) (2026-07-27)
+
+
+### Features
+
+* **analytics:** add net worth growth forecast ([#25](https://github.com/sirtheta/budget/issues/25)) ([33c494f](https://github.com/sirtheta/budget/commit/33c494f0897530094e09a65ea2a0a517dc05dd2b))
+* **transactions:** support splitting a booking across categories ([#21](https://github.com/sirtheta/budget/issues/21)) ([036425a](https://github.com/sirtheta/budget/commit/036425a7ce3ab28426a62b0c3318a9d4489d31f7))
+
 ## [0.1.6](https://github.com/sirtheta/budget/compare/budget-v0.1.5...budget-v0.1.6) (2026-07-27)
 
 

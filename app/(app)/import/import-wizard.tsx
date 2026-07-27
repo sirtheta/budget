@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState, useTransition } from "react";
+import { startTransition, useActionState, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Upload } from "lucide-react";
 import type { CsvMapping } from "@prisma/client";
@@ -58,7 +58,11 @@ export function ImportWizard({
   const [edits, setEdits] = useState<{
     preview: ImportPreview;
     selected: Set<string>;
-    categories: Record<string, number | null>;
+    /** Per-row override of the rule-suggested categorisation, keyed by row
+     *  hash: "none" | `cat:${categoryId}` | `transfer:${accountId}`. Lets a
+     *  wrongly-triggered rule (e.g. a broad "Revolut" transfer match) be
+     *  corrected before import instead of after, without deleting anything. */
+    overrides: Record<string, string>;
     done: { imported: number; skipped: number } | null;
   } | null>(null);
   const active = edits?.preview === preview ? edits : null;
@@ -76,7 +80,7 @@ export function ImportWizard({
   const update = (
     changes: Partial<{
       selected: Set<string>;
-      categories: Record<string, number | null>;
+      overrides: Record<string, string>;
       done: { imported: number; skipped: number } | null;
     }>
   ) => {
@@ -84,28 +88,38 @@ export function ImportWizard({
     setEdits({
       preview,
       selected: active?.selected ?? defaultSelected,
-      categories: active?.categories ?? {},
+      overrides: active?.overrides ?? {},
       done: active?.done ?? null,
       ...changes,
     });
   };
 
-  const categoryOf = (row: PreviewRow) =>
-    active && row.hash in active.categories ? active.categories[row.hash] : row.categoryId;
+  // The rule-suggested outcome for a row, encoded the same way an override is.
+  const defaultSelectionOf = (row: PreviewRow) =>
+    row.transferAccountId ? `transfer:${row.transferAccountId}` : `cat:${row.categoryId ?? NO_CATEGORY}`;
+
+  const selectionOf = (row: PreviewRow) =>
+    active && row.hash in active.overrides ? active.overrides[row.hash] : defaultSelectionOf(row);
 
   const commit = () => {
     if (!preview) return;
     const rows = preview.rows
       .filter((row) => selected.has(row.hash))
-      .map((row) => ({
-        date: row.date,
-        amountCents: row.amountCents,
-        description: row.description,
-        counterparty: row.counterparty,
-        bankReference: row.bankReference,
-        hash: row.hash,
-        categoryId: categoryOf(row),
-      }));
+      .map((row) => {
+        const [kind, idPart] = selectionOf(row).split(":");
+        const categoryId = kind === "cat" && idPart !== NO_CATEGORY ? parseInt(idPart, 10) : null;
+        const transferAccountId = kind === "transfer" ? parseInt(idPart, 10) : null;
+        return {
+          date: row.date,
+          amountCents: row.amountCents,
+          description: row.description,
+          counterparty: row.counterparty,
+          bankReference: row.bankReference,
+          hash: row.hash,
+          categoryId,
+          transferAccountId,
+        };
+      });
 
     startCommit(async () => {
       const result = await commitImportAction({
@@ -144,15 +158,21 @@ export function ImportWizard({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={formAction} className="flex flex-col gap-4">
-            <input type="hidden" name="format" value={format} />
-            <input
-              type="hidden"
-              name="accountId"
-              value={accountId === AUTO_ACCOUNT ? "" : accountId}
-            />
-            {format === "Csv" && <input type="hidden" name="mappingId" value={mappingId} />}
-
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              // Built from current state rather than left to the DOM's hidden
+              // inputs: React resets a <form action> back to its mount-time
+              // values on every submit, which silently reverted accountId/
+              // mappingId to their first-render defaults on a second import.
+              const data = new FormData(event.currentTarget);
+              data.set("format", format);
+              data.set("accountId", accountId === AUTO_ACCOUNT ? "" : accountId);
+              if (format === "Csv") data.set("mappingId", mappingId);
+              startTransition(() => formAction(data));
+            }}
+            className="flex flex-col gap-4"
+          >
             <div className="flex gap-1 rounded-lg bg-muted p-1 self-start">
               {(
                 [
@@ -194,7 +214,18 @@ export function ImportWizard({
                 <Combobox
                   id="import-account"
                   value={accountId}
-                  onValueChange={setAccountId}
+                  onValueChange={(value) => {
+                    setAccountId(value);
+                    const account = accounts.find((a) => String(a.id) === value);
+                    const match =
+                      account &&
+                      mappings.find(
+                        (mapping) =>
+                          mapping.name.toLowerCase().includes(account.name.toLowerCase()) ||
+                          account.name.toLowerCase().includes(mapping.name.toLowerCase())
+                      );
+                    if (match) setMappingId(String(match.id));
+                  }}
                   options={[
                     ...(format === "Camt053"
                       ? [{ value: AUTO_ACCOUNT, label: "Automatisch (über IBAN)" }]
@@ -283,10 +314,21 @@ export function ImportWizard({
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {preview.warnings.map((warning, index) => (
-              <p key={index} className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                {warning}
-              </p>
+              <div key={index} className="flex flex-col gap-1 text-sm text-amber-600 dark:text-amber-400">
+                <p className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  {warning}
+                </p>
+                {preview.rejectedRows.length > 0 && (
+                  <ul className="ml-6 list-disc text-xs text-muted-foreground">
+                    {preview.rejectedRows.map((row) => (
+                      <li key={row.line}>
+                        Zeile {row.line}: {row.reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             ))}
 
             {preview.balanceDeltaCents !== null && (
@@ -347,7 +389,7 @@ export function ImportWizard({
               </p>
             </div>
 
-            <div className="overflow-x-auto max-h-[32rem] overflow-y-auto rounded-md border">
+            <div className="hidden md:block overflow-x-auto max-h-[32rem] overflow-y-auto rounded-md border">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-card border-b">
                   <tr className="text-left">
@@ -397,33 +439,52 @@ export function ImportWizard({
                           </span>
                         </td>
                         <td className="p-2">
-                          <Combobox
-                            className="h-8"
-                            value={String(categoryOf(row) ?? NO_CATEGORY)}
-                            options={[
-                              { value: NO_CATEGORY, label: "Ohne Kategorie" },
-                              ...categories
-                                .filter((category) =>
-                                  row.amountCents >= 0
-                                    ? category.kind === "Income"
-                                    : category.kind === "Expense"
-                                )
-                                .map((category) => ({
-                                  value: String(category.id),
-                                  label: category.label,
-                                })),
-                            ]}
-                            onValueChange={(value) =>
-                              update({
-                                categories: {
-                                  ...(active?.categories ?? {}),
-                                  [row.hash]: value === NO_CATEGORY ? null : parseInt(value, 10),
-                                },
-                              })
-                            }
-                            searchPlaceholder="Kategorie suchen…"
-                            emptyText="Keine Kategorie gefunden."
-                          />
+                          {row.isAdopted ? (
+                            <Badge variant="secondary">Wird mit Umbuchung verknüpft</Badge>
+                          ) : (
+                            <div className="space-y-1">
+                              <Combobox
+                                className="h-8"
+                                value={selectionOf(row)}
+                                options={[
+                                  { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
+                                  ...categories
+                                    .filter((category) =>
+                                      row.amountCents >= 0
+                                        ? category.kind === "Income"
+                                        : category.kind === "Expense"
+                                    )
+                                    .map((category) => ({
+                                      value: `cat:${category.id}`,
+                                      label: category.label,
+                                    })),
+                                  ...accounts
+                                    .filter((account) => account.id !== preview.accountId)
+                                    .map((account) => ({
+                                      value: `transfer:${account.id}`,
+                                      label: `→ Umbuchung: ${account.name}`,
+                                    })),
+                                ]}
+                                onValueChange={(value) =>
+                                  update({
+                                    overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
+                                  })
+                                }
+                                searchPlaceholder="Kategorie oder Umbuchung suchen…"
+                                emptyText="Nichts gefunden."
+                              />
+                              {row.categorySource === "history" &&
+                                !(active && row.hash in active.overrides) && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px]"
+                                    title="Kategorie aus früherer Buchung mit gleichem Empfänger übernommen"
+                                  >
+                                    Verlauf
+                                  </Badge>
+                                )}
+                            </div>
+                          )}
                         </td>
                         <td className="p-2 text-right font-medium whitespace-nowrap">
                           <Money cents={row.amountCents} colored />
@@ -433,6 +494,105 @@ export function ImportWizard({
                   })}
                 </tbody>
               </table>
+            </div>
+
+            <div className="md:hidden max-h-[32rem] overflow-y-auto rounded-md border divide-y">
+              {preview.rows.map((row) => {
+                const isSelected = selected.has(row.hash);
+                return (
+                  <div
+                    key={row.hash}
+                    className={cn(
+                      "p-3 flex flex-col gap-2",
+                      !isSelected && "opacity-50",
+                      row.isDuplicate && "bg-muted/40"
+                    )}
+                  >
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        aria-label="Buchung importieren"
+                        className="size-4 accent-primary mt-0.5 shrink-0"
+                        onChange={(event) => {
+                          const next = new Set(selected);
+                          if (event.target.checked) next.add(row.hash);
+                          else next.delete(row.hash);
+                          update({ selected: next });
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="truncate font-medium text-sm">{row.description}</span>
+                          <span className="shrink-0 font-medium text-sm whitespace-nowrap">
+                            <Money cents={row.amountCents} colored />
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                          <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                            {formatDateCH(row.date)}
+                          </span>
+                          {row.counterparty && (
+                            <span className="text-xs text-muted-foreground truncate">
+                              {row.counterparty}
+                            </span>
+                          )}
+                          {row.isDuplicate && <Badge variant="secondary">Bereits importiert</Badge>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {row.isAdopted ? (
+                      <Badge variant="secondary" className="self-start">
+                        Wird mit Umbuchung verknüpft
+                      </Badge>
+                    ) : (
+                      <div className="space-y-1 pl-6">
+                        <Combobox
+                          className="h-8 w-full"
+                          value={selectionOf(row)}
+                          options={[
+                            { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
+                            ...categories
+                              .filter((category) =>
+                                row.amountCents >= 0
+                                  ? category.kind === "Income"
+                                  : category.kind === "Expense"
+                              )
+                              .map((category) => ({
+                                value: `cat:${category.id}`,
+                                label: category.label,
+                              })),
+                            ...accounts
+                              .filter((account) => account.id !== preview.accountId)
+                              .map((account) => ({
+                                value: `transfer:${account.id}`,
+                                label: `→ Umbuchung: ${account.name}`,
+                              })),
+                          ]}
+                          onValueChange={(value) =>
+                            update({
+                              overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
+                            })
+                          }
+                          searchPlaceholder="Kategorie oder Umbuchung suchen…"
+                          emptyText="Nichts gefunden."
+                        />
+                        {row.categorySource === "history" &&
+                          !(active && row.hash in active.overrides) && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px]"
+                              title="Kategorie aus früherer Buchung mit gleichem Empfänger übernommen"
+                            >
+                              Verlauf
+                            </Badge>
+                          )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="flex justify-end">

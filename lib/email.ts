@@ -34,6 +34,16 @@ function toHtml(text: string): string {
   return `<!DOCTYPE html><html><head><meta name="format-detection" content="date=no, telephone=no, address=no, email=no"></head><body style="font-family: sans-serif; white-space: pre-wrap;">${escaped}</body></html>`;
 }
 
+/**
+ * Escapes a display name for a quoted-string in an address header: a literal
+ * quote or backslash inside it would otherwise end the quoting early. Settings
+ * validation already rejects newlines (see saveSettingsAction); this covers the
+ * rest, including rows written before that validation existed.
+ */
+function quoteDisplayName(name: string): string {
+  return name.replace(/[\\"]/g, "\\$&").replace(/[\r\n]/g, " ");
+}
+
 /** Sends a plain-text mail through the configured SMTP account. */
 export async function sendMail(
   settings: SystemSettings,
@@ -49,7 +59,7 @@ export async function sendMail(
   const fromName = settings.smtpFromName || settings.smtpUser!;
   const fromAddress = settings.smtpFromAddress || settings.smtpUser!;
   await transporter.sendMail({
-    from: `"${fromName}" <${fromAddress}>`,
+    from: `"${quoteDisplayName(fromName)}" <${fromAddress}>`,
     to,
     subject,
     text,

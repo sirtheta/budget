@@ -6,6 +6,7 @@ CREATE TABLE "User" (
     "passwordHash" TEXT NOT NULL,
     "role" TEXT NOT NULL DEFAULT 'Viewer',
     "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "sessionEpoch" INTEGER NOT NULL DEFAULT 0,
     "twoFactorSecret" TEXT,
     "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false,
     "twoFactorBackupCodes" TEXT,
@@ -32,6 +33,7 @@ CREATE TABLE "Account" (
     "iban" TEXT,
     "openingBalanceCents" INTEGER NOT NULL DEFAULT 0,
     "btcAmount" REAL,
+    "btcCostBasisCents" INTEGER,
     "color" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -174,12 +176,17 @@ CREATE TABLE "ImportRule" (
     "field" TEXT NOT NULL DEFAULT 'Description',
     "matchType" TEXT NOT NULL DEFAULT 'Contains',
     "pattern" TEXT NOT NULL,
-    "categoryId" INTEGER NOT NULL,
+    "categoryId" INTEGER,
+    "transferAccountId" INTEGER,
+    "minAmountCents" INTEGER,
+    "maxAmountCents" INTEGER,
+    "sign" TEXT NOT NULL DEFAULT 'Any',
     "priority" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "ImportRule_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "ImportRule_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "ImportRule_transferAccountId_fkey" FOREIGN KEY ("transferAccountId") REFERENCES "Account" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -194,6 +201,7 @@ CREATE TABLE "CsvMapping" (
     "dateFormat" TEXT NOT NULL DEFAULT 'DD.MM.YYYY',
     "descriptionColumn" INTEGER NOT NULL,
     "amountColumn" INTEGER,
+    "invertAmount" BOOLEAN NOT NULL DEFAULT false,
     "debitColumn" INTEGER,
     "creditColumn" INTEGER,
     "counterpartyColumn" INTEGER,
@@ -288,6 +296,9 @@ CREATE INDEX "ImportBatch_createdAt_idx" ON "ImportBatch"("createdAt");
 
 -- CreateIndex
 CREATE INDEX "ImportRule_priority_idx" ON "ImportRule"("priority");
+
+-- CreateIndex
+CREATE INDEX "ImportRule_transferAccountId_idx" ON "ImportRule"("transferAccountId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "CsvMapping_name_key" ON "CsvMapping"("name");

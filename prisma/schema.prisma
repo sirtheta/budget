@@ -22,6 +22,14 @@ model User {
   role         UserRole @default(Viewer)
   isActive     Boolean  @default(true)
 
+  // Incremented whenever the credentials change (password reset, own password
+  // change, admin-set password, 2FA disabled). Sessions are JWTs, so there is
+  // no server-side session table to delete from: the token carries the epoch it
+  // was issued under and lib/auth.ts rejects it once this value has moved on.
+  // Without it, resetting a password left a stolen session valid for the rest
+  // of SESSION_MAX_AGE_SEC — which defeats the point of resetting it.
+  sessionEpoch Int @default(0)
+
   // TOTP secret, AES-encrypted at rest (see lib/crypto.ts). Set as soon as
   // setup starts but only trusted once twoFactorEnabled is true — an
   // unconfirmed secret must not let a stale setup attempt grant access.
@@ -80,6 +88,11 @@ model Account {
   // balance is this times the live rate (see lib/crypto-price.ts), not
   // openingBalanceCents + transaction sum.
   btcAmount Float?
+  // Crypto accounts only: CHF actually paid for the BTC currently held (incl.
+  // fees), in Rappen. Null until a purchase is recorded or the user backfills
+  // it for a wallet that predates this app — gain/loss stays hidden rather
+  // than comparing today's value against an invented cost of zero.
+  btcCostBasisCents Int?
   // Hex colour for charts; falls back to the palette in lib/colors.ts.
   color               String?
   sortOrder           Int     @default(0)
@@ -98,6 +111,7 @@ model Account {
   reserves         Reserve[]
   savingsGoals     SavingsGoal[]
   importBatches    ImportBatch[]
+  transferRules    ImportRule[]
 
   @@index([sortOrder])
 }
@@ -353,24 +367,49 @@ enum RuleMatch {
   Regex
 }
 
+enum RuleSign {
+  Any
+  Positive
+  Negative
+}
+
 /// Auto-categorisation for imported transactions. The first matching rule
 /// (lowest `priority`) wins — see lib/import/rules.ts.
+/// Exactly one of `categoryId` / `transferAccountId` is set — enforced in the
+/// Server Action, since SQLite can't express a cross-column CHECK here. A
+/// category rule auto-categorises; a transfer-account rule instead marks the
+/// match as one leg of a transfer to that account (see lib/transactions.ts
+/// applyAutoTransfer), which is what lets "Revolut" or "Kreditkarte" as
+/// beneficiary book itself as a transfer instead of an expense.
 model ImportRule {
-  id         Int       @id @default(autoincrement())
-  name       String
-  field      RuleField @default(Description)
-  matchType  RuleMatch @default(Contains)
-  pattern    String
-  categoryId Int
-  priority   Int       @default(0)
-  isActive   Boolean   @default(true)
+  id                Int       @id @default(autoincrement())
+  name              String
+  field             RuleField @default(Description)
+  matchType         RuleMatch @default(Contains)
+  pattern           String
+  categoryId        Int?
+  transferAccountId Int?
+  /// Absolute Rappen bounds (inclusive) a match's amount must fall within, so
+  /// e.g. a broad "Revolut" pattern can be split into a small recurring
+  /// transfer (Sackgeld) and everything else, without the two being
+  /// distinguishable by pattern alone.
+  minAmountCents    Int?
+  maxAmountCents    Int?
+  /// Restricts the rule to credits (Positive) or debits (Negative) — e.g. a
+  /// "Krankenkasse" pattern that matches both a premium payment and a refund,
+  /// distinguishable only by sign.
+  sign              RuleSign  @default(Any)
+  priority          Int       @default(0)
+  isActive          Boolean   @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category        Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  transferAccount Account?  @relation(fields: [transferAccountId], references: [id], onDelete: Cascade)
 
   @@index([priority])
+  @@index([transferAccountId])
 }
 
 /// Column layout of one bank's CSV export, saved so the same file format can
@@ -390,6 +429,11 @@ model CsvMapping {
   descriptionColumn Int
   /// Either one signed amount column …
   amountColumn      Int?
+  /// Some exports (credit cards in particular) write purchases as a
+  /// positive amount and credits as negative — the opposite of this app's
+  /// convention. Flips the sign of `amountColumn` when set; ignored for
+  /// debit/credit pairs, which are already direction-correct by column.
+  invertAmount      Boolean @default(false)
   /// … or separate debit/credit columns.
   debitColumn        Int?
   creditColumn       Int?

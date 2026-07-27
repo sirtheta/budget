@@ -46,8 +46,10 @@ export function checkRateLimit(key: string, limit: Limit = {}): boolean {
 
 /**
  * Returns whether `key` is currently over its limit WITHOUT counting an
- * attempt. Pair with `recordFailedAttempt` to throttle only failures
- * (e.g. unknown iCal tokens) while legitimate traffic stays unthrottled.
+ * attempt. Pair with `recordFailedAttempt` to throttle only failures (e.g.
+ * unknown password-reset tokens) while legitimate traffic stays unthrottled —
+ * which is what lets a shared bucket exist without one attacker being able to
+ * lock everybody else out.
  */
 export function isRateLimited(key: string, limit: Limit = {}): boolean {
   const maxAttempts = limit.maxAttempts ?? config.rateLimit.maxAttempts;

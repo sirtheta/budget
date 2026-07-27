@@ -228,6 +228,15 @@ export function CsvMappingDialog({
                 defaultValue={mapping?.creditColumn ?? null}
               />
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="invertAmount"
+                defaultChecked={mapping?.invertAmount ?? false}
+                className="size-4 accent-primary"
+              />
+              Vorzeichen umkehren (z. B. Kreditkarten-Exporte: Bezüge positiv, Gutschriften negativ)
+            </label>
           </div>
 
           <div className="grid grid-cols-3 gap-3">

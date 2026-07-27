@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitDuplicates, withHashes } from "@/lib/import/dedupe";
+import { splitDuplicates, verifyImportHash, withHashes } from "@/lib/import/dedupe";
 import type { ParsedTransaction } from "@/lib/import/types";
 
 function tx(overrides: Partial<ParsedTransaction> = {}): ParsedTransaction {
@@ -75,5 +75,51 @@ describe("splitDuplicates", () => {
   it("treats everything as new when nothing is known yet", () => {
     const rows = withHashes(1, [tx()]);
     expect(splitDuplicates(rows, new Set()).fresh).toHaveLength(1);
+  });
+});
+
+describe("verifyImportHash", () => {
+  const account = 7;
+  const plain = {
+    date: "2026-02-05",
+    amountCents: -450,
+    description: "Kaffee",
+    counterparty: null,
+    bankReference: null,
+  };
+
+  it("accepts the hash the preview computed", () => {
+    const [row] = withHashes(account, [plain]);
+    expect(verifyImportHash(account, plain, row.hash)).toBe(true);
+  });
+
+  it("accepts a later occurrence of an identical booking", () => {
+    // Two identical coffees the same day: the second row's hash carries
+    // occurrence 1, and the commit may well arrive without the first.
+    const rows = withHashes(account, [plain, plain]);
+    expect(verifyImportHash(account, plain, rows[1].hash)).toBe(true);
+  });
+
+  it("rejects a hash that was simply made up", () => {
+    expect(verifyImportHash(account, plain, "f".repeat(64))).toBe(false);
+  });
+
+  it("rejects a hash belonging to a different row", () => {
+    const [other] = withHashes(account, [{ ...plain, amountCents: -99900 }]);
+    expect(verifyImportHash(account, plain, other.hash)).toBe(false);
+  });
+
+  it("rejects a hash computed for another account", () => {
+    const [row] = withHashes(account + 1, [plain]);
+    expect(verifyImportHash(account, plain, row.hash)).toBe(false);
+  });
+
+  it("ignores the occurrence when a bank reference is present", () => {
+    const referenced = { ...plain, bankReference: "ACCTSVCR-4711" };
+    const [row] = withHashes(account, [referenced]);
+    expect(verifyImportHash(account, referenced, row.hash)).toBe(true);
+    expect(verifyImportHash(account, { ...referenced, bankReference: "OTHER" }, row.hash)).toBe(
+      false
+    );
   });
 });

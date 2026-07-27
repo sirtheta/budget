@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { SUPPORTED_DATE_FORMATS } from "@/lib/import/csv";
+import { seedDefaultCsvMappings } from "@/lib/import/default-mappings";
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -23,6 +24,7 @@ const mappingSchema = z.object({
   delimiter: z.string().min(1).max(4),
   skipRows: z.coerce.number().int().min(0).max(50),
   hasHeader: z.boolean(),
+  invertAmount: z.boolean(),
   dateColumn: z.coerce.number().int().min(0),
   dateFormat: z.string().refine((value) => SUPPORTED_DATE_FORMATS.includes(value), {
     message: "Nicht unterstütztes Datumsformat.",
@@ -43,6 +45,7 @@ export async function saveCsvMappingAction(
     delimiter: formData.get("delimiter") ?? ";",
     skipRows: formData.get("skipRows") ?? 0,
     hasHeader: formData.get("hasHeader") === "on",
+    invertAmount: formData.get("invertAmount") === "on",
     dateColumn: formData.get("dateColumn") ?? 0,
     dateFormat: formData.get("dateFormat") ?? "DD.MM.YYYY",
     descriptionColumn: formData.get("descriptionColumn") ?? 1,
@@ -107,4 +110,17 @@ export async function deleteCsvMappingAction(id: number): Promise<ActionState> {
   await logAudit(session, "DELETE", "CsvMapping", id, { name: mapping.name });
   revalidatePath("/import");
   return { success: true };
+}
+
+/** Creates the starter CSV mappings (Migros Kreditkarte, Revolut); skips names already taken. */
+export async function seedDefaultCsvMappingsAction(): Promise<ActionState & { created?: number }> {
+  const session = await requireEditor();
+  const { created, skipped } = await seedDefaultCsvMappings(prisma);
+  await logAudit(session, "CREATE", "CsvMapping", undefined, {
+    action: "seedDefaults",
+    created,
+    skipped,
+  });
+  revalidatePath("/import");
+  return { success: true, created };
 }

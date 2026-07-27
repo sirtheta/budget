@@ -7,12 +7,23 @@ import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
-import { isValidDateString } from "@/lib/date";
+import { matchInvoicePayment } from "@/lib/invoicing";
+import { addDays, isValidDateString } from "@/lib/date";
 import { parseCamt053 } from "@/lib/import/camt";
-import { detectDelimiter, parseCsvStatement, previewRows } from "@/lib/import/csv";
-import { withHashes } from "@/lib/import/dedupe";
-import { categorize } from "@/lib/import/rules";
+import { detectDelimiter, parseCsvStatement, previewRows, type CsvParseResult } from "@/lib/import/csv";
+import { normalize, verifyImportHash, withHashes } from "@/lib/import/dedupe";
+import { loadHistoryCategorySuggestions } from "@/lib/import/history";
+import { matchRule } from "@/lib/import/rules";
+import {
+  TRANSFER_MATCH_TOLERANCE_DAYS,
+  adoptTransferLeg,
+  applyAutoTransfer,
+  findAdoptableTransferLeg,
+} from "@/lib/transactions";
 import type { ParsedStatement } from "@/lib/import/types";
+import logger from "@/lib/logger";
+
+const log = logger.child({ module: "import" });
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -24,6 +35,17 @@ export interface PreviewRow {
   bankReference: string | null;
   hash: string;
   categoryId: number | null;
+  /** Where `categoryId` came from — an explicit rule, or a prior manually
+   *  categorised transaction with the same counterparty. Null when neither
+   *  matched, or when the row will be adopted into an existing transfer. */
+  categorySource: "rule" | "history" | null;
+  /** Set when an import rule targets a transfer instead of a category. */
+  transferAccountId: number | null;
+  transferAccountName: string | null;
+  /** True when this row's date/amount matches an existing, not-yet-real
+   *  transfer leg on this account (see applyAutoTransfer) — it will be merged
+   *  into that leg instead of creating a new transaction. */
+  isAdopted: boolean;
   isDuplicate: boolean;
 }
 
@@ -34,6 +56,8 @@ export interface ImportPreview {
   format: ImportFormat;
   rows: PreviewRow[];
   warnings: string[];
+  /** CSV rows that couldn't be interpreted, with the per-row reason. */
+  rejectedRows: CsvParseResult["rejectedRows"];
   duplicateCount: number;
   uncategorizedCount: number;
   closingBalanceCents: number | null;
@@ -73,17 +97,21 @@ export async function previewImportAction(
   const format = formData.get("format") === "Csv" ? ImportFormat.Csv : ImportFormat.Camt053;
 
   let statement: ParsedStatement;
+  let rejectedRows: CsvParseResult["rejectedRows"] = [];
   try {
     if (format === ImportFormat.Csv) {
       const mappingId = parseInt(String(formData.get("mappingId") ?? ""), 10);
       if (!Number.isInteger(mappingId)) return { error: "Bitte ein CSV-Mapping auswählen." };
       const mapping = await prisma.csvMapping.findUnique({ where: { id: mappingId } });
       if (!mapping) return { error: "CSV-Mapping nicht gefunden." };
-      statement = parseCsvStatement(text, mapping);
+      const csvResult = parseCsvStatement(text, mapping);
+      statement = csvResult;
+      rejectedRows = csvResult.rejectedRows;
     } else {
       statement = parseCamt053(text);
     }
   } catch (err) {
+    log.warn({ err, format }, "Statement parse failed");
     return { error: err instanceof Error ? err.message : "Die Datei konnte nicht gelesen werden." };
   }
 
@@ -106,25 +134,66 @@ export async function previewImportAction(
   if (!account) return { error: "Konto nicht gefunden." };
 
   const hashed = withHashes(accountId, statement.transactions);
-  const [existing, rules] = await Promise.all([
+  const [existing, rules, adoptCandidates, historySuggestions] = await Promise.all([
     prisma.transaction.findMany({
       where: { importHash: { in: hashed.map((row) => row.hash) } },
       select: { importHash: true },
     }),
     prisma.importRule.findMany({ where: { isActive: true } }),
+    // Synthetic transfer legs on this account still waiting to be confirmed
+    // by a real import (see lib/transactions.ts applyAutoTransfer).
+    prisma.transaction.findMany({
+      where: { accountId, importHash: null, transferGroupId: { not: null } },
+      select: { id: true, date: true, amountCents: true },
+    }),
+    loadHistoryCategorySuggestions(prisma),
   ]);
   const existingHashes = new Set(existing.map((row) => row.importHash));
+  const transferAccountIds = [...new Set(rules.map((rule) => rule.transferAccountId).filter((id) => id !== null))];
+  const transferAccounts = transferAccountIds.length
+    ? await prisma.account.findMany({
+        where: { id: { in: transferAccountIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const transferAccountNames = new Map(transferAccounts.map((a) => [a.id, a.name]));
 
-  const rows: PreviewRow[] = hashed.map((row) => ({
-    date: row.date,
-    amountCents: row.amountCents,
-    description: row.description,
-    counterparty: row.counterparty,
-    bankReference: row.bankReference,
-    hash: row.hash,
-    categoryId: categorize(rules, row),
-    isDuplicate: existingHashes.has(row.hash),
-  }));
+  const rows: PreviewRow[] = hashed.map((row) => {
+    const isAdopted = adoptCandidates.some(
+      (candidate) =>
+        candidate.amountCents === row.amountCents &&
+        candidate.date >= addDays(row.date, -TRANSFER_MATCH_TOLERANCE_DAYS) &&
+        candidate.date <= addDays(row.date, TRANSFER_MATCH_TOLERANCE_DAYS)
+    );
+    // Computed even when isAdopted: two fresh rows in the same batch can
+    // both fall within tolerance of a single not-yet-real leg, but only the
+    // first actually adopts it at commit time (findAdoptableTransferLeg
+    // there re-checks per row, now inside the same transaction as the
+    // create — see the atomicity fix above). The rule match travels with
+    // the row as the fallback categorisation for whichever row doesn't get
+    // adopted, instead of silently falling through to "ohne Kategorie".
+    const rule = matchRule(rules, row);
+    // History only fills in when no rule matched at all — a transfer rule is
+    // still an explicit decision for this counterparty and must not be
+    // second-guessed by a past category.
+    const historyCategoryId = rule ? null : (historySuggestions.get(normalize(row.counterparty)) ?? null);
+    return {
+      date: row.date,
+      amountCents: row.amountCents,
+      description: row.description,
+      counterparty: row.counterparty,
+      bankReference: row.bankReference,
+      hash: row.hash,
+      categoryId: rule?.categoryId ?? historyCategoryId ?? null,
+      categorySource: rule?.categoryId != null ? "rule" : historyCategoryId != null ? "history" : null,
+      transferAccountId: rule?.transferAccountId ?? null,
+      transferAccountName: rule?.transferAccountId
+        ? (transferAccountNames.get(rule.transferAccountId) ?? null)
+        : null,
+      isAdopted,
+      isDuplicate: existingHashes.has(row.hash),
+    };
+  });
 
   const fresh = rows.filter((row) => !row.isDuplicate);
 
@@ -151,8 +220,11 @@ export async function previewImportAction(
       format,
       rows,
       warnings: statement.warnings,
+      rejectedRows,
       duplicateCount: rows.length - fresh.length,
-      uncategorizedCount: fresh.filter((row) => row.categoryId === null).length,
+      uncategorizedCount: fresh.filter(
+        (row) => row.categoryId === null && row.transferAccountId === null && !row.isAdopted
+      ).length,
       closingBalanceCents: statement.closingBalanceCents,
       periodFrom: statement.periodFrom,
       periodTo: statement.periodTo,
@@ -169,6 +241,7 @@ const commitRowSchema = z.object({
   bankReference: z.string().nullable(),
   hash: z.string().min(1),
   categoryId: z.number().int().nullable(),
+  transferAccountId: z.number().int().nullable(),
 });
 
 const commitSchema = z.object({
@@ -201,6 +274,21 @@ export async function commitImportAction(
   const account = await prisma.account.findUnique({ where: { id: accountId } });
   if (!account) return { error: "Konto nicht gefunden." };
 
+  // The rows come back from the browser with the fingerprints the preview
+  // computed, so each one has to be re-derived from the row it claims to
+  // describe. An arbitrary hash written into the unique importHash index would
+  // reserve the fingerprint of a booking that hasn't arrived yet, and that
+  // booking would then be skipped as a duplicate on the statement it really
+  // appears on.
+  const tampered = rows.find((row) => !verifyImportHash(accountId, row, row.hash));
+  if (tampered) {
+    log.warn(
+      { accountId, date: tampered.date, amountCents: tampered.amountCents },
+      "import rejected: row fingerprint does not match its content"
+    );
+    return { error: "Die Import-Daten wurden verändert. Bitte die Datei erneut einlesen." };
+  }
+
   const existing = await prisma.transaction.findMany({
     where: { importHash: { in: rows.map((row) => row.hash) } },
     select: { importHash: true },
@@ -212,41 +300,96 @@ export async function commitImportAction(
     return { error: "Alle ausgewählten Buchungen sind bereits importiert." };
   }
 
-  const batch = await prisma.importBatch.create({
-    data: {
-      filename,
-      format,
-      accountId,
-      userId: parseInt(session.user.id, 10),
-      importedCount: fresh.length,
-      skippedCount: rows.length - fresh.length,
-      statementBalanceCents: parsed.data.closingBalanceCents,
-      periodFrom: parsed.data.periodFrom,
-      periodTo: parsed.data.periodTo,
-    },
-  });
+  const userId = parseInt(session.user.id, 10);
 
-  await prisma.transaction.createMany({
-    data: fresh.map((row) => ({
-      date: row.date,
-      amountCents: row.amountCents,
-      accountId,
-      categoryId: row.categoryId,
-      description: row.description,
-      counterparty: row.counterparty,
-      bankReference: row.bankReference,
-      importHash: row.hash,
-      importBatchId: batch.id,
-      source: "Import" as const,
-      createdById: parseInt(session.user.id, 10),
-    })),
-  });
+  // The whole batch — including every row's adopt-or-create-and-transfer
+  // decision — runs as one transaction: a mid-loop failure (DB error,
+  // process kill) previously left a half-imported batch with no way back,
+  // since the old bulk `createMany` gave that guarantee but a per-row loop
+  // calling out to lib/transactions.ts (which needs to read state between
+  // rows, e.g. whether an earlier row in this same batch already claimed a
+  // synthetic transfer leg) does not, unless it's wrapped explicitly.
+  const incomePayments: { transactionId: number; description: string; amountCents: number; bookingDate: string }[] = [];
+
+  const batch = await prisma.$transaction(async (tx) => {
+    const created = await tx.importBatch.create({
+      data: {
+        filename,
+        format,
+        accountId,
+        userId,
+        importedCount: fresh.length,
+        skippedCount: rows.length - fresh.length,
+        statementBalanceCents: parsed.data.closingBalanceCents,
+        periodFrom: parsed.data.periodFrom,
+        periodTo: parsed.data.periodTo,
+      },
+    });
+
+    // Each row may (a) adopt an existing synthetic transfer leg left behind
+    // by an earlier auto-transfer on this account, (b) trigger a new
+    // auto-transfer to another account, or (c) land as a plain, possibly
+    // categorised booking — see lib/transactions.ts for what each does.
+    for (const row of fresh) {
+      const adoptable = await findAdoptableTransferLeg(tx, accountId, row.amountCents, row.date);
+      if (adoptable) {
+        await adoptTransferLeg(tx, adoptable.id, {
+          date: row.date,
+          description: row.description,
+          counterparty: row.counterparty,
+          bankReference: row.bankReference,
+          importHash: row.hash,
+          importBatchId: created.id,
+        });
+        continue;
+      }
+
+      const transaction = await tx.transaction.create({
+        data: {
+          date: row.date,
+          amountCents: row.amountCents,
+          accountId,
+          categoryId: row.transferAccountId ? null : row.categoryId,
+          description: row.description,
+          counterparty: row.counterparty,
+          bankReference: row.bankReference,
+          importHash: row.hash,
+          importBatchId: created.id,
+          source: "Import" as const,
+          createdById: userId,
+        },
+      });
+
+      if (row.transferAccountId && row.transferAccountId !== accountId) {
+        await applyAutoTransfer(tx, {
+          transactionId: transaction.id,
+          targetAccountId: row.transferAccountId,
+        });
+      } else if (row.amountCents > 0) {
+        incomePayments.push({
+          transactionId: transaction.id,
+          description: row.description,
+          amountCents: row.amountCents,
+          bookingDate: row.date,
+        });
+      }
+    }
+
+    return created;
+  }, { timeout: 60_000 });
 
   await logAudit(session, "IMPORT", "Transaction", batch.id, {
     filename,
     imported: fresh.length,
     skipped: rows.length - fresh.length,
   });
+
+  // Best-effort: check newly imported income against CustomerManagement's open
+  // invoices. Runs after the transaction has committed and never affects the
+  // result returned below — see lib/invoicing.ts for the never-throw contract.
+  await Promise.allSettled(
+    incomePayments.map((payment) => matchInvoicePayment(session, payment))
+  );
 
   revalidatePath("/import");
   revalidatePath("/transactions");
@@ -269,7 +412,24 @@ export async function deleteImportBatchAction(id: number): Promise<ActionState &
   const batch = await prisma.importBatch.findUnique({ where: { id } });
   if (!batch) return { error: "Import nicht gefunden." };
 
-  const { count } = await prisma.transaction.deleteMany({ where: { importBatchId: id } });
+  // A row from this batch may be one leg of an auto-created transfer whose
+  // counterpart (the synthetic leg, or a leg adopted from another batch) is
+  // not itself part of this batch. Deleting only the batch's own rows would
+  // leave that counterpart dangling, so every transfer group touched by this
+  // batch is removed in full — same rule as deleteTransfer().
+  const rows = await prisma.transaction.findMany({
+    where: { importBatchId: id },
+    select: { transferGroupId: true },
+  });
+  const transferGroupIds = [
+    ...new Set(rows.map((row) => row.transferGroupId).filter((groupId): groupId is string => groupId !== null)),
+  ];
+
+  const { count } = await prisma.transaction.deleteMany({
+    where: {
+      OR: [{ importBatchId: id }, ...(transferGroupIds.length ? [{ transferGroupId: { in: transferGroupIds } }] : [])],
+    },
+  });
   await prisma.importBatch.delete({ where: { id } });
 
   await logAudit(session, "DELETE", "Transaction", id, {

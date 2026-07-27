@@ -4,11 +4,13 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Wand2 } from "lucide-react";
 import type { ImportRule } from "@prisma/client";
-import { RuleField, RuleMatch } from "@prisma/client";
+import { RuleField, RuleMatch, RuleSign } from "@prisma/client";
 import { applyRulesToUncategorizedAction, saveImportRuleAction } from "./rule-actions";
 import { useDialogFormAction } from "@/components/use-dialog-form";
-import { MATCH_TYPE_LABELS, RULE_FIELD_LABELS } from "@/lib/import/rule-labels";
+import { MATCH_TYPE_LABELS, RULE_FIELD_LABELS, RULE_SIGN_LABELS } from "@/lib/import/rule-labels";
 import type { CategoryOption } from "@/lib/categories";
+import type { AccountOption } from "@/app/(app)/transactions/transaction-form-dialog";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -30,13 +32,17 @@ import {
 } from "@/components/ui/select";
 import { Combobox } from "@/components/ui/combobox";
 
+type RuleMode = "category" | "transfer";
+
 export function RuleDialog({
   rule,
   categories,
+  accounts,
   trigger,
 }: {
   rule?: ImportRule;
   categories: CategoryOption[];
+  accounts: AccountOption[];
   trigger: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -46,7 +52,10 @@ export function RuleDialog({
   });
   const [field, setField] = useState<RuleField>(rule?.field ?? "Description");
   const [matchType, setMatchType] = useState<RuleMatch>(rule?.matchType ?? "Contains");
+  const [sign, setSign] = useState<RuleSign>(rule?.sign ?? "Any");
+  const [mode, setMode] = useState<RuleMode>(rule?.transferAccountId ? "transfer" : "category");
   const [categoryId, setCategoryId] = useState(String(rule?.categoryId ?? ""));
+  const [transferAccountId, setTransferAccountId] = useState(String(rule?.transferAccountId ?? ""));
 
   return (
     <Dialog open={open} onOpenChange={setOpen} modal={false}>
@@ -55,9 +64,11 @@ export function RuleDialog({
         <DialogHeader>
           <DialogTitle>{rule ? "Regel bearbeiten" : "Neue Importregel"}</DialogTitle>
           <DialogDescription>
-            Ordnet importierten Buchungen automatisch eine Kategorie zu. Die Regel mit der
-            kleinsten Priorität gewinnt — so kann eine spezifische Regel vor einer allgemeinen
-            greifen.
+            {mode === "category"
+              ? "Ordnet importierten Buchungen automatisch eine Kategorie zu."
+              : "Bucht importierte Treffer automatisch als Umbuchung zum gewählten Konto — z. B. wenn Revolut oder die Kreditkarte als Begünstigter auftaucht."}{" "}
+            Die Regel mit der kleinsten Priorität gewinnt — so kann eine spezifische Regel vor
+            einer allgemeinen greifen.
           </DialogDescription>
         </DialogHeader>
 
@@ -65,7 +76,36 @@ export function RuleDialog({
           {rule && <input type="hidden" name="id" value={rule.id} />}
           <input type="hidden" name="field" value={field} />
           <input type="hidden" name="matchType" value={matchType} />
-          <input type="hidden" name="categoryId" value={categoryId} />
+          <input type="hidden" name="sign" value={sign} />
+          <input type="hidden" name="categoryId" value={mode === "category" ? categoryId : ""} />
+          <input
+            type="hidden"
+            name="transferAccountId"
+            value={mode === "transfer" ? transferAccountId : ""}
+          />
+
+          <div className="flex gap-1 rounded-lg bg-muted p-1">
+            {(
+              [
+                ["category", "Kategorie"],
+                ["transfer", "Umbuchung"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                className={cn(
+                  "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                  mode === value
+                    ? "bg-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="rule-name">Bezeichnung</Label>
@@ -130,21 +170,39 @@ export function RuleDialog({
           </div>
 
           <div className="grid grid-cols-[1fr_auto] gap-3">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="rule-category">Kategorie</Label>
-              <Combobox
-                id="rule-category"
-                value={categoryId}
-                onValueChange={setCategoryId}
-                options={categories.map((category) => ({
-                  value: String(category.id),
-                  label: category.label,
-                }))}
-                placeholder="Kategorie wählen"
-                searchPlaceholder="Kategorie suchen…"
-                emptyText="Keine Kategorie gefunden."
-              />
-            </div>
+            {mode === "category" ? (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="rule-category">Kategorie</Label>
+                <Combobox
+                  id="rule-category"
+                  value={categoryId}
+                  onValueChange={setCategoryId}
+                  options={categories.map((category) => ({
+                    value: String(category.id),
+                    label: category.label,
+                  }))}
+                  placeholder="Kategorie wählen"
+                  searchPlaceholder="Kategorie suchen…"
+                  emptyText="Keine Kategorie gefunden."
+                />
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="rule-transfer-account">Umbuchungs-Konto</Label>
+                <Combobox
+                  id="rule-transfer-account"
+                  value={transferAccountId}
+                  onValueChange={setTransferAccountId}
+                  options={accounts.map((account) => ({
+                    value: String(account.id),
+                    label: account.name,
+                  }))}
+                  placeholder="Konto wählen"
+                  searchPlaceholder="Konto suchen…"
+                  emptyText="Kein Konto gefunden."
+                />
+              </div>
+            )}
             <div className="flex flex-col gap-2">
               <Label htmlFor="rule-priority">Priorität</Label>
               <Input
@@ -159,13 +217,69 @@ export function RuleDialog({
             </div>
           </div>
 
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="rule-sign">Vorzeichen</Label>
+            <Select value={sign} onValueChange={(value) => setSign(value as RuleSign)}>
+              <SelectTrigger id="rule-sign">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.values(RuleSign).map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {RULE_SIGN_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Grenzt auf Gutschriften oder Belastungen ein — nützlich, wenn dasselbe Suchmuster
+              (z. B. &bdquo;Krankenkasse&ldquo;) sowohl auf eine Prämienzahlung als auch auf eine
+              Rückerstattung zutrifft.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="rule-min-amount">Mindestbetrag (optional)</Label>
+              <Input
+                id="rule-min-amount"
+                name="minAmount"
+                inputMode="decimal"
+                placeholder="0.00"
+                defaultValue={
+                  rule?.minAmountCents != null ? (rule.minAmountCents / 100).toFixed(2) : ""
+                }
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="rule-max-amount">Maximalbetrag (optional)</Label>
+              <Input
+                id="rule-max-amount"
+                name="maxAmount"
+                inputMode="decimal"
+                placeholder="100.00"
+                defaultValue={
+                  rule?.maxAmountCents != null ? (rule.maxAmountCents / 100).toFixed(2) : ""
+                }
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Grenzt die Regel auf einen Betragsbereich ein — nützlich, wenn dasselbe Suchmuster
+            (z. B. &bdquo;Revolut&ldquo;) sowohl auf einen kleinen wiederkehrenden Transfer als
+            auch auf grössere Buchungen zutrifft.
+          </p>
+
           {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Abbrechen
             </Button>
-            <Button type="submit" disabled={pending || !categoryId}>
+            <Button
+              type="submit"
+              disabled={pending || (mode === "category" ? !categoryId : !transferAccountId)}
+            >
               {pending ? "Speichern…" : "Speichern"}
             </Button>
           </DialogFooter>

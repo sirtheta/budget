@@ -3,8 +3,9 @@
 import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { Transaction } from "@prisma/client";
-import { saveTransactionAction, saveTransferAction } from "./actions";
+import { convertToTransferAction, saveTransactionAction, saveTransferAction } from "./actions";
 import type { CategoryOption } from "@/lib/categories";
+import { formatDateCH } from "@/lib/date";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Combobox } from "@/components/ui/combobox";
+import { Money } from "@/components/money";
 import { cn } from "@/lib/utils";
 
 export interface AccountOption {
@@ -57,11 +59,13 @@ export function TransactionFormDialog({
           <DialogDescription>
             {mode === "booking"
               ? "Einnahme oder Ausgabe auf einem Konto."
-              : "Verschiebung zwischen zwei eigenen Konten — zählt nicht als Ausgabe."}
+              : transaction && !isTransfer
+                ? "Ordnet dieser Buchung ein Gegenkonto zu, statt sie zu löschen und neu zu erfassen."
+                : "Verschiebung zwischen zwei eigenen Konten — zählt nicht als Ausgabe."}
           </DialogDescription>
         </DialogHeader>
 
-        {!transaction && (
+        {!isTransfer && (
           <div className="flex gap-1 rounded-lg bg-muted p-1">
             {(
               [
@@ -92,6 +96,13 @@ export function TransactionFormDialog({
             accounts={accounts}
             categories={categories}
             today={today}
+            onDone={() => setOpen(false)}
+          />
+        ) : transaction && !isTransfer ? (
+          <ConvertToTransferForm
+            transaction={transaction}
+            accounts={accounts}
+            onCancel={() => setMode("booking")}
             onDone={() => setOpen(false)}
           />
         ) : (
@@ -419,6 +430,103 @@ function TransferForm({
         </Button>
         <Button type="submit" disabled={pending}>
           {pending ? "Speichern…" : "Speichern"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+/**
+ * Converts an already-booked, non-transfer transaction into one leg of a
+ * transfer — the manual counterpart to a transfer import rule, for the
+ * one-off case that isn't worth a rule. Date, amount and description stay as
+ * they are; only the other side of the movement needs to be picked.
+ */
+function ConvertToTransferForm({
+  transaction,
+  accounts,
+  onCancel,
+  onDone,
+}: {
+  transaction: Transaction;
+  accounts: AccountOption[];
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const [state, formAction, pending] = useActionState(convertToTransferAction, undefined);
+  const [targetAccountId, setTargetAccountId] = useState("");
+
+  useEffect(() => {
+    if (state?.success) {
+      toast.success(
+        state.autoApplied
+          ? `Als Umbuchung markiert. Regel erstellt, ${state.autoApplied} weitere Buchung(en) automatisch umgebucht.`
+          : "Als Umbuchung markiert."
+      );
+      onDone();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  const otherAccounts = accounts.filter((account) => account.id !== transaction.accountId);
+  const targetName = accounts.find((account) => String(account.id) === targetAccountId)?.name ?? "";
+
+  return (
+    <form action={formAction} className="flex flex-col gap-4">
+      <input type="hidden" name="id" value={transaction.id} />
+      <input type="hidden" name="targetAccountId" value={targetAccountId} />
+
+      <p className="text-sm text-muted-foreground">
+        {formatDateCH(transaction.date)} · {transaction.description} ·{" "}
+        <Money cents={transaction.amountCents} colored />
+      </p>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="convert-target">Gegenkonto</Label>
+        <Combobox
+          id="convert-target"
+          value={targetAccountId}
+          onValueChange={setTargetAccountId}
+          options={otherAccounts.map((account) => ({
+            value: String(account.id),
+            label: account.name,
+          }))}
+          placeholder="Konto wählen"
+          searchPlaceholder="Konto suchen…"
+          emptyText="Kein Konto gefunden."
+        />
+        <p className="text-xs text-muted-foreground">
+          Passt eine bestehende Buchung auf diesem Konto zu Datum und Betrag, wird sie verknüpft —
+          sonst wird die Gegenbuchung automatisch angelegt.
+        </p>
+      </div>
+
+      {transaction.counterparty && targetAccountId && (
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="createRule"
+            defaultChecked
+            className="mt-1 size-4 accent-primary"
+          />
+          <span>
+            Regel erstellen
+            <span className="block text-xs text-muted-foreground">
+              Künftige und bestehende Buchungen von „{transaction.counterparty}“ automatisch als
+              Umbuchung zu „{targetName}“ buchen.
+            </span>
+          </span>
+        </label>
+      )}
+
+      {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Zurück
+        </Button>
+        <Button type="submit" disabled={pending || !targetAccountId}>
+          {pending ? "Umwandeln…" : "Als Umbuchung markieren"}
         </Button>
       </DialogFooter>
     </form>

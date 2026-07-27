@@ -1,3 +1,6 @@
+[![Web CI/CD](https://github.com/sirtheta/budget/actions/workflows/web.yml/badge.svg)](https://github.com/sirtheta/budget/actions/workflows/web.yml)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+
 # Haushaltsbudget
 
 Budget-, Ausgaben- und Vermögensübersicht für einen privaten Schweizer Haushalt.

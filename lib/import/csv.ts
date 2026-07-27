@@ -154,11 +154,15 @@ export function parseCsvStatement(input: string, mapping: CsvMapping): CsvParseR
   dataRows.forEach((row, index) => {
     const line = start + index + 1;
 
-    const date = parseCsvDate(cell(row, mapping.dateColumn), mapping.dateFormat);
+    const dateValue = cell(row, mapping.dateColumn);
+    const date = parseCsvDate(dateValue, mapping.dateFormat);
     if (!date) {
       rejectedRows.push({
         line,
-        reason: `Datum "${cell(row, mapping.dateColumn)}" passt nicht zum Format ${mapping.dateFormat}`,
+        reason:
+          dateValue === ""
+            ? "Datumsspalte ist leer (z. B. stornierte oder noch nicht abgeschlossene Buchung)"
+            : `Datum "${dateValue}" passt nicht zum Format ${mapping.dateFormat}`,
         raw: row,
       });
       return;
@@ -167,6 +171,7 @@ export function parseCsvStatement(input: string, mapping: CsvMapping): CsvParseR
     let amountCents: number | null = null;
     if (mapping.amountColumn !== null) {
       amountCents = parseMoney(cell(row, mapping.amountColumn));
+      if (amountCents !== null && mapping.invertAmount) amountCents = -amountCents;
     } else {
       const debit = parseMoney(cell(row, mapping.debitColumn));
       const credit = parseMoney(cell(row, mapping.creditColumn));

@@ -13,9 +13,11 @@ test.describe("Buchungen erfassen", () => {
     await page.getByRole("button", { name: "Speichern" }).click();
 
     await expect(page.getByRole("dialog")).toBeHidden();
-    await expect(page.getByText("Wocheneinkauf E2E")).toBeVisible();
+    // .first(): the row also renders in the mobile card list, hidden by CSS
+    // at this viewport rather than absent from the DOM.
+    await expect(page.getByText("Wocheneinkauf E2E").first()).toBeVisible();
     // Expenses are stored negative and rendered with a typographic minus.
-    await expect(page.getByText("−82.40")).toBeVisible();
+    await expect(page.getByText("−82.40").first()).toBeVisible();
   });
 
   test("filtert die Liste nach Suchbegriff", async ({ page }) => {
@@ -26,7 +28,7 @@ test.describe("Buchungen erfassen", () => {
     await page.getByRole("textbox", { name: "Suche" }).fill("Wocheneinkauf");
     await page.getByRole("button", { name: "Suchen" }).click();
 
-    await expect(page.getByText("Wocheneinkauf E2E")).toBeVisible();
+    await expect(page.getByText("Wocheneinkauf E2E").first()).toBeVisible();
   });
 });
 

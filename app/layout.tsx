@@ -36,6 +36,7 @@ export default async function RootLayout({
     >
       <head>
         <script
+          type="text/javascript"
           nonce={nonce}
           suppressHydrationWarning
           dangerouslySetInnerHTML={{
@@ -44,6 +45,7 @@ export default async function RootLayout({
         />
         {/* Anti-flash: restore color scheme before React hydrates */}
         <script
+          type="text/javascript"
           nonce={nonce}
           suppressHydrationWarning
           dangerouslySetInnerHTML={{

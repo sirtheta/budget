@@ -1,4 +1,4 @@
-import type { RuleField, RuleMatch } from "@prisma/client";
+import type { RuleField, RuleMatch, RuleSign } from "@prisma/client";
 
 /**
  * Labels for the import-rule form.
@@ -17,4 +17,10 @@ export const MATCH_TYPE_LABELS: Record<RuleMatch, string> = {
 export const RULE_FIELD_LABELS: Record<RuleField, string> = {
   Description: "Beschreibung",
   Counterparty: "Gegenpartei",
+};
+
+export const RULE_SIGN_LABELS: Record<RuleSign, string> = {
+  Any: "beliebig",
+  Positive: "nur Eingänge (+)",
+  Negative: "nur Ausgänge (−)",
 };

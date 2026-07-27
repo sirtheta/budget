@@ -18,7 +18,7 @@ import type { ParsedTransaction } from "@/lib/import/types";
  */
 
 /** Normalises free text so trivial formatting differences don't defeat matching. */
-function normalize(value: string | null): string {
+export function normalize(value: string | null): string {
   return (value ?? "")
     .toLowerCase()
     .replace(/\s+/g, " ")
@@ -73,6 +73,43 @@ export function withHashes(
     seen.set(key, occurrence + 1);
     return { ...transaction, hash: importHash(accountId, transaction, occurrence) };
   });
+}
+
+/**
+ * Highest occurrence index accepted by `verifyImportHash`. Bounds the work per
+ * row; a real statement never carries a hundred byte-identical bookings on one
+ * day, and anything beyond that is a caller inventing numbers.
+ */
+const MAX_VERIFIED_OCCURRENCE = 100;
+
+/**
+ * Whether `hash` is a fingerprint this module would derive from `transaction`.
+ *
+ * The commit step receives its rows back from the browser, hash included,
+ * because the preview is stateless. Storing that hash unchecked let a caller
+ * write any value into the unique `importHash` index — claiming a fingerprint a
+ * genuine future statement would need, which would make that real booking look
+ * like a duplicate and silently vanish from the import.
+ *
+ * The occurrence counter can't simply be recomputed here: it is numbered over
+ * the whole file, and the commit only carries the rows the user ticked. So the
+ * hash is accepted when it matches *some* occurrence index — the value stays
+ * derived from row content the caller also submitted, which is the property
+ * that matters.
+ */
+export function verifyImportHash(
+  accountId: number,
+  transaction: ParsedTransaction,
+  hash: string
+): boolean {
+  // With a bank reference the fingerprint ignores the occurrence entirely.
+  if (transaction.bankReference) {
+    return importHash(accountId, transaction, 0) === hash;
+  }
+  for (let occurrence = 0; occurrence <= MAX_VERIFIED_OCCURRENCE; occurrence++) {
+    if (importHash(accountId, transaction, occurrence) === hash) return true;
+  }
+  return false;
 }
 
 export interface DedupeResult {

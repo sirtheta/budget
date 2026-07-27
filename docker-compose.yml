@@ -19,7 +19,12 @@ services:
       # your own values, set them via .env (see .env.example) — explicitly
       # configured values always take precedence over generated ones.
       AUTH_SECRET: ${AUTH_SECRET:-}
+      # Set this to the https:// address when the instance is served over TLS
+      # (reverse proxy included): NextAuth marks the session cookie `Secure`
+      # only for an https AUTH_URL. The container warns at startup otherwise.
+      # node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
       AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       # Server timezone (log timestamps etc.). Which calendar day a recurring
       # booking is due on follows APP_TIMEZONE (default Europe/Zurich) and

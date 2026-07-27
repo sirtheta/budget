@@ -7,8 +7,9 @@ import { UserRole } from "@prisma/client";
 import { dummyCompare } from "@/lib/password";
 import { decryptSecret } from "@/lib/crypto";
 import { verifyTwoFactorToken, consumeBackupCode } from "@/lib/two-factor";
-import logger from "@/lib/logger";
+import logger, { maskEmail } from "@/lib/logger";
 import { checkRateLimit, resetRateLimit } from "@/lib/rate-limit";
+import { clientIp } from "@/lib/client-ip";
 import { config } from "@/lib/config";
 
 const log = logger.child({ module: "auth" });
@@ -46,14 +47,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // so "User@x.ch" and "user@x.ch " share one bucket.
         const rateLimitKey = `login:${email.trim().toLowerCase()}`;
         // Broader per-IP bucket: limits spraying many accounts from one IP
-        // without letting one IP lock out a shared office network.
-        const ip =
-          request?.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-        const ipAllowed = checkRateLimit(`login-ip:${ip}`, {
-          maxAttempts: config.rateLimit.maxAttempts * 10,
-        });
+        // without letting one IP lock out a shared office network. Only applied
+        // when the address is trustworthy — see lib/client-ip.ts.
+        const ip = clientIp(request?.headers);
+        const ipAllowed =
+          ip === null ||
+          checkRateLimit(`login-ip:${ip}`, {
+            maxAttempts: config.rateLimit.maxAttempts * 10,
+          });
         if (!checkRateLimit(rateLimitKey) || !ipAllowed) {
-          log.warn({ email, ip }, "login blocked: rate limit exceeded");
+          log.warn({ email: maskEmail(email), ip }, "login blocked: rate limit exceeded");
           return null;
         }
 
@@ -62,13 +65,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           // Equalize response time with the real password check so the
           // duration does not reveal whether the email exists.
           await dummyCompare(password);
-          log.warn({ email }, "login failed: user not found or inactive");
+          log.warn({ email: maskEmail(email) }, "login failed: user not found or inactive");
           return null;
         }
 
         const passwordValid = await compare(password, user.passwordHash);
         if (!passwordValid) {
-          log.warn({ email }, "login failed: wrong password");
+          log.warn({ email: maskEmail(email) }, "login failed: wrong password");
           return null;
         }
 
@@ -80,24 +83,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (!totpValid) {
             const backup = await consumeBackupCode(user.twoFactorBackupCodes, code);
             if (!backup?.ok) {
-              log.warn({ email }, "login failed: invalid 2FA code");
+              log.warn({ email: maskEmail(email) }, "login failed: invalid 2FA code");
               throw new InvalidTwoFactorCodeError();
             }
             await prisma.user.update({
               where: { id: user.id },
               data: { twoFactorBackupCodes: backup.remaining },
             });
-            log.info({ email, userId: user.id }, "login: backup code consumed");
+            log.info({ email: maskEmail(email), userId: user.id }, "login: backup code consumed");
           }
         }
 
         resetRateLimit(rateLimitKey);
-        log.info({ email, userId: user.id }, "login success");
+        log.info({ email: maskEmail(email), userId: user.id }, "login success");
         return {
           id: String(user.id),
           name: user.name,
           email: user.email,
           role: user.role,
+          sessionEpoch: user.sessionEpoch,
         };
       },
     }),
@@ -115,13 +119,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = (user as { role: UserRole }).role;
+        token.sessionEpoch = (user as { sessionEpoch?: number }).sessionEpoch ?? 0;
         token.roleCheckedAt = Date.now();
         return token;
       }
-      // Re-validate against the DB so demotion, deactivation, or a profile
-      // edit (name/email) takes effect within a minute instead of only at
-      // JWT expiry (default 7 days) / next login. Returning null invalidates
-      // the session.
+      // Re-validate against the DB so demotion, deactivation, a credential
+      // change, or a profile edit (name/email) takes effect within a minute
+      // instead of only at JWT expiry (default 7 days) / next login. Returning
+      // null invalidates the session.
       const ROLE_RECHECK_MS = 60_000;
       const checkedAt = typeof token.roleCheckedAt === "number" ? token.roleCheckedAt : 0;
       if (Date.now() - checkedAt > ROLE_RECHECK_MS) {
@@ -129,10 +134,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!Number.isInteger(userId)) return null;
         const dbUser = await prisma.user.findUnique({
           where: { id: userId },
-          select: { role: true, isActive: true, name: true, email: true },
+          select: {
+            role: true,
+            isActive: true,
+            name: true,
+            email: true,
+            sessionEpoch: true,
+          },
         });
         if (!dbUser || !dbUser.isActive) {
           log.info({ userId: token.id }, "session invalidated: user missing or inactive");
+          return null;
+        }
+        // The password (or 2FA) changed after this token was issued. Whoever
+        // reset it did so to lock somebody out, so every older token dies —
+        // including, unavoidably, the one belonging to the person who changed
+        // it, since a JWT carries no per-session identity to spare.
+        const tokenEpoch = typeof token.sessionEpoch === "number" ? token.sessionEpoch : 0;
+        if (tokenEpoch !== dbUser.sessionEpoch) {
+          log.info({ userId: token.id }, "session invalidated: credentials changed");
           return null;
         }
         token.role = dbUser.role;

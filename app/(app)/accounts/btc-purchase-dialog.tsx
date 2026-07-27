@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Bitcoin } from "lucide-react";
 import { recordBtcPurchaseAction } from "./actions";
 import { useDialogFormAction } from "@/components/use-dialog-form";
 import type { CategoryOption } from "@/lib/categories";
@@ -38,7 +39,6 @@ export function BtcPurchaseDialog({
   categories,
   currentRateChf,
   today,
-  trigger,
 }: {
   cryptoAccountId: number;
   sourceAccounts: AccountOption[];
@@ -46,7 +46,6 @@ export function BtcPurchaseDialog({
   /** Live BTC/CHF rate for the estimate hint, or null if it couldn't be fetched. */
   currentRateChf: number | null;
   today: string;
-  trigger: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useDialogFormAction(recordBtcPurchaseAction, {
@@ -68,7 +67,11 @@ export function BtcPurchaseDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen} modal={false}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Bitcoin-Kauf erfassen">
+          <Bitcoin className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Bitcoin-Kauf erfassen</DialogTitle>

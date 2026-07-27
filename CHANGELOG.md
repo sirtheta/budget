@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/sirtheta/budget/compare/budget-v0.1.5...budget-v0.1.6) (2026-07-27)
+
+
+### Bug Fixes
+
+* make data tables and page headers usable on mobile ([#19](https://github.com/sirtheta/budget/issues/19)) ([37fd62b](https://github.com/sirtheta/budget/commit/37fd62b872a89dd63f3115338f5a6b84f34fdafc))
+
 ## [0.1.5](https://github.com/sirtheta/budget/compare/budget-v0.1.4...budget-v0.1.5) (2026-07-26)
 
 

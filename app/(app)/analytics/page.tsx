@@ -6,6 +6,7 @@ import { todayInZone, trailingMonths, yearRange } from "@/lib/date";
 import {
   categoryBreakdown,
   monthlySeries,
+  netWorthForecast,
   netWorthSeries,
   topCounterparties,
 } from "@/lib/analytics";
@@ -14,8 +15,15 @@ import { Money } from "@/components/money";
 import { MonthlyBarChart } from "@/components/charts/monthly-bar-chart";
 import { CategoryPieChart } from "@/components/charts/category-pie-chart";
 import { NetWorthChart } from "@/components/charts/net-worth-chart";
+import { NetWorthForecastChart } from "@/components/charts/net-worth-forecast-chart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+const FORECAST_HORIZONS = [
+  { months: 12, label: "1 Jahr" },
+  { months: 24, label: "2 Jahre" },
+  { months: 36, label: "3 Jahre" },
+] as const;
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +35,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
   const raw = await searchParams;
   const today = todayInZone(config.recurring.timezone);
   const currentYear = parseInt(today.slice(0, 4), 10);
+  const currentMonth = parseInt(today.slice(5, 7), 10);
   const year = parseInt(String(raw.year ?? currentYear), 10) || currentYear;
 
   const { from, to } = yearRange(year);
@@ -36,19 +45,24 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
 
   const months = Array.from({ length: 12 }, (_, index) => ({ year, month: index + 1 }));
 
-  const [series, expenses, income, netWorth, counterparties] = await Promise.all([
+  const horizon =
+    FORECAST_HORIZONS.find((option) => option.months === parseInt(String(raw.horizon ?? ""), 10))
+      ?.months ?? 12;
+
+  const [series, expenses, income, netWorth, counterparties, forecast] = await Promise.all([
     monthlySeries(prisma, months),
     categoryBreakdown(prisma, from, rangeEnd, "Expense"),
     categoryBreakdown(prisma, from, rangeEnd, "Income"),
-    netWorthSeries(prisma, trailingMonths(currentYear, parseInt(today.slice(5, 7), 10), 24)),
+    netWorthSeries(prisma, trailingMonths(currentYear, currentMonth, 24)),
     topCounterparties(prisma, from, rangeEnd, 10),
+    netWorthForecast(prisma, { asOfYear: currentYear, asOfMonth: currentMonth, forecastMonths: horizon }),
   ]);
 
   const totalIncome = series.reduce((sum, month) => sum + month.incomeCents, 0);
   const totalExpense = series.reduce((sum, month) => sum + month.expenseCents, 0);
   // Only elapsed months count towards the average, otherwise the running year
   // is divided by twelve and reads far too low.
-  const elapsedMonths = year === currentYear ? parseInt(today.slice(5, 7), 10) : 12;
+  const elapsedMonths = year === currentYear ? currentMonth : 12;
 
   // Year picker bounds from the first and last booking, rather than a distinct
   // scan over every date in the table.
@@ -163,6 +177,62 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
           </CardContent>
         </Card>
       </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <CardTitle className="text-base">Vermögensprognose</CardTitle>
+              <CardDescription>
+                {forecast.insufficientData
+                  ? "Noch nicht genug Buchungen für eine Prognose"
+                  : `Lineare Fortschreibung des Ø Zuwachses der letzten ${forecast.historyMonths} Monate`}
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {FORECAST_HORIZONS.map((option) => (
+                <Button
+                  key={option.months}
+                  variant={option.months === horizon ? "default" : "outline"}
+                  size="sm"
+                  asChild
+                >
+                  <Link href={`/analytics?year=${year}&horizon=${option.months}`}>
+                    {option.label}
+                  </Link>
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {forecast.insufficientData ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Sammle mindestens zwei Monate Buchungen, dann erscheint hier eine Prognose.
+            </p>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2 mb-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Ø Vermögenszuwachs / Monat</p>
+                  <p className="text-2xl font-medium tabular-nums">
+                    <Money cents={forecast.monthlyGrowthCents} colored forceSign />
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Prognose in {FORECAST_HORIZONS.find((o) => o.months === horizon)?.label}
+                  </p>
+                  <p className="text-2xl font-medium tabular-nums">
+                    <Money cents={forecast.points[forecast.points.length - 1].netWorthCents} />
+                  </p>
+                </div>
+              </div>
+              <NetWorthForecastChart data={forecast.points} />
+            </>
+          )}
+        </CardContent>
+      </Card>
     </>
   );
 }

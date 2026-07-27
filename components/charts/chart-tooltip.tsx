@@ -26,13 +26,14 @@ export function MoneyTooltip({
   payload?: TooltipEntry[];
   label?: string | number;
 }) {
-  if (!active || !payload?.length) return null;
+  const entries = payload?.filter((entry) => entry.value !== undefined && entry.value !== null);
+  if (!active || !entries?.length) return null;
 
   return (
     <div className="rounded-lg border bg-popover px-3 py-2 text-popover-foreground shadow-md text-sm">
       {label !== undefined && <p className="font-medium mb-1">{label}</p>}
       <ul className="flex flex-col gap-0.5">
-        {payload.map((entry, index) => (
+        {entries.map((entry, index) => (
           <li key={index} className="flex items-center gap-2">
             <span
               className="size-2 rounded-full shrink-0"

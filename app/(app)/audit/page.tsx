@@ -39,7 +39,8 @@ export default async function AuditPage() {
               Noch keine Einträge.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -69,6 +70,24 @@ export default async function AuditPage() {
                 </TableBody>
               </Table>
             </div>
+
+            <ul className="md:hidden divide-y">
+              {logs.map((log) => (
+                <li key={log.id} className="flex flex-col gap-1 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge variant="outline">{actionLabel(log.action)}</Badge>
+                    <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                      {log.createdAt.toLocaleString("de-CH")}
+                    </span>
+                  </div>
+                  <p className="text-sm">{describeAuditLog(log)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {log.userName} · {entityLabel(log.entityType)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+            </>
           )}
         </CardContent>
       </Card>

@@ -75,7 +75,8 @@ export default async function AccountsPage() {
               Noch keine Konten erfasst. Lege zuerst dein Privatkonto an.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -155,6 +156,74 @@ export default async function AccountsPage() {
                 </TableBody>
               </Table>
             </div>
+
+            <ul className="md:hidden divide-y">
+              {accounts.map((account) => {
+                const btc = btcById.get(account.id);
+                const gainLossPct =
+                  account.type === "Crypto" && btc?.gainLossCents !== undefined && btc?.gainLossCents !== null && btc.costBasisCents
+                    ? (btc.gainLossCents / btc.costBasisCents) * 100
+                    : null;
+                return (
+                  <li key={account.id} className={`p-4 ${account.isActive ? "" : "opacity-55"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className="size-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: account.color ?? "#6366f1" }}
+                            aria-hidden
+                          />
+                          <span className="font-medium">{account.name}</span>
+                          {!account.isActive && <Badge variant="outline">Inaktiv</Badge>}
+                          {account.excludeFromBudget && (
+                            <Badge variant="secondary">Ausserhalb Budget</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {ACCOUNT_TYPE_LABELS[account.type]}
+                          {account.type === "Crypto"
+                            ? btc && btc.amount !== null
+                              ? ` · ${btc.amount} BTC${btc.rate === null ? " (Kurs n/a)" : ` @ ${btc.rate.toLocaleString("de-CH")}`}`
+                              : ""
+                            : account.iban
+                              ? ` · ${account.iban}`
+                              : ""}
+                        </p>
+                        {account.notes && (
+                          <p className="text-xs text-muted-foreground mt-0.5">{account.notes}</p>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="font-medium">
+                          <Money cents={balanceById.get(account.id) ?? 0} colored />
+                        </p>
+                        {gainLossPct !== null && btc && (
+                          <p className="text-xs">
+                            <Money cents={btc.gainLossCents!} colored forceSign /> (
+                            {gainLossPct >= 0 ? "+" : ""}
+                            {gainLossPct.toFixed(1)}%)
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-end mt-2">
+                      {account.type === "Crypto" && sourceAccounts.length > 0 && (
+                        <BtcPurchaseDialog
+                          cryptoAccountId={account.id}
+                          sourceAccounts={sourceAccounts}
+                          categories={categories}
+                          currentRateChf={currentRateChf}
+                          today={today}
+                        />
+                      )}
+                      <AccountRowActions account={account} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            </>
           )}
         </CardContent>
       </Card>

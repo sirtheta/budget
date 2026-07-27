@@ -173,7 +173,8 @@ export default async function TransactionsPage({
                   Keine Buchungen für diese Auswahl.
                 </p>
               ) : (
-                <div className="overflow-x-auto">
+                <>
+                <div className="hidden md:block overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -246,6 +247,62 @@ export default async function TransactionsPage({
                     </TableBody>
                   </Table>
                 </div>
+
+                <ul className="md:hidden divide-y">
+                  {transactions.map((transaction) => (
+                    <li key={transaction.id} className="flex items-start gap-3 p-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          {transaction.transferGroupId && (
+                            <ArrowLeftRight
+                              className="h-3.5 w-3.5 text-muted-foreground shrink-0"
+                              aria-label="Umbuchung"
+                            />
+                          )}
+                          <span className="font-medium truncate">{transaction.description}</span>
+                        </div>
+                        {transaction.counterparty && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            {transaction.counterparty}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {formatDateCH(transaction.date)} · {transaction.account.name}
+                        </p>
+                        <div className="mt-1">
+                          {transaction.transferGroupId ? (
+                            <Badge variant="secondary">Umbuchung</Badge>
+                          ) : transaction.category ? (
+                            <span className="text-xs text-muted-foreground">
+                              {transaction.category.parent && (
+                                <>{transaction.category.parent.name} › </>
+                              )}
+                              {transaction.category.name}
+                            </span>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              Ohne Kategorie
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        <span className="font-medium">
+                          <Money cents={transaction.amountCents} colored />
+                        </span>
+                        {canEdit && (
+                          <TransactionRowActions
+                            transaction={transaction}
+                            accounts={accounts}
+                            categories={categories}
+                            today={today}
+                          />
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                </>
               )}
             </CardContent>
           </Card>

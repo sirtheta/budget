@@ -1,4 +1,4 @@
-name: Web CI/CD
+name: Release & Deploy
 
 on:
   push:
@@ -7,17 +7,29 @@ on:
       - '**.md'
       - '.github/dependabot.yml'
       - 'LICENSE'
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - '.github/dependabot.yml'
-      - 'LICENSE'
   workflow_dispatch:
 
 jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
   lint:
     name: ESLint
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
@@ -31,6 +43,8 @@ jobs:
 
   test-and-build:
     name: Test & Build
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
@@ -52,6 +66,8 @@ jobs:
 
   e2e:
     name: E2E (Playwright)
+    needs: [release-please]
+    if: needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
@@ -72,27 +88,9 @@ jobs:
           path: playwright-report
           retention-days: 14
 
-  release-please:
-    name: Release Please
-    needs: [lint, test-and-build, e2e]
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-    steps:
-      - uses: googleapis/release-please-action@v5
-        id: release
-        with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-
   build-and-push:
     name: Docker Build & Push
-    needs: [lint, test-and-build, e2e, release-please]
+    needs: [release-please, lint, test-and-build, e2e]
     if: |
       always() &&
       needs.lint.result == 'success' &&

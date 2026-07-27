@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeftRight, Download, Plus } from "lucide-react";
+import { ArrowLeftRight, Download, Plus, SplitSquareHorizontal } from "lucide-react";
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireSession } from "@/lib/permissions";
@@ -200,6 +200,12 @@ export default async function TransactionsPage({
                                   aria-label="Umbuchung"
                                 />
                               )}
+                              {transaction.splitGroupId && (
+                                <SplitSquareHorizontal
+                                  className="h-3.5 w-3.5 text-muted-foreground shrink-0"
+                                  aria-label="Aufgeteilte Buchung"
+                                />
+                              )}
                               <span className="font-medium">{transaction.description}</span>
                             </div>
                             {transaction.counterparty && (
@@ -257,6 +263,12 @@ export default async function TransactionsPage({
                             <ArrowLeftRight
                               className="h-3.5 w-3.5 text-muted-foreground shrink-0"
                               aria-label="Umbuchung"
+                            />
+                          )}
+                          {transaction.splitGroupId && (
+                            <SplitSquareHorizontal
+                              className="h-3.5 w-3.5 text-muted-foreground shrink-0"
+                              aria-label="Aufgeteilte Buchung"
                             />
                           )}
                           <span className="font-medium truncate">{transaction.description}</span>

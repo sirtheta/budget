@@ -143,6 +143,146 @@ export function isTransfer(transaction: Pick<Transaction, "transferGroupId">): b
 }
 
 /**
+ * Splitting one booked amount across several categories.
+ *
+ * The parts are ordinary rows sharing a `splitGroupId`, each with its own
+ * amountCents and categoryId, the same shape used for transfer legs. That
+ * keeps balances (a plain sum per account) and dedupe unaffected — only the
+ * category breakdown changes — at the cost of one extra row per extra part.
+ */
+
+export interface SplitPartInput {
+  categoryId: number;
+  /** Positive magnitude in Rappen; the sign is derived from the original booking. */
+  amountCents: number;
+}
+
+/**
+ * Splits (or re-splits) a booking into `parts`, which must sum to the
+ * booking's current magnitude. Re-splitting an already-split booking
+ * replaces every existing part with the new ones.
+ */
+export async function splitTransaction(
+  db: Db,
+  transactionId: number,
+  parts: SplitPartInput[]
+): Promise<{ splitGroupId: string }> {
+  if (parts.length < 2) throw new Error("Eine Aufteilung braucht mindestens 2 Kategorien.");
+  if (parts.some((p) => p.amountCents <= 0)) {
+    throw new Error("Jeder Teilbetrag muss grösser als 0 sein.");
+  }
+
+  return atomic(db, async (tx) => {
+    const source = await tx.transaction.findUnique({ where: { id: transactionId } });
+    if (!source) throw new Error("Buchung nicht gefunden.");
+    if (source.transferGroupId) throw new Error("Umbuchungen können nicht aufgeteilt werden.");
+
+    const group = source.splitGroupId
+      ? await tx.transaction.findMany({
+          where: { splitGroupId: source.splitGroupId },
+          orderBy: { id: "asc" },
+        })
+      : [source];
+
+    const totalCents = group.reduce((sum, t) => sum + t.amountCents, 0);
+    const direction = totalCents < 0 ? -1 : 1;
+    const totalMagnitude = Math.abs(totalCents);
+
+    const partsSum = parts.reduce((sum, p) => sum + p.amountCents, 0);
+    if (partsSum !== totalMagnitude) {
+      throw new Error(
+        `Die Summe der Teilbeträge (${(partsSum / 100).toFixed(2)} CHF) muss dem ` +
+          `Buchungsbetrag (${(totalMagnitude / 100).toFixed(2)} CHF) entsprechen.`
+      );
+    }
+
+    const categories = await tx.category.findMany({
+      where: { id: { in: parts.map((p) => p.categoryId) } },
+    });
+    for (const part of parts) {
+      const category = categories.find((c) => c.id === part.categoryId);
+      if (!category) throw new Error("Kategorie nicht gefunden.");
+      // Same sign-vs-category-kind guard as a normal booking (see
+      // saveTransactionAction) — a split part inherits the original
+      // booking's direction and can't contradict it.
+      if (direction > 0 && category.kind !== "Income") {
+        throw new Error(`"${category.name}" ist keine Einnahmekategorie.`);
+      }
+      if (direction < 0 && category.kind !== "Expense") {
+        throw new Error(`"${category.name}" ist keine Ausgabekategorie.`);
+      }
+    }
+
+    const shared = group[0];
+    const splitGroupId = randomUUID();
+
+    await tx.transaction.deleteMany({ where: { id: { in: group.map((t) => t.id) } } });
+
+    for (const [index, part] of parts.entries()) {
+      await tx.transaction.create({
+        data: {
+          date: shared.date,
+          amountCents: direction * part.amountCents,
+          accountId: shared.accountId,
+          categoryId: part.categoryId,
+          description: shared.description,
+          counterparty: shared.counterparty,
+          notes: shared.notes,
+          splitGroupId,
+          source: shared.source,
+          // The unique importHash follows only the first part, so a
+          // re-import of the same statement still dedupes against it
+          // instead of creating a duplicate for the full amount.
+          importHash: index === 0 ? shared.importHash : null,
+          importBatchId: shared.importBatchId,
+          bankReference: shared.bankReference,
+          createdById: shared.createdById,
+        },
+      });
+    }
+
+    return { splitGroupId };
+  });
+}
+
+/** Collapses a split group back into a single, uncategorised booking. */
+export async function mergeSplit(db: Db, splitGroupId: string): Promise<Transaction> {
+  return atomic(db, async (tx) => {
+    const group = await tx.transaction.findMany({
+      where: { splitGroupId },
+      orderBy: { id: "asc" },
+    });
+    if (group.length === 0) throw new Error("Aufteilung nicht gefunden.");
+
+    const shared = group[0];
+    const totalCents = group.reduce((sum, t) => sum + t.amountCents, 0);
+
+    await tx.transaction.deleteMany({ where: { id: { in: group.map((t) => t.id) } } });
+
+    return tx.transaction.create({
+      data: {
+        date: shared.date,
+        amountCents: totalCents,
+        accountId: shared.accountId,
+        categoryId: null,
+        description: shared.description,
+        counterparty: shared.counterparty,
+        notes: shared.notes,
+        source: shared.source,
+        importHash: shared.importHash,
+        importBatchId: shared.importBatchId,
+        bankReference: shared.bankReference,
+        createdById: shared.createdById,
+      },
+    });
+  });
+}
+
+export function isSplit(transaction: Pick<Transaction, "splitGroupId">): boolean {
+  return transaction.splitGroupId !== null;
+}
+
+/**
  * Records a Bitcoin purchase: money leaving a normal account and BTC landing
  * in a wallet.
  *

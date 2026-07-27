@@ -1,5 +1,5 @@
 import type { CategoryKind, PrismaClient } from "@prisma/client";
-import { MONTH_NAMES_SHORT, monthKey, monthRange } from "@/lib/date";
+import { MONTH_NAMES_SHORT, monthEnd, monthKey, monthRange, monthsBetween, trailingMonths } from "@/lib/date";
 import { colorFor } from "@/lib/colors";
 
 /**
@@ -196,6 +196,91 @@ export async function netWorthSeries(
       netWorthCents: running,
     };
   });
+}
+
+export interface NetWorthForecastPoint extends NetWorthPoint {
+  /** True for months after "today" — a projection, not a booked balance. */
+  projected: boolean;
+}
+
+export interface NetWorthForecast {
+  /** History followed by the projection, in chronological order. */
+  points: NetWorthForecastPoint[];
+  /** Average net worth change per month over the history window, in Rappen. */
+  monthlyGrowthCents: number;
+  /** Number of past months the average is based on. */
+  historyMonths: number;
+  /** Fewer than two booked months exist, so no projection could be built. */
+  insufficientData: boolean;
+}
+
+/**
+ * Projects net worth forward by extending the average monthly change observed
+ * over the trailing history window in a straight line.
+ *
+ * A linear extrapolation of past savings behaviour rather than a compounding
+ * one: a household's net worth grows from income minus expenses booked by
+ * hand, not from interest accruing on the balance itself, so compounding
+ * would overstate the projection.
+ */
+export async function netWorthForecast(
+  prisma: PrismaClient,
+  options: {
+    asOfYear: number;
+    asOfMonth: number;
+    historyMonths?: number;
+    forecastMonths?: number;
+  }
+): Promise<NetWorthForecast> {
+  const requestedHistory = options.historyMonths ?? 12;
+  const forecastMonths = options.forecastMonths ?? 12;
+
+  // A household that only started using the app recently has nothing but
+  // flat opening-balance months before its first transaction — including
+  // those in the average would understate a genuinely higher savings rate.
+  const bounds = await prisma.transaction.aggregate({ _min: { date: true } });
+  const today = monthEnd(options.asOfYear, options.asOfMonth);
+  const elapsed = bounds._min.date ? monthsBetween(bounds._min.date, today) + 1 : 1;
+  const historyMonths = Math.max(1, Math.min(requestedHistory, elapsed));
+
+  const months = trailingMonths(options.asOfYear, options.asOfMonth, historyMonths);
+  const history = await netWorthSeries(prisma, months);
+
+  const first = history[0];
+  const last = history[history.length - 1];
+  const span = history.length - 1;
+  const insufficientData = span < 1;
+  const monthlyGrowthCents = insufficientData
+    ? 0
+    : Math.round((last.netWorthCents - first.netWorthCents) / span);
+
+  const points: NetWorthForecastPoint[] = history.map((point) => ({
+    ...point,
+    projected: false,
+  }));
+
+  if (!insufficientData) {
+    let running = last.netWorthCents;
+    let year = last.year;
+    let month = last.month;
+    for (let i = 0; i < forecastMonths; i++) {
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+      running += monthlyGrowthCents;
+      points.push({
+        year,
+        month,
+        label: `${MONTH_NAMES_SHORT[month - 1]} ${String(year).slice(2)}`,
+        netWorthCents: running,
+        projected: true,
+      });
+    }
+  }
+
+  return { points, monthlyGrowthCents, historyMonths: history.length, insufficientData };
 }
 
 export interface CounterpartySlice {

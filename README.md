@@ -1,4 +1,5 @@
-[![Web CI/CD](https://github.com/sirtheta/budget/actions/workflows/web.yml/badge.svg)](https://github.com/sirtheta/budget/actions/workflows/web.yml)
+[![Web CI/CD](https://github.com/sirtheta/budget/actions/workflows/ci.yml/badge.svg)](https://github.com/sirtheta/budget/actions/workflows/ci.yml)
+[![Release & Deploy](https://github.com/sirtheta/budget/actions/workflows/release.yml/badge.svg)](https://github.com/sirtheta/budget/actions/workflows/release.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 # Haushaltsbudget

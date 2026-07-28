@@ -12,13 +12,9 @@ const DialogClose = DialogPrimitive.Close;
 // renders nothing when the Dialog is `modal={false}` (used by dialogs that
 // hold a Combobox — see combobox.tsx for why), which would drop the dimmed
 // backdrop and background scroll lock along with the focus trap we actually
-// wanted to relax. `RemoveScroll` restores the scroll lock independently.
+// wanted to relax.
 function DialogOverlay({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <RemoveScroll allowPinchZoom>
-      <div className={cn("fixed inset-0 z-50 bg-black/50", className)} {...props} />
-    </RemoveScroll>
-  );
+  return <div className={cn("fixed inset-0 z-50 bg-black/50", className)} {...props} />;
 }
 
 function DialogContent({
@@ -28,20 +24,28 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
-      <DialogOverlay />
-      <DialogPrimitive.Content
-        className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-background p-6 shadow-lg",
-          className
-        )}
-        {...props}
-      >
-        {children}
-        <DialogPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 outline-none hover:opacity-100">
-          <X className="h-4 w-4" />
-          <span className="sr-only">Schliessen</span>
-        </DialogPrimitive.Close>
-      </DialogPrimitive.Content>
+      {/* `RemoveScroll` restores the background scroll lock Radix drops for
+          `modal={false}`. It must wrap the overlay *and* the content: touch
+          scrolling is only permitted inside its own subtree, and a nested
+          Combobox/Select popover renders through further portals that are
+          still descendants of this one in the React tree — outside it, its
+          dropdown list would be unscrollable by touch on mobile. */}
+      <RemoveScroll allowPinchZoom>
+        <DialogOverlay />
+        <DialogPrimitive.Content
+          className={cn(
+            "fixed top-1/2 left-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-background p-6 shadow-lg",
+            className
+          )}
+          {...props}
+        >
+          {children}
+          <DialogPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 outline-none hover:opacity-100">
+            <X className="h-4 w-4" />
+            <span className="sr-only">Schliessen</span>
+          </DialogPrimitive.Close>
+        </DialogPrimitive.Content>
+      </RemoveScroll>
     </DialogPrimitive.Portal>
   );
 }

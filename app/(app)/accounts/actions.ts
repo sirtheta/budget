@@ -73,7 +73,7 @@ export async function saveAccountAction(
     const costRaw = parsed.data.btcCostBasis.trim();
     if (costRaw !== "") {
       const cents = parseMoney(costRaw);
-      if (cents === null) return { error: "Einstandswert ist keine gültige Zahl." };
+      if (cents === null || cents < 0) return { error: "Einstandswert ist keine gültige Zahl." };
       btcCostBasisCents = cents;
     }
     iban = null; // crypto wallets don't have one, and IBAN is unique

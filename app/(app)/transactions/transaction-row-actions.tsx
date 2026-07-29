@@ -39,7 +39,7 @@ export function TransactionRowActions({
   };
 
   return (
-    <div className="flex justify-end opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+    <div className="flex justify-end md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 transition-opacity">
       <TransactionFormDialog
         transaction={transaction}
         accounts={accounts}

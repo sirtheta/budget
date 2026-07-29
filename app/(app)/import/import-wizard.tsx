@@ -2,9 +2,10 @@
 
 import { startTransition, useActionState, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Upload } from "lucide-react";
-import type { CsvMapping } from "@prisma/client";
+import { AlertTriangle, CheckCircle2, Plus, Upload } from "lucide-react";
+import type { CategoryKind, CsvMapping } from "@prisma/client";
 import { commitImportAction, previewImportAction, type ImportPreview, type PreviewRow } from "./actions";
+import { saveCategoryAction } from "@/app/(app)/categories/actions";
 import type { CategoryOption } from "@/lib/categories";
 import type { AccountOption } from "@/app/(app)/transactions/transaction-form-dialog";
 import { formatDateCH } from "@/lib/date";
@@ -22,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Combobox } from "@/components/ui/combobox";
 import { cn } from "@/lib/utils";
 
@@ -30,15 +32,30 @@ const NO_CATEGORY = "none";
 
 type Format = "Camt053" | "Csv";
 
+/** Top-level category, i.e. a group a new leaf category can be filed under. */
+export interface CategoryGroupOption {
+  id: number;
+  name: string;
+  kind: CategoryKind;
+}
+
 export function ImportWizard({
   accounts,
   categories,
+  parents,
   mappings,
 }: {
   accounts: AccountOption[];
   categories: CategoryOption[];
+  parents: CategoryGroupOption[];
   mappings: CsvMapping[];
 }) {
+  // Mutable copy of the server-loaded categories: a category created inline
+  // while categorising this preview (see QuickCreateCategory below) is
+  // appended here so it becomes selectable for every other row immediately,
+  // without a page reload — which would also throw away the in-memory
+  // preview and force re-reading the file.
+  const [categoryList, setCategoryList] = useState(categories);
   const [format, setFormat] = useState<Format>("Camt053");
   const [accountId, setAccountId] = useState(AUTO_ACCOUNT);
   const [mappingId, setMappingId] = useState(String(mappings[0]?.id ?? ""));
@@ -137,6 +154,39 @@ export function ImportWizard({
         update({ done: { imported: result.imported ?? 0, skipped: result.skipped ?? 0 } });
       }
     });
+  };
+
+  // Applies a category just created from a row's "+" button to that row, and
+  // — since the whole reason to categorise inline is that a rule hasn't been
+  // written yet — to every other still-uncategorised row in this same
+  // preview with the same counterparty, the same signal loadHistoryCategorySuggestions
+  // uses to pre-fill from past imports.
+  const applyNewCategory = (row: PreviewRow, category: CategoryOption) => {
+    if (!preview) return;
+    setCategoryList((prev) => [...prev, category].sort((a, b) => a.label.localeCompare(b.label, "de-CH")));
+
+    const value = `cat:${category.id}`;
+    const currentOverrides = active?.overrides ?? {};
+    const matches = preview.rows.filter(
+      (r) =>
+        r.hash === row.hash ||
+        (!r.isAdopted &&
+          r.categoryId === null &&
+          r.transferAccountId === null &&
+          r.counterparty &&
+          row.counterparty &&
+          r.counterparty.trim().toLowerCase() === row.counterparty.trim().toLowerCase() &&
+          !(r.hash in currentOverrides))
+    );
+    const nextOverrides = { ...currentOverrides };
+    for (const match of matches) nextOverrides[match.hash] = value;
+    update({ overrides: nextOverrides });
+
+    toast.success(
+      matches.length > 1
+        ? `Kategorie "${category.label}" erstellt und auf ${matches.length} Buchungen angewendet.`
+        : `Kategorie "${category.label}" erstellt.`
+    );
   };
 
   const selectedCount = preview ? preview.rows.filter((r) => selected.has(r.hash)).length : 0;
@@ -443,36 +493,43 @@ export function ImportWizard({
                             <Badge variant="secondary">Wird mit Umbuchung verknüpft</Badge>
                           ) : (
                             <div className="space-y-1">
-                              <Combobox
-                                className="h-8"
-                                value={selectionOf(row)}
-                                options={[
-                                  { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
-                                  ...categories
-                                    .filter((category) =>
-                                      row.amountCents >= 0
-                                        ? category.kind === "Income"
-                                        : category.kind === "Expense"
-                                    )
-                                    .map((category) => ({
-                                      value: `cat:${category.id}`,
-                                      label: category.label,
-                                    })),
-                                  ...accounts
-                                    .filter((account) => account.id !== preview.accountId)
-                                    .map((account) => ({
-                                      value: `transfer:${account.id}`,
-                                      label: `→ Umbuchung: ${account.name}`,
-                                    })),
-                                ]}
-                                onValueChange={(value) =>
-                                  update({
-                                    overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
-                                  })
-                                }
-                                searchPlaceholder="Kategorie oder Umbuchung suchen…"
-                                emptyText="Nichts gefunden."
-                              />
+                              <div className="flex items-center gap-1">
+                                <Combobox
+                                  className="h-8 flex-1"
+                                  value={selectionOf(row)}
+                                  options={[
+                                    { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
+                                    ...categoryList
+                                      .filter((category) =>
+                                        row.amountCents >= 0
+                                          ? category.kind === "Income"
+                                          : category.kind === "Expense"
+                                      )
+                                      .map((category) => ({
+                                        value: `cat:${category.id}`,
+                                        label: category.label,
+                                      })),
+                                    ...accounts
+                                      .filter((account) => account.id !== preview.accountId)
+                                      .map((account) => ({
+                                        value: `transfer:${account.id}`,
+                                        label: `→ Umbuchung: ${account.name}`,
+                                      })),
+                                  ]}
+                                  onValueChange={(value) =>
+                                    update({
+                                      overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
+                                    })
+                                  }
+                                  searchPlaceholder="Kategorie oder Umbuchung suchen…"
+                                  emptyText="Nichts gefunden."
+                                />
+                                <QuickCreateCategory
+                                  kind={row.amountCents >= 0 ? "Income" : "Expense"}
+                                  parents={parents}
+                                  onCreated={(category) => applyNewCategory(row, category)}
+                                />
+                              </div>
                               {row.categorySource === "history" &&
                                 !(active && row.hash in active.overrides) && (
                                   <Badge
@@ -548,36 +605,43 @@ export function ImportWizard({
                       </Badge>
                     ) : (
                       <div className="space-y-1 pl-6">
-                        <Combobox
-                          className="h-8 w-full"
-                          value={selectionOf(row)}
-                          options={[
-                            { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
-                            ...categories
-                              .filter((category) =>
-                                row.amountCents >= 0
-                                  ? category.kind === "Income"
-                                  : category.kind === "Expense"
-                              )
-                              .map((category) => ({
-                                value: `cat:${category.id}`,
-                                label: category.label,
-                              })),
-                            ...accounts
-                              .filter((account) => account.id !== preview.accountId)
-                              .map((account) => ({
-                                value: `transfer:${account.id}`,
-                                label: `→ Umbuchung: ${account.name}`,
-                              })),
-                          ]}
-                          onValueChange={(value) =>
-                            update({
-                              overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
-                            })
-                          }
-                          searchPlaceholder="Kategorie oder Umbuchung suchen…"
-                          emptyText="Nichts gefunden."
-                        />
+                        <div className="flex items-center gap-1">
+                          <Combobox
+                            className="h-8 flex-1"
+                            value={selectionOf(row)}
+                            options={[
+                              { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
+                              ...categoryList
+                                .filter((category) =>
+                                  row.amountCents >= 0
+                                    ? category.kind === "Income"
+                                    : category.kind === "Expense"
+                                )
+                                .map((category) => ({
+                                  value: `cat:${category.id}`,
+                                  label: category.label,
+                                })),
+                              ...accounts
+                                .filter((account) => account.id !== preview.accountId)
+                                .map((account) => ({
+                                  value: `transfer:${account.id}`,
+                                  label: `→ Umbuchung: ${account.name}`,
+                                })),
+                            ]}
+                            onValueChange={(value) =>
+                              update({
+                                overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
+                              })
+                            }
+                            searchPlaceholder="Kategorie oder Umbuchung suchen…"
+                            emptyText="Nichts gefunden."
+                          />
+                          <QuickCreateCategory
+                            kind={row.amountCents >= 0 ? "Income" : "Expense"}
+                            parents={parents}
+                            onCreated={(category) => applyNewCategory(row, category)}
+                          />
+                        </div>
                         {row.categorySource === "history" &&
                           !(active && row.hash in active.overrides) && (
                             <Badge
@@ -604,5 +668,98 @@ export function ImportWizard({
         </Card>
       )}
     </div>
+  );
+}
+
+/**
+ * Creates a leaf category under an existing group without leaving the import
+ * preview. Restricted to filing under a group that already exists — a brand
+ * new top-level group needs a colour and placement decision that belongs on
+ * the categories page, not in a popover meant for "one more leaf category".
+ */
+function QuickCreateCategory({
+  kind,
+  parents,
+  onCreated,
+}: {
+  kind: CategoryKind;
+  parents: CategoryGroupOption[];
+  onCreated: (category: CategoryOption) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [parentId, setParentId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startCreate] = useTransition();
+
+  const matchingParents = parents.filter((parent) => parent.kind === kind);
+
+  const submit = () => {
+    const trimmed = name.trim();
+    if (!trimmed || !parentId) return;
+    const formData = new FormData();
+    formData.set("name", trimmed);
+    formData.set("kind", kind);
+    formData.set("parentId", parentId);
+
+    startCreate(async () => {
+      const result = await saveCategoryAction(undefined, formData);
+      if (result.error || !result.id) {
+        setError(result.error ?? "Kategorie konnte nicht erstellt werden.");
+        return;
+      }
+      const parent = matchingParents.find((p) => String(p.id) === parentId);
+      onCreated({
+        id: result.id,
+        name: trimmed,
+        kind,
+        parentName: parent?.name ?? null,
+        label: parent ? `${parent.name} › ${trimmed}` : trimmed,
+      });
+      setName("");
+      setParentId("");
+      setError(null);
+      setOpen(false);
+    });
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0"
+          aria-label="Neue Kategorie erstellen"
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 flex flex-col gap-3" align="start">
+        <p className="text-sm font-medium">Neue Kategorie</p>
+        <Input
+          autoFocus
+          placeholder="Name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+        <Combobox
+          value={parentId}
+          onValueChange={setParentId}
+          placeholder="Gruppe wählen…"
+          options={matchingParents.map((parent) => ({
+            value: String(parent.id),
+            label: parent.name,
+          }))}
+          searchPlaceholder="Gruppe suchen…"
+          emptyText="Keine passende Gruppe gefunden."
+        />
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        <Button type="button" size="sm" disabled={pending || !name.trim() || !parentId} onClick={submit}>
+          {pending ? "Erstellen…" : "Erstellen"}
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }

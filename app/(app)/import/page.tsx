@@ -26,13 +26,18 @@ export const dynamic = "force-dynamic";
 export default async function ImportPage() {
   await requireEditor();
 
-  const [accounts, categories, mappings, rules, batches] = await Promise.all([
+  const [accounts, categories, parents, mappings, rules, batches] = await Promise.all([
     prisma.account.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, name: true },
     }),
     categoryOptions(prisma),
+    prisma.category.findMany({
+      where: { parentId: null, isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, kind: true },
+    }),
     prisma.csvMapping.findMany({ orderBy: { name: "asc" } }),
     prisma.importRule.findMany({
       orderBy: [{ priority: "asc" }, { name: "asc" }],
@@ -62,7 +67,7 @@ export default async function ImportPage() {
           </CardContent>
         </Card>
       ) : (
-        <ImportWizard accounts={accounts} categories={categories} mappings={mappings} />
+        <ImportWizard accounts={accounts} categories={categories} parents={parents} mappings={mappings} />
       )}
 
       <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mt-10 mb-3">

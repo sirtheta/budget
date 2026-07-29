@@ -53,6 +53,17 @@ describe("ruleMatches", () => {
     expect(ruleMatches(rule({ field: "Counterparty", pattern: "einkauf" }), tx())).toBe(false);
   });
 
+  it("matches description or counterparty with field Both, so one rule covers an inconsistent bank export", () => {
+    const both = rule({ field: "Both", pattern: "coop" });
+    expect(ruleMatches(both, tx({ description: "Kauf", counterparty: "Coop-3 Zürich" }))).toBe(
+      true
+    );
+    expect(ruleMatches(both, tx({ description: "Coop Pronto Tankstelle", counterparty: "Migrol" }))).toBe(
+      true
+    );
+    expect(ruleMatches(both, tx({ description: "Kauf", counterparty: "Migros" }))).toBe(false);
+  });
+
   it("never matches on an empty field", () => {
     expect(ruleMatches(rule({ field: "Counterparty" }), tx({ counterparty: null }))).toBe(false);
   });

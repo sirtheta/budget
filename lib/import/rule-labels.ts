@@ -17,6 +17,7 @@ export const MATCH_TYPE_LABELS: Record<RuleMatch, string> = {
 export const RULE_FIELD_LABELS: Record<RuleField, string> = {
   Description: "Beschreibung",
   Counterparty: "Gegenpartei",
+  Both: "Beschreibung oder Gegenpartei",
 };
 
 export const RULE_SIGN_LABELS: Record<RuleSign, string> = {

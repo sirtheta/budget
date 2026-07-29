@@ -88,9 +88,19 @@ function compile(pattern: string, ruleId: number): RegExp | null {
   return regex;
 }
 
-/** Field of a transaction a rule matches against. */
+/**
+ * Field of a transaction a rule matches against. `Both` joins description and
+ * counterparty with a space so one rule covers a counterparty that shows up
+ * inconsistently — sometimes in the bank's counterparty field, sometimes only
+ * embedded in the free-text description — without duplicating the rule.
+ */
 function fieldValue(transaction: ParsedTransaction, field: ImportRule["field"]): string {
-  const value = field === "Counterparty" ? transaction.counterparty : transaction.description;
+  const value =
+    field === "Counterparty"
+      ? transaction.counterparty
+      : field === "Both"
+        ? [transaction.description, transaction.counterparty].filter(Boolean).join(" ")
+        : transaction.description;
   return (value ?? "").toLowerCase();
 }
 

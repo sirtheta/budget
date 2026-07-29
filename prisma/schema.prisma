@@ -366,6 +366,7 @@ model ImportBatch {
 enum RuleField {
   Description
   Counterparty
+  Both
 }
 
 enum RuleMatch {

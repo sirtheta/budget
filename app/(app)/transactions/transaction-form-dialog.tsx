@@ -541,7 +541,7 @@ function SplitForm({
   const sumCents = parsedAmounts.reduce((sum: number, cents) => sum + Math.abs(cents ?? 0), 0);
   const remainingCents = totalCents - sumCents;
   const allRowsValid =
-    parsedAmounts.every((cents) => cents !== null && cents !== 0) &&
+    parsedAmounts.every((cents) => cents !== null && cents > 0) &&
     rows.every((row) => row.categoryId !== NO_CATEGORY);
   const canSubmit = !loading && allRowsValid && remainingCents === 0;
 

@@ -127,24 +127,44 @@ function descriptionOf(txDetails: Node, entry: Node, counterparty: string | null
 }
 
 /**
+ * Placeholder banks emit for a reference field they don't actually populate —
+ * seen on `EndToEndId`, `InstrId`, and `TxId` alike (e.g. card/ATM bookings
+ * that never got a real SEPA reference). It repeats across bookings, so it
+ * must never be accepted as a fingerprinting reference: two distinct card
+ * withdrawals with no real reference would otherwise collide in the
+ * duplicate check.
+ */
+function isPlaceholderRef(value: string | null): boolean {
+  return value === null || value.toUpperCase() === "NOTPROVIDED";
+}
+
+/**
  * Bank reference used to fingerprint an entry.
  *
  * `AcctSvcrRef` is the bank's own reference and is unique per booking, so it
  * wins wherever it sits — banks put it on the `Ntry` as often as on the
- * `TxDtls`. `EndToEndId` only comes next because the payer supplies it: it is
- * frequently literally "NOTPROVIDED" and can repeat across bookings, which
- * would make two distinct payments collide in the duplicate check.
+ * `TxDtls`. `EndToEndId`, `TxId`, and `InstrId` only come next because they
+ * are frequently unpopulated placeholders (see `isPlaceholderRef`).
+ *
+ * The entry-level fallback (`entry.AcctSvcrRef` / `NtryRef`) is only valid for
+ * a single-`TxDtls` entry. A collective booking (Sammelbuchung) has several
+ * `TxDtls` under one `Ntry`, and that `Ntry`-level reference belongs to the
+ * collective booking as a whole — falling back to it for each split leg would
+ * hand every leg without its own reference the same fingerprint.
  */
-function referenceOf(txDetails: Node, entry: Node): string | null {
+function referenceOf(txDetails: Node, entry: Node, allowEntryFallback = true): string | null {
   const accountServicerRef =
     firstText(txDetails, [["Refs", "AcctSvcrRef"]]) ??
-    firstText(entry, [["AcctSvcrRef"], ["NtryRef"]]);
-  if (accountServicerRef) return accountServicerRef;
+    (allowEntryFallback ? firstText(entry, [["AcctSvcrRef"], ["NtryRef"]]) : null);
+  if (!isPlaceholderRef(accountServicerRef)) return accountServicerRef;
 
   const endToEnd = firstText(txDetails, [["Refs", "EndToEndId"]]);
-  if (endToEnd && endToEnd.toUpperCase() !== "NOTPROVIDED") return endToEnd;
+  if (!isPlaceholderRef(endToEnd)) return endToEnd;
 
-  return firstText(txDetails, [["Refs", "TxId"], ["Refs", "InstrId"]]);
+  const txId = firstText(txDetails, [["Refs", "TxId"], ["Refs", "InstrId"]]);
+  if (!isPlaceholderRef(txId)) return txId;
+
+  return null;
 }
 
 /** Balance of a given ISO type code (`OPBD` opening, `CLBD` closing booked). */
@@ -252,7 +272,7 @@ export function parseCamt053(xml: string): ParsedStatement {
             amountCents,
             description: descriptionOf(txDetails, entry, counterparty),
             counterparty,
-            bankReference: referenceOf(txDetails, entry),
+            bankReference: referenceOf(txDetails, entry, false),
           });
         }
         continue;

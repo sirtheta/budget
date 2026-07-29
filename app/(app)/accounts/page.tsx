@@ -1,3 +1,4 @@
+import Link from "next/link";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { ACCOUNT_TYPE_LABELS, accountBalances, netWorthCents } from "@/lib/balances";
@@ -97,7 +98,12 @@ export default async function AccountsPage() {
                             style={{ backgroundColor: account.color ?? "#6366f1" }}
                             aria-hidden
                           />
-                          <span className="font-medium">{account.name}</span>
+                          <Link
+                            href={`/transactions?accountId=${account.id}`}
+                            className="font-medium hover:underline"
+                          >
+                            {account.name}
+                          </Link>
                           {!account.isActive && <Badge variant="outline">Inaktiv</Badge>}
                           {account.excludeFromBudget && (
                             <Badge variant="secondary">Ausserhalb Budget</Badge>
@@ -174,7 +180,12 @@ export default async function AccountsPage() {
                             style={{ backgroundColor: account.color ?? "#6366f1" }}
                             aria-hidden
                           />
-                          <span className="font-medium">{account.name}</span>
+                          <Link
+                            href={`/transactions?accountId=${account.id}`}
+                            className="font-medium hover:underline"
+                          >
+                            {account.name}
+                          </Link>
                           {!account.isActive && <Badge variant="outline">Inaktiv</Badge>}
                           {account.excludeFromBudget && (
                             <Badge variant="secondary">Ausserhalb Budget</Badge>

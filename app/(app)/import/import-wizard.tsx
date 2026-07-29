@@ -1,6 +1,16 @@
 "use client";
 
-import { startTransition, useActionState, useMemo, useState, useTransition } from "react";
+import {
+  memo,
+  startTransition,
+  useActionState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Plus, Upload } from "lucide-react";
 import type { CategoryKind, CsvMapping } from "@prisma/client";
@@ -24,8 +34,31 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Combobox } from "@/components/ui/combobox";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { cn } from "@/lib/utils";
+
+/**
+ * Real conditional mount, not a CSS `hidden` class: for statements with
+ * thousands of rows, keeping both the desktop table and the mobile card
+ * list mounted at once doubled the DOM nodes React had to create and diff
+ * on every render, which is what made the tab freeze after opening a large
+ * file. This preview only ever renders after a client-side action result,
+ * so there is no SSR markup to match and reading the viewport up front is
+ * safe.
+ */
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
+  );
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 768px)");
+    const onChange = () => setIsDesktop(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isDesktop;
+}
 
 const AUTO_ACCOUNT = "auto";
 const NO_CATEGORY = "none";
@@ -106,6 +139,15 @@ export function ImportWizard({
 
   const selected = active?.selected ?? defaultSelected;
   const done = active?.done ?? null;
+  const isDesktop = useIsDesktop();
+
+  // Read by the stable per-row callbacks below so their identity doesn't
+  // have to change (and every row's memoized component re-render) just
+  // because the user ticked a different checkbox.
+  const activeRef = useRef(active);
+  useEffect(() => {
+    activeRef.current = active;
+  });
 
   const update = (
     changes: Partial<{
@@ -130,6 +172,71 @@ export function ImportWizard({
 
   const selectionOf = (row: PreviewRow) =>
     active && row.hash in active.overrides ? active.overrides[row.hash] : defaultSelectionOf(row);
+
+  const toggleRow = useCallback(
+    (hash: string, checked: boolean) => {
+      if (!preview) return;
+      const base = activeRef.current?.preview === preview ? activeRef.current : null;
+      const next = new Set(base?.selected ?? defaultSelected);
+      if (checked) next.add(hash);
+      else next.delete(hash);
+      setEdits({
+        preview,
+        selected: next,
+        overrides: base?.overrides ?? {},
+        done: base?.done ?? null,
+      });
+    },
+    [preview, defaultSelected]
+  );
+
+  const overrideRow = useCallback(
+    (hash: string, value: string) => {
+      if (!preview) return;
+      const base = activeRef.current?.preview === preview ? activeRef.current : null;
+      setEdits({
+        preview,
+        selected: base?.selected ?? defaultSelected,
+        overrides: { ...(base?.overrides ?? {}), [hash]: value },
+        done: base?.done ?? null,
+      });
+    },
+    [preview, defaultSelected]
+  );
+
+  // Precomputed once per category/account change instead of re-filtered for
+  // every row on every render (and, before the desktop/mobile split below,
+  // twice over) — with a few thousand imported rows that repeated filtering
+  // was the other big contributor to the tab locking up.
+  const transferOptions = useMemo<ComboboxOption[]>(
+    () =>
+      preview
+        ? accounts
+            .filter((account) => account.id !== preview.accountId)
+            .map((account) => ({ value: `transfer:${account.id}`, label: `→ Umbuchung: ${account.name}` }))
+        : [],
+    [accounts, preview]
+  );
+  const incomeOptions = useMemo<ComboboxOption[]>(
+    () => [
+      { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
+      ...categoryList
+        .filter((category) => category.kind === "Income")
+        .map((category) => ({ value: `cat:${category.id}`, label: category.label })),
+      ...transferOptions,
+    ],
+    [categoryList, transferOptions]
+  );
+  const expenseOptions = useMemo<ComboboxOption[]>(
+    () => [
+      { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
+      ...categoryList
+        .filter((category) => category.kind === "Expense")
+        .map((category) => ({ value: `cat:${category.id}`, label: category.label })),
+      ...transferOptions,
+    ],
+    [categoryList, transferOptions]
+  );
 
   const commit = () => {
     if (!preview) return;
@@ -174,33 +281,42 @@ export function ImportWizard({
   // written yet — to every other still-uncategorised row in this same
   // preview with the same counterparty, the same signal loadHistoryCategorySuggestions
   // uses to pre-fill from past imports.
-  const applyNewCategory = (row: PreviewRow, category: CategoryOption) => {
-    if (!preview) return;
-    setCategoryList((prev) => [...prev, category].sort((a, b) => a.label.localeCompare(b.label, "de-CH")));
+  const applyNewCategory = useCallback(
+    (row: PreviewRow, category: CategoryOption) => {
+      if (!preview) return;
+      setCategoryList((prev) => [...prev, category].sort((a, b) => a.label.localeCompare(b.label, "de-CH")));
 
-    const value = `cat:${category.id}`;
-    const currentOverrides = active?.overrides ?? {};
-    const matches = preview.rows.filter(
-      (r) =>
-        r.hash === row.hash ||
-        (!r.isAdopted &&
-          r.categoryId === null &&
-          r.transferAccountId === null &&
-          r.counterparty &&
-          row.counterparty &&
-          r.counterparty.trim().toLowerCase() === row.counterparty.trim().toLowerCase() &&
-          !(r.hash in currentOverrides))
-    );
-    const nextOverrides = { ...currentOverrides };
-    for (const match of matches) nextOverrides[match.hash] = value;
-    update({ overrides: nextOverrides });
+      const value = `cat:${category.id}`;
+      const base = activeRef.current?.preview === preview ? activeRef.current : null;
+      const currentOverrides = base?.overrides ?? {};
+      const matches = preview.rows.filter(
+        (r) =>
+          r.hash === row.hash ||
+          (!r.isAdopted &&
+            r.categoryId === null &&
+            r.transferAccountId === null &&
+            r.counterparty &&
+            row.counterparty &&
+            r.counterparty.trim().toLowerCase() === row.counterparty.trim().toLowerCase() &&
+            !(r.hash in currentOverrides))
+      );
+      const nextOverrides = { ...currentOverrides };
+      for (const match of matches) nextOverrides[match.hash] = value;
+      setEdits({
+        preview,
+        selected: base?.selected ?? defaultSelected,
+        overrides: nextOverrides,
+        done: base?.done ?? null,
+      });
 
-    toast.success(
-      matches.length > 1
-        ? `Kategorie "${category.label}" erstellt und auf ${matches.length} Buchungen angewendet.`
-        : `Kategorie "${category.label}" erstellt.`
-    );
-  };
+      toast.success(
+        matches.length > 1
+          ? `Kategorie "${category.label}" erstellt und auf ${matches.length} Buchungen angewendet.`
+          : `Kategorie "${category.label}" erstellt.`
+      );
+    },
+    [preview, defaultSelected]
+  );
 
   const selectedCount = filteredRows.filter((r) => selected.has(r.hash)).length;
   const selectedSum = filteredRows
@@ -496,225 +612,58 @@ export function ImportWizard({
               </p>
             </div>
 
-            <div className="hidden md:block overflow-x-auto max-h-[32rem] overflow-y-auto rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-card border-b">
-                  <tr className="text-left">
-                    <th className="p-2 w-10" />
-                    <th className="p-2 w-24">Datum</th>
-                    <th className="p-2">Beschreibung</th>
-                    <th className="p-2 w-56">Kategorie</th>
-                    <th className="p-2 w-28 text-right">Betrag</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filteredRows.map((row) => {
-                    const isSelected = selected.has(row.hash);
-                    return (
-                      <tr
+            {isDesktop ? (
+              <div className="overflow-x-auto max-h-[32rem] overflow-y-auto rounded-md border">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-card border-b">
+                    <tr className="text-left">
+                      <th className="p-2 w-10" />
+                      <th className="p-2 w-24">Datum</th>
+                      <th className="p-2">Beschreibung</th>
+                      <th className="p-2 w-56">Kategorie</th>
+                      <th className="p-2 w-28 text-right">Betrag</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredRows.map((row) => (
+                      <DesktopPreviewRow
                         key={row.hash}
-                        className={cn(!isSelected && "opacity-50", row.isDuplicate && "bg-muted/40")}
-                      >
-                        <td className="p-2">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            aria-label="Buchung importieren"
-                            className="size-4 accent-primary"
-                            onChange={(event) => {
-                              const next = new Set(selected);
-                              if (event.target.checked) next.add(row.hash);
-                              else next.delete(row.hash);
-                              update({ selected: next });
-                            }}
-                          />
-                        </td>
-                        <td className="p-2 tabular-nums text-muted-foreground whitespace-nowrap">
-                          {formatDateCH(row.date)}
-                        </td>
-                        <td className="p-2">
-                          <span className="block truncate max-w-md">{row.description}</span>
-                          <span className="flex items-center gap-2">
-                            {row.counterparty && (
-                              <span className="text-xs text-muted-foreground truncate">
-                                {row.counterparty}
-                              </span>
-                            )}
-                            {row.isDuplicate && (
-                              <Badge variant="secondary">Bereits importiert</Badge>
-                            )}
-                          </span>
-                        </td>
-                        <td className="p-2">
-                          {row.isAdopted ? (
-                            <Badge variant="secondary">Wird mit Umbuchung verknüpft</Badge>
-                          ) : (
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-1">
-                                <Combobox
-                                  className="h-8 flex-1"
-                                  value={selectionOf(row)}
-                                  options={[
-                                    { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
-                                    ...categoryList
-                                      .filter((category) =>
-                                        row.amountCents >= 0
-                                          ? category.kind === "Income"
-                                          : category.kind === "Expense"
-                                      )
-                                      .map((category) => ({
-                                        value: `cat:${category.id}`,
-                                        label: category.label,
-                                      })),
-                                    ...accounts
-                                      .filter((account) => account.id !== preview.accountId)
-                                      .map((account) => ({
-                                        value: `transfer:${account.id}`,
-                                        label: `→ Umbuchung: ${account.name}`,
-                                      })),
-                                  ]}
-                                  onValueChange={(value) =>
-                                    update({
-                                      overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
-                                    })
-                                  }
-                                  searchPlaceholder="Kategorie oder Umbuchung suchen…"
-                                  emptyText="Nichts gefunden."
-                                />
-                                <QuickCreateCategory
-                                  kind={row.amountCents >= 0 ? "Income" : "Expense"}
-                                  parents={parents}
-                                  onCreated={(category) => applyNewCategory(row, category)}
-                                />
-                              </div>
-                              {row.categorySource === "history" &&
-                                !(active && row.hash in active.overrides) && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-[10px]"
-                                    title="Kategorie aus früherer Buchung mit gleichem Empfänger übernommen"
-                                  >
-                                    Verlauf
-                                  </Badge>
-                                )}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-2 text-right font-medium whitespace-nowrap">
-                          <Money cents={row.amountCents} colored />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="md:hidden max-h-[32rem] overflow-y-auto rounded-md border divide-y">
-              {filteredRows.map((row) => {
-                const isSelected = selected.has(row.hash);
-                return (
-                  <div
-                    key={row.hash}
-                    className={cn(
-                      "p-3 flex flex-col gap-2",
-                      !isSelected && "opacity-50",
-                      row.isDuplicate && "bg-muted/40"
-                    )}
-                  >
-                    <div className="flex items-start gap-2">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        aria-label="Buchung importieren"
-                        className="size-4 accent-primary mt-0.5 shrink-0"
-                        onChange={(event) => {
-                          const next = new Set(selected);
-                          if (event.target.checked) next.add(row.hash);
-                          else next.delete(row.hash);
-                          update({ selected: next });
-                        }}
+                        row={row}
+                        isSelected={selected.has(row.hash)}
+                        selectionValue={selectionOf(row)}
+                        options={row.amountCents >= 0 ? incomeOptions : expenseOptions}
+                        showHistoryBadge={
+                          row.categorySource === "history" && !(active && row.hash in active.overrides)
+                        }
+                        parents={parents}
+                        onToggle={toggleRow}
+                        onOverride={overrideRow}
+                        onCreateCategory={applyNewCategory}
                       />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="truncate font-medium text-sm">{row.description}</span>
-                          <span className="shrink-0 font-medium text-sm whitespace-nowrap">
-                            <Money cents={row.amountCents} colored />
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                          <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-                            {formatDateCH(row.date)}
-                          </span>
-                          {row.counterparty && (
-                            <span className="text-xs text-muted-foreground truncate">
-                              {row.counterparty}
-                            </span>
-                          )}
-                          {row.isDuplicate && <Badge variant="secondary">Bereits importiert</Badge>}
-                        </div>
-                      </div>
-                    </div>
-
-                    {row.isAdopted ? (
-                      <Badge variant="secondary" className="self-start">
-                        Wird mit Umbuchung verknüpft
-                      </Badge>
-                    ) : (
-                      <div className="space-y-1 pl-6">
-                        <div className="flex items-center gap-1">
-                          <Combobox
-                            className="h-8 flex-1"
-                            value={selectionOf(row)}
-                            options={[
-                              { value: `cat:${NO_CATEGORY}`, label: "Ohne Kategorie" },
-                              ...categoryList
-                                .filter((category) =>
-                                  row.amountCents >= 0
-                                    ? category.kind === "Income"
-                                    : category.kind === "Expense"
-                                )
-                                .map((category) => ({
-                                  value: `cat:${category.id}`,
-                                  label: category.label,
-                                })),
-                              ...accounts
-                                .filter((account) => account.id !== preview.accountId)
-                                .map((account) => ({
-                                  value: `transfer:${account.id}`,
-                                  label: `→ Umbuchung: ${account.name}`,
-                                })),
-                            ]}
-                            onValueChange={(value) =>
-                              update({
-                                overrides: { ...(active?.overrides ?? {}), [row.hash]: value },
-                              })
-                            }
-                            searchPlaceholder="Kategorie oder Umbuchung suchen…"
-                            emptyText="Nichts gefunden."
-                          />
-                          <QuickCreateCategory
-                            kind={row.amountCents >= 0 ? "Income" : "Expense"}
-                            parents={parents}
-                            onCreated={(category) => applyNewCategory(row, category)}
-                          />
-                        </div>
-                        {row.categorySource === "history" &&
-                          !(active && row.hash in active.overrides) && (
-                            <Badge
-                              variant="outline"
-                              className="text-[10px]"
-                              title="Kategorie aus früherer Buchung mit gleichem Empfänger übernommen"
-                            >
-                              Verlauf
-                            </Badge>
-                          )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="max-h-[32rem] overflow-y-auto rounded-md border divide-y">
+                {filteredRows.map((row) => (
+                  <MobilePreviewRow
+                    key={row.hash}
+                    row={row}
+                    isSelected={selected.has(row.hash)}
+                    selectionValue={selectionOf(row)}
+                    options={row.amountCents >= 0 ? incomeOptions : expenseOptions}
+                    showHistoryBadge={
+                      row.categorySource === "history" && !(active && row.hash in active.overrides)
+                    }
+                    parents={parents}
+                    onToggle={toggleRow}
+                    onOverride={overrideRow}
+                    onCreateCategory={applyNewCategory}
+                  />
+                ))}
+              </div>
+            )}
 
             <div className="flex justify-end">
               <Button onClick={commit} disabled={committing || selectedCount === 0}>
@@ -727,6 +676,174 @@ export function ImportWizard({
     </div>
   );
 }
+
+interface PreviewRowProps {
+  row: PreviewRow;
+  isSelected: boolean;
+  selectionValue: string;
+  options: ComboboxOption[];
+  showHistoryBadge: boolean;
+  parents: CategoryGroupOption[];
+  onToggle: (hash: string, checked: boolean) => void;
+  onOverride: (hash: string, value: string) => void;
+  onCreateCategory: (row: PreviewRow, category: CategoryOption) => void;
+}
+
+/**
+ * One row of the preview table/cards, split out and memoized so that
+ * ticking a single row's checkbox — or re-categorising it — doesn't force
+ * React to re-render and diff every other row. With a few thousand rows in
+ * a large statement, that repeated whole-list re-render was as much of the
+ * "tab freezes" complaint as the initial mount.
+ */
+const DesktopPreviewRow = memo(function DesktopPreviewRow({
+  row,
+  isSelected,
+  selectionValue,
+  options,
+  showHistoryBadge,
+  parents,
+  onToggle,
+  onOverride,
+  onCreateCategory,
+}: PreviewRowProps) {
+  return (
+    <tr className={cn(!isSelected && "opacity-50", row.isDuplicate && "bg-muted/40")}>
+      <td className="p-2">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          aria-label="Buchung importieren"
+          className="size-4 accent-primary"
+          onChange={(event) => onToggle(row.hash, event.target.checked)}
+        />
+      </td>
+      <td className="p-2 tabular-nums text-muted-foreground whitespace-nowrap">{formatDateCH(row.date)}</td>
+      <td className="p-2">
+        <span className="block truncate max-w-md">{row.description}</span>
+        <span className="flex items-center gap-2">
+          {row.counterparty && (
+            <span className="text-xs text-muted-foreground truncate">{row.counterparty}</span>
+          )}
+          {row.isDuplicate && <Badge variant="secondary">Bereits importiert</Badge>}
+        </span>
+      </td>
+      <td className="p-2">
+        {row.isAdopted ? (
+          <Badge variant="secondary">Wird mit Umbuchung verknüpft</Badge>
+        ) : (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1">
+              <Combobox
+                className="h-8 flex-1"
+                value={selectionValue}
+                options={options}
+                onValueChange={(value) => onOverride(row.hash, value)}
+                searchPlaceholder="Kategorie oder Umbuchung suchen…"
+                emptyText="Nichts gefunden."
+              />
+              <QuickCreateCategory
+                kind={row.amountCents >= 0 ? "Income" : "Expense"}
+                parents={parents}
+                onCreated={(category) => onCreateCategory(row, category)}
+              />
+            </div>
+            {showHistoryBadge && (
+              <Badge
+                variant="outline"
+                className="text-[10px]"
+                title="Kategorie aus früherer Buchung mit gleichem Empfänger übernommen"
+              >
+                Verlauf
+              </Badge>
+            )}
+          </div>
+        )}
+      </td>
+      <td className="p-2 text-right font-medium whitespace-nowrap">
+        <Money cents={row.amountCents} colored />
+      </td>
+    </tr>
+  );
+});
+
+const MobilePreviewRow = memo(function MobilePreviewRow({
+  row,
+  isSelected,
+  selectionValue,
+  options,
+  showHistoryBadge,
+  parents,
+  onToggle,
+  onOverride,
+  onCreateCategory,
+}: PreviewRowProps) {
+  return (
+    <div
+      className={cn("p-3 flex flex-col gap-2", !isSelected && "opacity-50", row.isDuplicate && "bg-muted/40")}
+    >
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          aria-label="Buchung importieren"
+          className="size-4 accent-primary mt-0.5 shrink-0"
+          onChange={(event) => onToggle(row.hash, event.target.checked)}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <span className="truncate font-medium text-sm">{row.description}</span>
+            <span className="shrink-0 font-medium text-sm whitespace-nowrap">
+              <Money cents={row.amountCents} colored />
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+            <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+              {formatDateCH(row.date)}
+            </span>
+            {row.counterparty && (
+              <span className="text-xs text-muted-foreground truncate">{row.counterparty}</span>
+            )}
+            {row.isDuplicate && <Badge variant="secondary">Bereits importiert</Badge>}
+          </div>
+        </div>
+      </div>
+
+      {row.isAdopted ? (
+        <Badge variant="secondary" className="self-start">
+          Wird mit Umbuchung verknüpft
+        </Badge>
+      ) : (
+        <div className="space-y-1 pl-6">
+          <div className="flex items-center gap-1">
+            <Combobox
+              className="h-8 flex-1"
+              value={selectionValue}
+              options={options}
+              onValueChange={(value) => onOverride(row.hash, value)}
+              searchPlaceholder="Kategorie oder Umbuchung suchen…"
+              emptyText="Nichts gefunden."
+            />
+            <QuickCreateCategory
+              kind={row.amountCents >= 0 ? "Income" : "Expense"}
+              parents={parents}
+              onCreated={(category) => onCreateCategory(row, category)}
+            />
+          </div>
+          {showHistoryBadge && (
+            <Badge
+              variant="outline"
+              className="text-[10px]"
+              title="Kategorie aus früherer Buchung mit gleichem Empfänger übernommen"
+            >
+              Verlauf
+            </Badge>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
 
 /**
  * Creates a leaf category under an existing group without leaving the import

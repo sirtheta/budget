@@ -31,8 +31,10 @@ export async function GET(request: NextRequest) {
   if (accountId) where.accountId = parseInt(accountId, 10);
 
   const categoryId = params.get("categoryId");
-  if (categoryId === "none") where.categoryId = null;
-  else if (categoryId) where.categoryId = parseInt(categoryId, 10);
+  if (categoryId === "none") {
+    where.categoryId = null;
+    where.transferGroupId = null;
+  } else if (categoryId) where.categoryId = parseInt(categoryId, 10);
 
   const type = params.get("type");
   if (type === "transfer") where.transferGroupId = { not: null };

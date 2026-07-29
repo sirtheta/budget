@@ -46,8 +46,10 @@ function buildWhere(params: Record<string, string | undefined>): Prisma.Transact
     };
   }
   if (params.accountId) where.accountId = parseInt(params.accountId, 10);
-  if (params.categoryId === "none") where.categoryId = null;
-  else if (params.categoryId) where.categoryId = parseInt(params.categoryId, 10);
+  if (params.categoryId === "none") {
+    where.categoryId = null;
+    where.transferGroupId = null;
+  } else if (params.categoryId) where.categoryId = parseInt(params.categoryId, 10);
 
   if (params.type === "transfer") where.transferGroupId = { not: null };
   else if (params.type === "income") {

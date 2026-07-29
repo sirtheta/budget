@@ -94,7 +94,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
         </div>
       </PageHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <Tile label="Einnahmen" cents={totalIncome} />
         <Tile label="Ausgaben" cents={totalExpense} />
         <Tile label="Saldo" cents={totalIncome - totalExpense} colored />
@@ -114,7 +114,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2 mb-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-6">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Ausgaben nach Kategorie</CardTitle>
@@ -136,7 +136,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Vermögensentwicklung</CardTitle>
@@ -212,7 +212,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
             </p>
           ) : (
             <>
-              <div className="grid gap-4 sm:grid-cols-2 mb-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Ø Vermögenszuwachs / Monat</p>
                   <p className="text-2xl font-medium tabular-nums">

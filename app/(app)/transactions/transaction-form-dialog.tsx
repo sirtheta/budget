@@ -302,7 +302,6 @@ function BookingForm({
           <input
             type="checkbox"
             name="createRule"
-            defaultChecked
             className="mt-1 size-4 accent-primary"
           />
           <span>
@@ -757,7 +756,6 @@ function ConvertToTransferForm({
           <input
             type="checkbox"
             name="createRule"
-            defaultChecked
             className="mt-1 size-4 accent-primary"
           />
           <span>

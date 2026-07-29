@@ -60,6 +60,11 @@ export function ImportWizard({
   const [accountId, setAccountId] = useState(AUTO_ACCOUNT);
   const [mappingId, setMappingId] = useState(String(mappings[0]?.id ?? ""));
   const [state, formAction, pending] = useActionState(previewImportAction, undefined);
+  // Client-side only: narrows which rows are shown/selectable so e.g. only
+  // one year of a multi-year statement gets imported, without touching the
+  // parsed file or the dedupe fingerprints.
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [committing, startCommit] = useTransition();
   const preview = state?.preview;
@@ -84,11 +89,19 @@ export function ImportWizard({
   } | null>(null);
   const active = edits?.preview === preview ? edits : null;
 
+  const filteredRows = useMemo(
+    () =>
+      preview?.rows.filter(
+        (row) => (!dateFrom || row.date >= dateFrom) && (!dateTo || row.date <= dateTo)
+      ) ?? [],
+    [preview, dateFrom, dateTo]
+  );
+
   // Duplicates start unchecked — re-importing them is exactly what the
   // fingerprint exists to prevent.
   const defaultSelected = useMemo(
-    () => new Set(preview?.rows.filter((row) => !row.isDuplicate).map((row) => row.hash) ?? []),
-    [preview]
+    () => new Set(filteredRows.filter((row) => !row.isDuplicate).map((row) => row.hash)),
+    [filteredRows]
   );
 
   const selected = active?.selected ?? defaultSelected;
@@ -120,7 +133,7 @@ export function ImportWizard({
 
   const commit = () => {
     if (!preview) return;
-    const rows = preview.rows
+    const rows = filteredRows
       .filter((row) => selected.has(row.hash))
       .map((row) => {
         const [kind, idPart] = selectionOf(row).split(":");
@@ -189,12 +202,10 @@ export function ImportWizard({
     );
   };
 
-  const selectedCount = preview ? preview.rows.filter((r) => selected.has(r.hash)).length : 0;
-  const selectedSum = preview
-    ? preview.rows
-        .filter((r) => selected.has(r.hash))
-        .reduce((sum, r) => sum + r.amountCents, 0)
-    : 0;
+  const selectedCount = filteredRows.filter((r) => selected.has(r.hash)).length;
+  const selectedSum = filteredRows
+    .filter((r) => selected.has(r.hash))
+    .reduce((sum, r) => sum + r.amountCents, 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -351,7 +362,9 @@ export function ImportWizard({
               Vorschau — {preview.filename} → {preview.accountName}
             </CardTitle>
             <CardDescription>
-              {preview.rows.length} Bewegung(en)
+              {dateFrom || dateTo
+                ? `${filteredRows.length} von ${preview.rows.length} Bewegung(en) im gewählten Zeitraum`
+                : `${preview.rows.length} Bewegung(en)`}
               {preview.periodFrom && preview.periodTo && (
                 <>
                   {" · "}
@@ -363,6 +376,42 @@ export function ImportWizard({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
+            <div className="flex items-end gap-3 flex-wrap">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="filter-date-from">Zeitraum von</Label>
+                <Input
+                  id="filter-date-from"
+                  type="date"
+                  className="w-40"
+                  value={dateFrom}
+                  onChange={(event) => setDateFrom(event.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="filter-date-to">bis</Label>
+                <Input
+                  id="filter-date-to"
+                  type="date"
+                  className="w-40"
+                  value={dateTo}
+                  onChange={(event) => setDateTo(event.target.value)}
+                />
+              </div>
+              {(dateFrom || dateTo) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                >
+                  Zeitraum zurücksetzen
+                </Button>
+              )}
+            </div>
+
             {preview.warnings.map((warning, index) => (
               <div key={index} className="flex flex-col gap-1 text-sm text-amber-600 dark:text-amber-400">
                 <p className="flex items-start gap-2">
@@ -420,17 +469,25 @@ export function ImportWizard({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
-                    update({
-                      selected: new Set(
-                        preview.rows.filter((r) => !r.isDuplicate).map((r) => r.hash)
-                      ),
-                    })
-                  }
+                  onClick={() => {
+                    // Leaves selections outside the current date filter untouched —
+                    // "Alle neuen" only decides what happens within what's shown.
+                    const filteredHashes = new Set(filteredRows.map((r) => r.hash));
+                    const next = new Set([...selected].filter((h) => !filteredHashes.has(h)));
+                    for (const row of filteredRows) if (!row.isDuplicate) next.add(row.hash);
+                    update({ selected: next });
+                  }}
                 >
                   Alle neuen
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => update({ selected: new Set() })}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const filteredHashes = new Set(filteredRows.map((r) => r.hash));
+                    update({ selected: new Set([...selected].filter((h) => !filteredHashes.has(h))) });
+                  }}
+                >
                   Keine
                 </Button>
               </div>
@@ -451,7 +508,7 @@ export function ImportWizard({
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {preview.rows.map((row) => {
+                  {filteredRows.map((row) => {
                     const isSelected = selected.has(row.hash);
                     return (
                       <tr
@@ -554,7 +611,7 @@ export function ImportWizard({
             </div>
 
             <div className="md:hidden max-h-[32rem] overflow-y-auto rounded-md border divide-y">
-              {preview.rows.map((row) => {
+              {filteredRows.map((row) => {
                 const isSelected = selected.has(row.hash);
                 return (
                   <div

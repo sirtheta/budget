@@ -436,6 +436,18 @@ export async function unsplitTransactionAction(splitGroupId: string): Promise<Ac
   return { success: true };
 }
 
+/** Loads both legs of a transfer, for prefilling the edit form. */
+export async function getTransferLegsAction(
+  transferGroupId: string
+): Promise<{ accountId: number; amountCents: number }[]> {
+  await requireSession();
+  return prisma.transaction.findMany({
+    where: { transferGroupId },
+    orderBy: { amountCents: "asc" },
+    select: { accountId: true, amountCents: true },
+  });
+}
+
 /** Loads the parts of a split booking, for prefilling the edit form. */
 export async function getSplitPartsAction(
   splitGroupId: string

@@ -7,6 +7,7 @@ import type { Transaction } from "@prisma/client";
 import {
   convertToTransferAction,
   getSplitPartsAction,
+  getTransferLegsAction,
   saveSplitAction,
   saveTransactionAction,
   saveTransferAction,
@@ -345,9 +346,13 @@ function TransferForm({
   onDone: () => void;
 }) {
   const [state, formAction, pending] = useActionState(saveTransferAction, undefined);
+  const isExistingTransfer = !!transaction?.transferGroupId;
   // On an existing transfer the row the user clicked may be either leg; the
-  // negative one is always the source.
+  // negative one is always the source. The other leg's real account is
+  // unknown until fetched — defaulting it to an arbitrary account would
+  // silently move that leg there on save.
   const isOutgoing = (transaction?.amountCents ?? -1) < 0;
+  const [loading, setLoading] = useState(isExistingTransfer);
   const [fromAccountId, setFromAccountId] = useState(
     String(isOutgoing ? (transaction?.accountId ?? accounts[0]?.id ?? "") : (accounts[0]?.id ?? ""))
   );
@@ -356,12 +361,32 @@ function TransferForm({
   );
 
   useEffect(() => {
+    if (!isExistingTransfer || !transaction?.transferGroupId) return;
+    let cancelled = false;
+    getTransferLegsAction(transaction.transferGroupId).then((legs) => {
+      if (cancelled) return;
+      const [outgoing, incoming] = legs;
+      if (outgoing) setFromAccountId(String(outgoing.accountId));
+      if (incoming) setToAccountId(String(incoming.accountId));
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     if (state?.success) {
       toast.success(transaction ? "Umbuchung gespeichert." : "Umbuchung erfasst.");
       onDone();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
+
+  if (loading) {
+    return <p className="py-8 text-center text-sm text-muted-foreground">Lade Umbuchung…</p>;
+  }
 
   return (
     <form action={formAction} className="flex flex-col gap-4">

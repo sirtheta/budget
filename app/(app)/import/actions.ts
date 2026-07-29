@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { ImportFormat } from "@prisma/client";
+import { ImportFormat, Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
@@ -311,72 +311,85 @@ export async function commitImportAction(
   // synthetic transfer leg) does not, unless it's wrapped explicitly.
   const incomePayments: { transactionId: number; description: string; amountCents: number; bookingDate: string }[] = [];
 
-  const batch = await prisma.$transaction(async (tx) => {
-    const created = await tx.importBatch.create({
-      data: {
-        filename,
-        format,
-        accountId,
-        userId,
-        importedCount: fresh.length,
-        skippedCount: rows.length - fresh.length,
-        statementBalanceCents: parsed.data.closingBalanceCents,
-        periodFrom: parsed.data.periodFrom,
-        periodTo: parsed.data.periodTo,
-      },
-    });
-
-    // Each row may (a) adopt an existing synthetic transfer leg left behind
-    // by an earlier auto-transfer on this account, (b) trigger a new
-    // auto-transfer to another account, or (c) land as a plain, possibly
-    // categorised booking — see lib/transactions.ts for what each does.
-    for (const row of fresh) {
-      const adoptable = await findAdoptableTransferLeg(tx, accountId, row.amountCents, row.date);
-      if (adoptable) {
-        await adoptTransferLeg(tx, adoptable.id, {
-          date: row.date,
-          description: row.description,
-          counterparty: row.counterparty,
-          bankReference: row.bankReference,
-          importHash: row.hash,
-          importBatchId: created.id,
-        });
-        continue;
-      }
-
-      const transaction = await tx.transaction.create({
+  let batch;
+  try {
+    batch = await prisma.$transaction(async (tx) => {
+      const created = await tx.importBatch.create({
         data: {
-          date: row.date,
-          amountCents: row.amountCents,
+          filename,
+          format,
           accountId,
-          categoryId: row.transferAccountId ? null : row.categoryId,
-          description: row.description,
-          counterparty: row.counterparty,
-          bankReference: row.bankReference,
-          importHash: row.hash,
-          importBatchId: created.id,
-          source: "Import" as const,
-          createdById: userId,
+          userId,
+          importedCount: fresh.length,
+          skippedCount: rows.length - fresh.length,
+          statementBalanceCents: parsed.data.closingBalanceCents,
+          periodFrom: parsed.data.periodFrom,
+          periodTo: parsed.data.periodTo,
         },
       });
 
-      if (row.transferAccountId && row.transferAccountId !== accountId) {
-        await applyAutoTransfer(tx, {
-          transactionId: transaction.id,
-          targetAccountId: row.transferAccountId,
-        });
-      } else if (row.amountCents > 0) {
-        incomePayments.push({
-          transactionId: transaction.id,
-          description: row.description,
-          amountCents: row.amountCents,
-          bookingDate: row.date,
-        });
-      }
-    }
+      // Each row may (a) adopt an existing synthetic transfer leg left behind
+      // by an earlier auto-transfer on this account, (b) trigger a new
+      // auto-transfer to another account, or (c) land as a plain, possibly
+      // categorised booking — see lib/transactions.ts for what each does.
+      for (const row of fresh) {
+        const adoptable = await findAdoptableTransferLeg(tx, accountId, row.amountCents, row.date);
+        if (adoptable) {
+          await adoptTransferLeg(tx, adoptable.id, {
+            date: row.date,
+            description: row.description,
+            counterparty: row.counterparty,
+            bankReference: row.bankReference,
+            importHash: row.hash,
+            importBatchId: created.id,
+          });
+          continue;
+        }
 
-    return created;
-  }, { timeout: 60_000 });
+        const transaction = await tx.transaction.create({
+          data: {
+            date: row.date,
+            amountCents: row.amountCents,
+            accountId,
+            categoryId: row.transferAccountId ? null : row.categoryId,
+            description: row.description,
+            counterparty: row.counterparty,
+            bankReference: row.bankReference,
+            importHash: row.hash,
+            importBatchId: created.id,
+            source: "Import" as const,
+            createdById: userId,
+          },
+        });
+
+        if (row.transferAccountId && row.transferAccountId !== accountId) {
+          await applyAutoTransfer(tx, {
+            transactionId: transaction.id,
+            targetAccountId: row.transferAccountId,
+          });
+        } else if (row.amountCents > 0) {
+          incomePayments.push({
+            transactionId: transaction.id,
+            description: row.description,
+            amountCents: row.amountCents,
+            bookingDate: row.date,
+          });
+        }
+      }
+
+      return created;
+    }, { timeout: 60_000 });
+  } catch (err) {
+    // The existing-hash check above is a pre-filter, not a lock: two
+    // concurrent commits of the same statement (double-click, two tabs) can
+    // both see a row as fresh and both try to insert it, so the unique index
+    // on importHash is the actual guarantee and can still reject here.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      log.warn({ accountId, filename }, "import commit hit importHash race, aborting");
+      return { error: "Diese Buchungen wurden soeben bereits importiert (z. B. in einem anderen Tab). Bitte die Vorschau neu laden." };
+    }
+    throw err;
+  }
 
   await logAudit(session, "IMPORT", "Transaction", batch.id, {
     filename,

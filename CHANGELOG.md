@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.9](https://github.com/sirtheta/budget/compare/budget-v0.1.8...budget-v0.1.9) (2026-07-29)
+
+
+### Bug Fixes
+
+* **budget:** remount amount input on month change ([5454c7e](https://github.com/sirtheta/budget/commit/5454c7e4fc11671923648b01b0fe6cdc61ec0366))
+* **budget:** stop flagging Income lines as warning/over ([46bcd6b](https://github.com/sirtheta/budget/commit/46bcd6b3383983156206e2ccc91666b190df912b))
+* **import:** handle importHash race in commitImportAction ([69dc4ae](https://github.com/sirtheta/budget/commit/69dc4aeede717839439156e15b4b3c8e6f240383))
+* **import:** stop preview freezing the tab on large statements ([1f72af3](https://github.com/sirtheta/budget/commit/1f72af3f700373e15ca2fe14d06fba2391dbc97d))
+* **import:** stop treating NOTPROVIDED InstrId as a real bank reference ([16a8a22](https://github.com/sirtheta/budget/commit/16a8a224debc0be9241f7be44ee419978e4265eb))
+* **transactions:** load real account IDs when editing a transfer ([080c520](https://github.com/sirtheta/budget/commit/080c520cae6a76c5785b731fd3d873fe0acfbf16))
+* **transactions:** show row action buttons on mobile ([691536d](https://github.com/sirtheta/budget/commit/691536d9a5e14d474bf358b285d44c1dcc38307e))
+
 ## [0.1.8](https://github.com/sirtheta/budget/compare/budget-v0.1.7...budget-v0.1.8) (2026-07-29)
 
 

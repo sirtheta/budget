@@ -33,8 +33,16 @@ export type BudgetStatus = "unbudgeted" | "ok" | "warning" | "over";
 /** Share of the budget from which the line is flagged amber. */
 export const WARNING_THRESHOLD = 0.9;
 
-export function budgetStatus(plannedCents: number, actualCents: number): BudgetStatus {
+export function budgetStatus(
+  plannedCents: number,
+  actualCents: number,
+  kind: CategoryKind = "Expense"
+): BudgetStatus {
   if (plannedCents <= 0) return "unbudgeted";
+  // Income has no "exhausted" or "exceeded" — reaching or passing the plan is
+  // the goal, not a ceiling, so "warning"/"over" (both Expense-only concepts)
+  // never apply here.
+  if (kind === "Income") return "ok";
   const ratio = actualCents / plannedCents;
   if (ratio > 1) return "over";
   if (ratio >= WARNING_THRESHOLD) return "warning";
@@ -154,7 +162,7 @@ export async function loadBudgetMonth(
       actualCents,
       remainingCents: planned - actualCents,
       progress: planned > 0 ? actualCents / planned : null,
-      status: budgetStatus(planned, actualCents),
+      status: budgetStatus(planned, actualCents, category.kind),
       transactionCount: actual.count,
     };
   });

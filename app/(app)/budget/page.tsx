@@ -171,6 +171,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Searc
                           </p>
                         </div>
                         <BudgetAmountInput
+                          key={`${line.categoryId}-${year}-${month}`}
                           categoryId={line.categoryId}
                           year={year}
                           month={month}

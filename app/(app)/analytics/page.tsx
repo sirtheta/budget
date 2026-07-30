@@ -141,7 +141,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
           <CardHeader>
             <CardTitle className="text-base">Vermögensentwicklung</CardTitle>
             <CardDescription>
-              Alle Konten, letzte 24 Monate — inklusive Umbuchungen
+              Letzte 24 Monate, flüssig vs. nicht flüssig — inklusive Umbuchungen
             </CardDescription>
           </CardHeader>
           <CardContent>

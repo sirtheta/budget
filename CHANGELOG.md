@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.1.10](https://github.com/sirtheta/budget/compare/budget-v0.1.9...budget-v0.1.10) (2026-07-30)
+
+
+### Features
+
+* **analytics:** split net worth into liquid and illiquid assets ([#31](https://github.com/sirtheta/budget/issues/31)) ([5c415ee](https://github.com/sirtheta/budget/commit/5c415ee4780397cda4e14bc070c6dcccbc341ef4))
+* **backup:** verify snapshots and add a restore path ([849df2c](https://github.com/sirtheta/budget/commit/849df2cd7830477bc9dce29f0b20e7007d4dbc9b))
+* **dashboard:** add month navigation ([1a1d373](https://github.com/sirtheta/budget/commit/1a1d37382bdccb89b396fdf1cbdd8ec07ffdd40b))
+* **ops:** add /api/health probe that touches the database ([cd4a0af](https://github.com/sirtheta/budget/commit/cd4a0af1d18bffe1f190f54fb6c5a62b38a54703))
+* **pwa:** add a web app manifest so the app installs to a home screen ([1a5c7f6](https://github.com/sirtheta/budget/commit/1a5c7f67aa0c335ca2314d1f5893bac44f300896))
+* **ui:** add error, not-found and loading boundaries ([f64fb17](https://github.com/sirtheta/budget/commit/f64fb174d3702cc6045e819816ac1e362ee29f94))
+
+
+### Bug Fixes
+
+* **a11y:** add automated checks and fix the contrast failures they found ([e63e7df](https://github.com/sirtheta/budget/commit/e63e7df127491c5edbac340629a56a590ddfa0df))
+* **actions:** validate Server Action arguments at runtime ([933e859](https://github.com/sirtheta/budget/commit/933e859eece9f581e253ecf58877745a4324ba4d))
+* **analytics:** stop grid cards overflowing on narrow phones ([#29](https://github.com/sirtheta/budget/issues/29)) ([bddccdd](https://github.com/sirtheta/budget/commit/bddccdd5c02994b9c069b9a06a8f90116d50a3c1))
+* **transactions:** make search find umlauts regardless of case ([bdd0fa9](https://github.com/sirtheta/budget/commit/bdd0fa9deb10fff8c37ae7377041ea8d70db45fd))
+* **ui:** build dialog triggers client-side, not in server components ([351c5f7](https://github.com/sirtheta/budget/commit/351c5f7ae86d169386a9e55f6c6a45de01e8e273))
+
+
+### Performance Improvements
+
+* **accounts:** stop blocking the render on the BTC rate fetch ([ab09003](https://github.com/sirtheta/budget/commit/ab09003a044e4e7a6c2732c5328694d7cf5d246b))
+
 ## [0.1.9](https://github.com/sirtheta/budget/compare/budget-v0.1.8...budget-v0.1.9) (2026-07-29)
 
 

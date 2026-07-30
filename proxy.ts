@@ -33,7 +33,9 @@ export async function proxy(request: NextRequest) {
   requestHeaders.set("Content-Security-Policy", csp);
 
   // NextAuth API routes handle their own auth and must not be redirected.
-  const isPublicRoute = pathname.startsWith("/api/auth");
+  // Neither must the healthcheck: the container probe carries no session, and
+  // a 307 to /login would report a broken database as healthy.
+  const isPublicRoute = pathname.startsWith("/api/auth") || pathname === "/api/health";
 
   if (!isPublicRoute) {
     const isLoggedIn = !!request.cookies.get(SESSION_COOKIE)?.value;

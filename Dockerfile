@@ -67,7 +67,7 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget -qO- http://localhost:3000/api/auth/session > /dev/null || exit 1
+  CMD wget -qO- http://localhost:3000/api/health > /dev/null || exit 1
 
 # startup.js may generate AUTH_SECRET/ENCRYPTION_KEY into <data>/secrets.env
 # (only the values not already provided via environment); source them so the

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Statement fixture for the import E2E spec. Structurally faithful to what a
+  Swiss bank emits: namespace-prefixed, opening and closing balance, booked
+  entries with AcctSvcrRef and EndToEndId, counterparty under RltdPties.
+
+  The three entries are deliberately different shapes — a debit with a
+  creditor, a credit with a debtor, and a debit whose description only exists
+  in RmtInf — so the spec exercises more than one path through camt.ts.
+-->
+<ns2:Document xmlns:ns2="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">
+  <ns2:BkToCstmrStmt>
+    <ns2:GrpHdr>
+      <ns2:MsgId>E2E-STMT-1</ns2:MsgId>
+      <ns2:CreDtTm>2026-02-01T06:00:00</ns2:CreDtTm>
+    </ns2:GrpHdr>
+    <ns2:Stmt>
+      <ns2:Id>E2E-ST-1</ns2:Id>
+      <ns2:Acct>
+        <ns2:Id><ns2:IBAN>CH9300762011623852957</ns2:IBAN></ns2:Id>
+        <ns2:Ccy>CHF</ns2:Ccy>
+      </ns2:Acct>
+      <ns2:FrToDt>
+        <ns2:FrDtTm>2026-01-01T00:00:00</ns2:FrDtTm>
+        <ns2:ToDtTm>2026-01-31T23:59:59</ns2:ToDtTm>
+      </ns2:FrToDt>
+      <ns2:Bal>
+        <ns2:Tp><ns2:CdOrPrtry><ns2:Cd>OPBD</ns2:Cd></ns2:CdOrPrtry></ns2:Tp>
+        <ns2:Amt Ccy="CHF">1000.00</ns2:Amt>
+        <ns2:CdtDbtInd>CRDT</ns2:CdtDbtInd>
+      </ns2:Bal>
+      <ns2:Bal>
+        <ns2:Tp><ns2:CdOrPrtry><ns2:Cd>CLBD</ns2:Cd></ns2:CdOrPrtry></ns2:Tp>
+        <ns2:Amt Ccy="CHF">7593.10</ns2:Amt>
+        <ns2:CdtDbtInd>CRDT</ns2:CdtDbtInd>
+      </ns2:Bal>
+
+      <ns2:Ntry>
+        <ns2:Amt Ccy="CHF">124.55</ns2:Amt>
+        <ns2:CdtDbtInd>DBIT</ns2:CdtDbtInd>
+        <ns2:Sts>BOOK</ns2:Sts>
+        <ns2:BookgDt><ns2:Dt>2026-01-08</ns2:Dt></ns2:BookgDt>
+        <ns2:ValDt><ns2:Dt>2026-01-08</ns2:Dt></ns2:ValDt>
+        <ns2:AcctSvcrRef>E2E-REF-001</ns2:AcctSvcrRef>
+        <ns2:NtryDtls>
+          <ns2:TxDtls>
+            <ns2:Refs><ns2:EndToEndId>E2E-E2E-001</ns2:EndToEndId></ns2:Refs>
+            <ns2:RltdPties><ns2:Cdtr><ns2:Nm>Coop Bern</ns2:Nm></ns2:Cdtr></ns2:RltdPties>
+            <ns2:RmtInf><ns2:Ustrd>E2E Wocheneinkauf Coop</ns2:Ustrd></ns2:RmtInf>
+          </ns2:TxDtls>
+        </ns2:NtryDtls>
+      </ns2:Ntry>
+
+      <ns2:Ntry>
+        <ns2:Amt Ccy="CHF">6800.00</ns2:Amt>
+        <ns2:CdtDbtInd>CRDT</ns2:CdtDbtInd>
+        <ns2:Sts>BOOK</ns2:Sts>
+        <ns2:BookgDt><ns2:Dt>2026-01-25</ns2:Dt></ns2:BookgDt>
+        <ns2:ValDt><ns2:Dt>2026-01-25</ns2:Dt></ns2:ValDt>
+        <ns2:AcctSvcrRef>E2E-REF-002</ns2:AcctSvcrRef>
+        <ns2:NtryDtls>
+          <ns2:TxDtls>
+            <ns2:Refs><ns2:EndToEndId>E2E-E2E-002</ns2:EndToEndId></ns2:Refs>
+            <ns2:RltdPties><ns2:Dbtr><ns2:Nm>Arbeitgeber AG</ns2:Nm></ns2:Dbtr></ns2:RltdPties>
+            <ns2:RmtInf><ns2:Ustrd>E2E Lohnzahlung Januar</ns2:Ustrd></ns2:RmtInf>
+          </ns2:TxDtls>
+        </ns2:NtryDtls>
+      </ns2:Ntry>
+
+      <ns2:Ntry>
+        <ns2:Amt Ccy="CHF">82.35</ns2:Amt>
+        <ns2:CdtDbtInd>DBIT</ns2:CdtDbtInd>
+        <ns2:Sts>BOOK</ns2:Sts>
+        <ns2:BookgDt><ns2:Dt>2026-01-29</ns2:Dt></ns2:BookgDt>
+        <ns2:ValDt><ns2:Dt>2026-01-29</ns2:Dt></ns2:ValDt>
+        <ns2:AcctSvcrRef>E2E-REF-003</ns2:AcctSvcrRef>
+        <ns2:NtryDtls>
+          <ns2:TxDtls>
+            <ns2:RmtInf><ns2:Ustrd>E2E Krankenkasse Praemie</ns2:Ustrd></ns2:RmtInf>
+          </ns2:TxDtls>
+        </ns2:NtryDtls>
+      </ns2:Ntry>
+    </ns2:Stmt>
+  </ns2:BkToCstmrStmt>
+</ns2:Document>

@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   useTransition,
@@ -14,7 +15,14 @@ import {
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Plus, Upload } from "lucide-react";
 import type { CategoryKind, CsvMapping } from "@prisma/client";
-import { commitImportAction, previewImportAction, type ImportPreview, type PreviewRow } from "./actions";
+import { commitImportAction, previewImportAction, type PreviewRow } from "./actions";
+import {
+  NO_CATEGORY,
+  editsReducer,
+  rowsSharingCounterparty,
+  selectionOf,
+  type EditIntent,
+} from "./import-edits";
 import { saveCategoryAction } from "@/app/(app)/categories/actions";
 import type { CategoryOption } from "@/lib/categories";
 import type { AccountOption } from "@/app/(app)/transactions/transaction-form-dialog";
@@ -61,7 +69,6 @@ function useIsDesktop() {
 }
 
 const AUTO_ACCOUNT = "auto";
-const NO_CATEGORY = "none";
 
 type Format = "Camt053" | "Csv";
 
@@ -102,24 +109,9 @@ export function ImportWizard({
   const [committing, startCommit] = useTransition();
   const preview = state?.preview;
 
-  /**
-   * The user's edits to the current preview.
-   *
-   * Tied to the preview object itself rather than reset from an effect: when a
-   * new file is read, `edits.preview` no longer matches and the defaults apply
-   * again automatically. That avoids a render pass where stale selections from
-   * the previous file are shown against the new rows.
-   */
-  const [edits, setEdits] = useState<{
-    preview: ImportPreview;
-    selected: Set<string>;
-    /** Per-row override of the rule-suggested categorisation, keyed by row
-     *  hash: "none" | `cat:${categoryId}` | `transfer:${accountId}`. Lets a
-     *  wrongly-triggered rule (e.g. a broad "Revolut" transfer match) be
-     *  corrected before import instead of after, without deleting anything. */
-    overrides: Record<string, string>;
-    done: { imported: number; skipped: number } | null;
-  } | null>(null);
+  // See import-edits.ts for the shape and for why edits are tied to the
+  // preview object rather than cleared by an effect.
+  const [edits, dispatch] = useReducer(editsReducer, null);
   const active = edits?.preview === preview ? edits : null;
 
   const filteredRows = useMemo(
@@ -141,67 +133,38 @@ export function ImportWizard({
   const done = active?.done ?? null;
   const isDesktop = useIsDesktop();
 
-  // Read by the stable per-row callbacks below so their identity doesn't
-  // have to change (and every row's memoized component re-render) just
-  // because the user ticked a different checkbox.
+  // Latest edits, readable without subscribing to them. Only applyNewCategory
+  // needs this: it has to count the rows its category will reach in order to
+  // word the toast, and taking a real dependency on the overrides would change
+  // the callback's identity on every edit and re-render every memoized row.
   const activeRef = useRef(active);
   useEffect(() => {
     activeRef.current = active;
   });
 
-  const update = (
-    changes: Partial<{
-      selected: Set<string>;
-      overrides: Record<string, string>;
-      done: { imported: number; skipped: number } | null;
-    }>
-  ) => {
-    if (!preview) return;
-    setEdits({
-      preview,
-      selected: active?.selected ?? defaultSelected,
-      overrides: active?.overrides ?? {},
-      done: active?.done ?? null,
-      ...changes,
-    });
-  };
-
-  // The rule-suggested outcome for a row, encoded the same way an override is.
-  const defaultSelectionOf = (row: PreviewRow) =>
-    row.transferAccountId ? `transfer:${row.transferAccountId}` : `cat:${row.categoryId ?? NO_CATEGORY}`;
-
-  const selectionOf = (row: PreviewRow) =>
-    active && row.hash in active.overrides ? active.overrides[row.hash] : defaultSelectionOf(row);
-
-  const toggleRow = useCallback(
-    (hash: string, checked: boolean) => {
+  /**
+   * Every action needs to know which preview it applies to and what the
+   * defaults are; the reducer resolves the rest. `dispatch` is stable, so the
+   * per-row callbacks below only change identity when the preview or the date
+   * filter does — not when the user ticks a checkbox, which would re-render
+   * every memoized row.
+   */
+  const send = useCallback(
+    (intent: EditIntent) => {
       if (!preview) return;
-      const base = activeRef.current?.preview === preview ? activeRef.current : null;
-      const next = new Set(base?.selected ?? defaultSelected);
-      if (checked) next.add(hash);
-      else next.delete(hash);
-      setEdits({
-        preview,
-        selected: next,
-        overrides: base?.overrides ?? {},
-        done: base?.done ?? null,
-      });
+      dispatch({ ...intent, preview, defaultSelected });
     },
     [preview, defaultSelected]
   );
 
+  const toggleRow = useCallback(
+    (hash: string, checked: boolean) => send({ type: "toggleRow", hash, checked }),
+    [send]
+  );
+
   const overrideRow = useCallback(
-    (hash: string, value: string) => {
-      if (!preview) return;
-      const base = activeRef.current?.preview === preview ? activeRef.current : null;
-      setEdits({
-        preview,
-        selected: base?.selected ?? defaultSelected,
-        overrides: { ...(base?.overrides ?? {}), [hash]: value },
-        done: base?.done ?? null,
-      });
-    },
-    [preview, defaultSelected]
+    (hash: string, value: string) => send({ type: "overrideRow", hash, value }),
+    [send]
   );
 
   // Precomputed once per category/account change instead of re-filtered for
@@ -243,7 +206,7 @@ export function ImportWizard({
     const rows = filteredRows
       .filter((row) => selected.has(row.hash))
       .map((row) => {
-        const [kind, idPart] = selectionOf(row).split(":");
+        const [kind, idPart] = selectionOf(active, row).split(":");
         const categoryId = kind === "cat" && idPart !== NO_CATEGORY ? parseInt(idPart, 10) : null;
         const transferAccountId = kind === "transfer" ? parseInt(idPart, 10) : null;
         return {
@@ -271,7 +234,7 @@ export function ImportWizard({
       if (result.error) toast.error(result.error);
       else {
         toast.success(`${result.imported} Buchung(en) importiert.`);
-        update({ done: { imported: result.imported ?? 0, skipped: result.skipped ?? 0 } });
+        send({ type: "markDone", imported: result.imported ?? 0, skipped: result.skipped ?? 0 });
       }
     });
   };
@@ -279,35 +242,20 @@ export function ImportWizard({
   // Applies a category just created from a row's "+" button to that row, and
   // — since the whole reason to categorise inline is that a rule hasn't been
   // written yet — to every other still-uncategorised row in this same
-  // preview with the same counterparty, the same signal loadHistoryCategorySuggestions
-  // uses to pre-fill from past imports.
+  // preview with the same counterparty, the same signal
+  // loadHistoryCategorySuggestions uses to pre-fill from past imports.
+  //
+  // The reducer does the applying; this only has to report how many rows were
+  // affected, which is why it reads the overrides through the ref rather than
+  // taking a dependency on them.
   const applyNewCategory = useCallback(
     (row: PreviewRow, category: CategoryOption) => {
       if (!preview) return;
       setCategoryList((prev) => [...prev, category].sort((a, b) => a.label.localeCompare(b.label, "de-CH")));
 
-      const value = `cat:${category.id}`;
       const base = activeRef.current?.preview === preview ? activeRef.current : null;
-      const currentOverrides = base?.overrides ?? {};
-      const matches = preview.rows.filter(
-        (r) =>
-          r.hash === row.hash ||
-          (!r.isAdopted &&
-            r.categoryId === null &&
-            r.transferAccountId === null &&
-            r.counterparty &&
-            row.counterparty &&
-            r.counterparty.trim().toLowerCase() === row.counterparty.trim().toLowerCase() &&
-            !(r.hash in currentOverrides))
-      );
-      const nextOverrides = { ...currentOverrides };
-      for (const match of matches) nextOverrides[match.hash] = value;
-      setEdits({
-        preview,
-        selected: base?.selected ?? defaultSelected,
-        overrides: nextOverrides,
-        done: base?.done ?? null,
-      });
+      const matches = rowsSharingCounterparty(preview, row, base?.overrides ?? {});
+      send({ type: "applyCategoryToSimilar", row, category });
 
       toast.success(
         matches.length > 1
@@ -315,7 +263,7 @@ export function ImportWizard({
           : `Kategorie "${category.label}" erstellt.`
       );
     },
-    [preview, defaultSelected]
+    [preview, send]
   );
 
   const selectedCount = filteredRows.filter((r) => selected.has(r.hash)).length;
@@ -585,24 +533,14 @@ export function ImportWizard({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    // Leaves selections outside the current date filter untouched —
-                    // "Alle neuen" only decides what happens within what's shown.
-                    const filteredHashes = new Set(filteredRows.map((r) => r.hash));
-                    const next = new Set([...selected].filter((h) => !filteredHashes.has(h)));
-                    for (const row of filteredRows) if (!row.isDuplicate) next.add(row.hash);
-                    update({ selected: next });
-                  }}
+                  onClick={() => send({ type: "selectAllNew", rows: filteredRows })}
                 >
                   Alle neuen
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    const filteredHashes = new Set(filteredRows.map((r) => r.hash));
-                    update({ selected: new Set([...selected].filter((h) => !filteredHashes.has(h))) });
-                  }}
+                  onClick={() => send({ type: "selectNone", rows: filteredRows })}
                 >
                   Keine
                 </Button>
@@ -630,7 +568,7 @@ export function ImportWizard({
                         key={row.hash}
                         row={row}
                         isSelected={selected.has(row.hash)}
-                        selectionValue={selectionOf(row)}
+                        selectionValue={selectionOf(active, row)}
                         options={row.amountCents >= 0 ? incomeOptions : expenseOptions}
                         showHistoryBadge={
                           row.categorySource === "history" && !(active && row.hash in active.overrides)
@@ -651,7 +589,7 @@ export function ImportWizard({
                     key={row.hash}
                     row={row}
                     isSelected={selected.has(row.hash)}
-                    selectionValue={selectionOf(row)}
+                    selectionValue={selectionOf(active, row)}
                     options={row.amountCents >= 0 ? incomeOptions : expenseOptions}
                     showHistoryBadge={
                       row.categorySource === "history" && !(active && row.hash in active.overrides)

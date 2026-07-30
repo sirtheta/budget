@@ -215,7 +215,9 @@ function BookingForm({
               direction === value
                 ? value === "income"
                   ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 shadow-sm"
-                  : "bg-destructive/15 text-destructive shadow-sm"
+                  // Not text-destructive: that token on its own 15% tint falls
+                  // below the contrast floor, mirroring the emerald pair above.
+                  : "bg-destructive/15 text-red-800 dark:text-red-400 shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >

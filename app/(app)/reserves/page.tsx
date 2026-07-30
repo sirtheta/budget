@@ -181,6 +181,7 @@ export default async function ReservesPage() {
                   </div>
                   <Progress
                     value={status.progress}
+                    label={reserve.name}
                     indicatorClassName={status.isShort ? "bg-destructive" : "bg-primary"}
                   />
                 </div>
@@ -280,6 +281,7 @@ export default async function ReservesPage() {
                   </div>
                   <Progress
                     value={status.progress}
+                    label={goal.name}
                     indicatorClassName={status.isReached ? "bg-emerald-500" : "bg-primary"}
                   />
                 </div>

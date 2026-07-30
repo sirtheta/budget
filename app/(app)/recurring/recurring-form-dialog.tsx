@@ -147,7 +147,9 @@ export function RecurringFormDialog({
                     direction === value
                       ? value === "income"
                         ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 shadow-sm"
-                        : "bg-destructive/15 text-destructive shadow-sm"
+                        // See transaction-form-dialog: text-destructive on its
+                        // own tint does not reach the contrast floor.
+                        : "bg-destructive/15 text-red-800 dark:text-red-400 shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >

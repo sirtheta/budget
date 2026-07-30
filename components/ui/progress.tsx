@@ -7,11 +7,18 @@ import { cn } from "@/lib/utils";
  */
 export function Progress({
   value,
+  label,
   className,
   indicatorClassName,
 }: {
   /** 0–1; values above 1 are clamped. */
   value: number;
+  /**
+   * What the bar measures, e.g. the category name. Without it a screen reader
+   * announces a bare percentage with nothing to attach it to — and the budget
+   * page renders one of these per category.
+   */
+  label?: string;
   className?: string;
   indicatorClassName?: string;
 }) {
@@ -20,9 +27,11 @@ export function Progress({
     <div
       className={cn("h-2 w-full overflow-hidden rounded-full bg-muted", className)}
       role="progressbar"
+      aria-label={label}
       aria-valuenow={Math.round(percent)}
       aria-valuemin={0}
       aria-valuemax={100}
+      aria-valuetext={label ? `${Math.round(percent)} % von ${label}` : undefined}
     >
       <div
         className={cn("h-full rounded-full bg-primary transition-all", indicatorClassName)}

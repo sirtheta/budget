@@ -2,10 +2,11 @@
 
 import { compare, hash } from "bcryptjs";
 import QRCode from "qrcode";
+import { z } from "zod";
 import { signOut } from "@/lib/auth";
 import { requireSession } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
-import { bcryptRounds } from "@/lib/password";
+import { bcryptRounds, passwordSchema } from "@/lib/password";
 import { isRateLimited, recordFailedAttempt, resetRateLimit } from "@/lib/rate-limit";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
 import {
@@ -29,6 +30,21 @@ function passwordCheckKey(userId: number): string {
   return `password-check:${userId}`;
 }
 
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: passwordSchema,
+});
+
+/**
+ * A TOTP code is six digits, and a backup code is the format generateBackupCodes
+ * emits. Bounding the field keeps an arbitrarily long string out of the
+ * verification path — `otpauth` and the bcrypt compare over the backup codes
+ * both do real work per call, and this action is reachable with a session.
+ */
+const twoFactorCodeSchema = z.string().trim().min(1).max(64);
+
+const disableTwoFactorSchema = z.object({ password: z.string().min(1) });
+
 export async function changeOwnPasswordAction(
   _prevState: { error?: string; success?: boolean } | undefined,
   formData: FormData
@@ -36,14 +52,14 @@ export async function changeOwnPasswordAction(
   const session = await requireSession();
   const userId = parseInt(session.user.id, 10);
 
-  const currentPassword = formData.get("currentPassword");
-  const newPassword = formData.get("newPassword");
-  if (typeof currentPassword !== "string" || typeof newPassword !== "string") {
-    return { error: "Ungültige Eingabe." };
+  const parsed = changePasswordSchema.safeParse({
+    currentPassword: formData.get("currentPassword"),
+    newPassword: formData.get("newPassword"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };
   }
-  if (newPassword.length < 8) {
-    return { error: "Neues Passwort muss mindestens 8 Zeichen lang sein." };
-  }
+  const { currentPassword, newPassword } = parsed.data;
 
   // The current-password check is a password oracle, so it gets the same
   // throttling as login: without it a stolen session could sit here and guess
@@ -122,12 +138,14 @@ export async function confirmTwoFactorSetupAction(
   const session = await requireSession();
   const userId = parseInt(session.user.id, 10);
 
-  const code = String(formData.get("code") ?? "").trim();
+  const parsedCode = twoFactorCodeSchema.safeParse(formData.get("code"));
+  if (!parsedCode.success) return { error: "Code ist ungültig." };
+
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.twoFactorSecret) return { error: "Kein Setup gestartet." };
 
   const secret = decryptSecret(user.twoFactorSecret);
-  if (!secret || !verifyTwoFactorToken(secret, code)) {
+  if (!secret || !verifyTwoFactorToken(secret, parsedCode.data)) {
     return { error: "Code ist ungültig." };
   }
 
@@ -156,9 +174,14 @@ export async function disableTwoFactorAction(
     return { error: "Zu viele Versuche. Bitte später erneut versuchen." };
   }
 
-  const password = String(formData.get("password") ?? "");
+  const parsed = disableTwoFactorSchema.safeParse({ password: formData.get("password") });
+  if (!parsed.success) {
+    recordFailedAttempt(limitKey);
+    return { error: "Passwort ist falsch." };
+  }
+
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user || !(await compare(password, user.passwordHash))) {
+  if (!user || !(await compare(parsed.data.password, user.passwordHash))) {
     recordFailedAttempt(limitKey);
     return { error: "Passwort ist falsch." };
   }

@@ -82,6 +82,26 @@ describe("changeOwnPasswordAction", () => {
     expect(result.error).toBe("Aktuelles Passwort ist falsch.");
   });
 
+  it("rejects a new password past bcrypt's 72-byte limit", async () => {
+    // Accepting it would store a hash covering only the first 72 bytes, so any
+    // passphrase sharing that prefix would open the account.
+    await newUser("pw4@test.ch");
+    const result = await changeOwnPasswordAction(
+      undefined,
+      form({ currentPassword: "correct-password", newPassword: "a".repeat(73) })
+    );
+    expect(result.error).toMatch(/72 Bytes/);
+  });
+
+  it("rejects a missing field without reaching the password check", async () => {
+    const user = await newUser("pw5@test.ch");
+    const result = await changeOwnPasswordAction(undefined, form({ newPassword: "brandNewPw1" }));
+
+    expect(result.error).toBeTruthy();
+    const unchanged = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(unchanged.sessionEpoch).toBe(0);
+  });
+
   it("changes the password, bumps sessionEpoch, and logs an audit entry", async () => {
     const user = await newUser("pw3@test.ch");
     const result = await changeOwnPasswordAction(

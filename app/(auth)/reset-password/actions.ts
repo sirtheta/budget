@@ -5,7 +5,7 @@ import { hash } from "bcryptjs";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
 import logger from "@/lib/logger";
-import { bcryptRounds } from "@/lib/password";
+import { bcryptRounds, passwordSchema } from "@/lib/password";
 import { isRateLimited, recordFailedAttempt } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/client-ip";
 import { consumePasswordResetToken } from "@/lib/password-reset";
@@ -14,7 +14,7 @@ const log = logger.child({ module: "password-reset" });
 
 const resetSchema = z.object({
   token: z.string().min(1),
-  password: z.string().min(8, "Passwort muss mindestens 8 Zeichen lang sein."),
+  password: passwordSchema,
 });
 
 export async function resetPasswordAction(

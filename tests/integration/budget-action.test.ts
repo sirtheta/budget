@@ -51,6 +51,30 @@ describe("setBudgetAction", () => {
     expect(result.error).toBe("Ungültiger Monat.");
   });
 
+  // A Server Action is a POST endpoint and its parameter types are erased, so
+  // nothing stops a caller from sending these. Each of them used to be written
+  // straight through into a Budget row that no month view could address again.
+  describe("rejects arguments a caller could forge", () => {
+    const cases: [string, Parameters<typeof setBudgetAction>, string][] = [
+      ["a fractional month", [1, 2026, 1.5, "100"], "Ungültiger Monat."],
+      ["a zero month", [1, 2026, 0, "100"], "Ungültiger Monat."],
+      ["a NaN month", [1, 2026, NaN, "100"], "Ungültiger Monat."],
+      ["a fractional year", [1, 2026.5, 1, "100"], "Ungültiges Jahr."],
+      ["a year below four digits", [1, 999, 1, "100"], "Ungültiges Jahr."],
+      ["a year above four digits", [1, 10_000, 1, "100"], "Ungültiges Jahr."],
+      ["a NaN year", [1, NaN, 1, "100"], "Ungültiges Jahr."],
+      ["a negative category id", [-1, 2026, 1, "100"], "Ungültige Kategorie."],
+      ["a fractional category id", [1.5, 2026, 1, "100"], "Ungültige Kategorie."],
+    ];
+
+    for (const [name, args, message] of cases) {
+      it(name, async () => {
+        expect((await setBudgetAction(...args)).error).toBe(message);
+        expect(await prisma.budget.count({ where: { categoryId: args[0] } })).toBe(0);
+      });
+    }
+  });
+
   it("rejects a non-numeric amount", async () => {
     const result = await setBudgetAction(fixtures.groceries.id, 2026, 1, "abc");
     expect(result.error).toBeTruthy();
@@ -126,5 +150,31 @@ describe("copyPreviousMonthAction", () => {
       where: { categoryId_year_month: { categoryId: fixtures.groceries.id, year: 2026, month: 1 } },
     });
     expect(row.amountCents).toBe(12000);
+  });
+
+  it("rejects an out-of-range month before copying anything", async () => {
+    const before = await prisma.budget.count();
+
+    expect((await copyPreviousMonthAction(2026, 13)).error).toBe("Ungültiger Monat.");
+
+    expect(await prisma.budget.count()).toBe(before);
+  });
+
+  it("rejects a year the date format cannot represent", async () => {
+    const before = await prisma.budget.count();
+
+    expect((await copyPreviousMonthAction(99_999, 1)).error).toBe("Ungültiges Jahr.");
+
+    expect(await prisma.budget.count()).toBe(before);
+  });
+
+  it("rejects NaN rather than deriving a source month from it", async () => {
+    // year * 12 + (month - 1) - 1 on NaN yields NaN, which Math.floor happily
+    // passes on into a Budget row.
+    const before = await prisma.budget.count();
+
+    expect((await copyPreviousMonthAction(NaN, NaN)).error).toBeTruthy();
+
+    expect(await prisma.budget.count()).toBe(before);
   });
 });

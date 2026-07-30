@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { hasRole, requireSession } from "@/lib/permissions";
 import { config } from "@/lib/config";
 import { formatDateCH, monthName, todayInZone, trailingMonths } from "@/lib/date";
-import { accountBalances, netWorthCents } from "@/lib/balances";
+import { accountBalances, illiquidNetWorthCents, liquidNetWorthCents, netWorthCents } from "@/lib/balances";
 import { loadBudgetMonth } from "@/lib/budget";
 import { categoryBreakdown, monthlySeries } from "@/lib/analytics";
 import { totalMonthlyReserveCents } from "@/lib/reserves";
@@ -115,7 +115,20 @@ export default async function DashboardPage() {
       </PageHeader>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
-        <Tile label="Vermögen" cents={netWorthCents(balances)} colored />
+        <Tile
+          label="Vermögen"
+          cents={netWorthCents(balances)}
+          colored
+          hint={
+            illiquidNetWorthCents(balances) !== 0
+              ? `Flüssig: ${formatMoney(liquidNetWorthCents(balances), {
+                  withCurrency: true,
+                })} · nicht flüssig: ${formatMoney(illiquidNetWorthCents(balances), {
+                  withCurrency: true,
+                })}`
+              : undefined
+          }
+        />
         <Tile label="Einnahmen (Monat)" cents={budget.totals.actualIncomeCents} />
         <Tile label="Ausgaben (Monat)" cents={budget.totals.actualExpenseCents} />
         <Tile

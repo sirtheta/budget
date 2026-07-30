@@ -113,6 +113,27 @@ export function netWorthCents(balances: AccountBalance[]): number {
   return balances.reduce((total, account) => total + account.balanceCents, 0);
 }
 
+/** Depots and crypto move with the market and take days to turn into cash; everything else doesn't. */
+const ILLIQUID_ACCOUNT_TYPES: ReadonlySet<AccountType> = new Set(["Investment", "Crypto"]);
+
+export function isLiquidAccountType(type: AccountType): boolean {
+  return !ILLIQUID_ACCOUNT_TYPES.has(type);
+}
+
+/** Sum of balances that can be spent within days (checking, savings, cash, credit card). */
+export function liquidNetWorthCents(balances: AccountBalance[]): number {
+  return balances
+    .filter((account) => isLiquidAccountType(account.type))
+    .reduce((total, account) => total + account.balanceCents, 0);
+}
+
+/** Sum of balances tied up in investments (3a, depots, crypto). */
+export function illiquidNetWorthCents(balances: AccountBalance[]): number {
+  return balances
+    .filter((account) => !isLiquidAccountType(account.type))
+    .reduce((total, account) => total + account.balanceCents, 0);
+}
+
 /**
  * Balance of an account as it stood at the end of `date` (inclusive).
  * Used for the net-worth trend, which needs a balance per historical month.

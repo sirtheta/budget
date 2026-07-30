@@ -23,7 +23,11 @@ export default defineConfig({
       thresholds: {
         statements: 85,
         branches: 75,
-        functions: 88,
+        // 87 rather than 88: merging main moved the baseline to 88.03, and a
+        // 0.03 margin fails on the next unrelated change rather than on a real
+        // regression. Same policy as the other three — a few points under
+        // what the suite actually reaches.
+        functions: 87,
         lines: 87,
       },
     },

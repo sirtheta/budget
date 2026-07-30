@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { requireSession } from "@/lib/permissions";
 import { hasRole } from "@/lib/permissions";
 import { categoryOptions } from "@/lib/categories";
+import { transactionSearchFilter } from "@/lib/search";
 import { config } from "@/lib/config";
 import { formatMoney } from "@/lib/money";
 import { formatDateCH, todayInZone } from "@/lib/date";
@@ -60,13 +61,9 @@ function buildWhere(params: Record<string, string | undefined>): Prisma.Transact
     where.transferGroupId = null;
   }
 
-  if (params.q) {
-    where.OR = [
-      { description: { contains: params.q } },
-      { counterparty: { contains: params.q } },
-      { notes: { contains: params.q } },
-    ];
-  }
+  const search = transactionSearchFilter(params.q);
+  if (search) where.OR = search;
+
   return where;
 }
 

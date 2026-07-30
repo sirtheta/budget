@@ -1,9 +1,16 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CalendarClock, Plus } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarClock } from "lucide-react";
 import prisma from "@/lib/prisma";
 import { hasRole, requireSession } from "@/lib/permissions";
 import { config } from "@/lib/config";
-import { formatDateCH, monthName, todayInZone, trailingMonths } from "@/lib/date";
+import {
+  formatDateCH,
+  monthEnd,
+  monthName,
+  monthStart,
+  todayInZone,
+  trailingMonths,
+} from "@/lib/date";
 import { accountBalances, illiquidNetWorthCents, liquidNetWorthCents, netWorthCents } from "@/lib/balances";
 import { loadBudgetMonth } from "@/lib/budget";
 import { categoryBreakdown, monthlySeries } from "@/lib/analytics";
@@ -12,6 +19,7 @@ import { pendingSuggestions } from "@/lib/recurring";
 import { categoryOptions } from "@/lib/categories";
 import { formatMoney } from "@/lib/money";
 import { PageHeader } from "@/components/page-header";
+import { MonthNav } from "@/components/month-nav";
 import { Money } from "@/components/money";
 import { MonthlyBarChart } from "@/components/charts/monthly-bar-chart";
 import { CategoryPieChart } from "@/components/charts/category-pie-chart";
@@ -24,13 +32,22 @@ import { PostSuggestionButton } from "./post-suggestion-button";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
   const session = await requireSession();
   const canEdit = hasRole(session, ["Admin", "Editor"]);
 
+  const raw = await searchParams;
   const today = todayInZone(config.recurring.timezone);
-  const [year, month] = today.split("-").map(Number);
-  const monthFrom = `${year}-${String(month).padStart(2, "0")}-01`;
+  const [currentYear, currentMonth] = today.split("-").map(Number);
+
+  const year = parseInt(String(raw.year ?? currentYear), 10) || currentYear;
+  const month = Math.min(12, Math.max(1, parseInt(String(raw.month ?? currentMonth), 10) || currentMonth));
+  const isCurrentMonth = year === currentYear && month === currentMonth;
+
+  const monthFrom = monthStart(year, month);
+  const monthTo = isCurrentMonth ? today : monthEnd(year, month);
 
   const [
     balances,
@@ -46,8 +63,9 @@ export default async function DashboardPage() {
     accountBalances(prisma),
     loadBudgetMonth(prisma, year, month),
     monthlySeries(prisma, trailingMonths(year, month, 12)),
-    categoryBreakdown(prisma, monthFrom, today, "Expense"),
+    categoryBreakdown(prisma, monthFrom, monthTo, "Expense"),
     prisma.transaction.findMany({
+      where: { date: { gte: monthFrom, lte: monthTo } },
       orderBy: [{ date: "desc" }, { id: "desc" }],
       take: 8,
       include: {
@@ -65,7 +83,7 @@ export default async function DashboardPage() {
     categoryOptions(prisma),
   ]);
 
-  const suggestions = pendingSuggestions(recurring, today);
+  const suggestions = isCurrentMonth ? pendingSuggestions(recurring, today) : [];
   const reserveMonthly = totalMonthlyReserveCents(reserves, today);
   const overBudget = budget.groups
     .flatMap((group) => group.lines)
@@ -100,17 +118,9 @@ export default async function DashboardPage() {
   return (
     <>
       <PageHeader title="Dashboard" description={`${monthName(month)} ${year}`}>
+        <MonthNav year={year} month={month} basePath="/dashboard" />
         {canEdit && (
-          <TransactionFormDialog
-            accounts={accounts}
-            categories={categories}
-            today={today}
-            trigger={
-              <Button>
-                <Plus className="h-4 w-4" /> Neue Buchung
-              </Button>
-            }
-          />
+          <TransactionFormDialog accounts={accounts} categories={categories} today={today} />
         )}
       </PageHeader>
 
@@ -186,7 +196,7 @@ export default async function DashboardPage() {
               {budget.totals.uncategorizedCount} Buchung(en) diesen Monat ohne Kategorie
             </p>
             <Button variant="outline" size="sm" asChild>
-              <Link href={`/transactions?categoryId=none&from=${monthFrom}`}>
+              <Link href={`/transactions?categoryId=none&from=${monthFrom}&to=${monthTo}`}>
                 Zuordnen <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </Button>
@@ -238,7 +248,7 @@ export default async function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <CategoryPieChart slices={breakdown} from={monthFrom} to={today} />
+            <CategoryPieChart slices={breakdown} from={monthFrom} to={monthTo} />
           </CardContent>
         </Card>
 

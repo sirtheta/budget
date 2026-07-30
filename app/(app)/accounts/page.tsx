@@ -11,7 +11,6 @@ import {
 import { categoryOptions } from "@/lib/categories";
 import { todayInZone } from "@/lib/date";
 import { config } from "@/lib/config";
-import { btcChfRate } from "@/lib/crypto-price";
 import { formatMoney } from "@/lib/money";
 import { PageHeader } from "@/components/page-header";
 import { Money } from "@/components/money";
@@ -55,7 +54,10 @@ export default async function AccountsPage() {
     .filter((a) => a.isActive && a.type !== "Crypto")
     .map((a) => ({ id: a.id, name: a.name }));
   const today = todayInZone(config.recurring.timezone);
-  const currentRateChf = accounts.some((a) => a.type === "Crypto") ? await btcChfRate() : null;
+  // Taken from the balances rather than fetched again: `accountBalances` has
+  // already resolved the rate, and asking a second time only risks a second
+  // request against a rate-limited endpoint.
+  const currentRateChf = balances.find((b) => b.btcRateChf !== null)?.btcRateChf ?? null;
   const activeBalances = balances.filter((b) => accounts.find((a) => a.id === b.id)?.isActive);
   const activeNetWorth = netWorthCents(activeBalances);
   const activeIlliquid = illiquidNetWorthCents(activeBalances);

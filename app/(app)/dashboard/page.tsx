@@ -271,6 +271,7 @@ export default async function DashboardPage() {
                     </div>
                     <Progress
                       value={line.progress ?? 0}
+                      label={line.name}
                       indicatorClassName={
                         line.status === "over" ? "bg-destructive" : "bg-amber-500"
                       }

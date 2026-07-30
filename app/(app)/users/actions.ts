@@ -7,7 +7,7 @@ import { UserRole } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireAdmin } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
-import { bcryptRounds } from "@/lib/password";
+import { bcryptRounds, passwordSchema } from "@/lib/password";
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -34,11 +34,13 @@ export async function saveUserAction(
   const id = idRaw ? parseInt(String(idRaw), 10) : null;
   const password = String(formData.get("password") ?? "");
 
-  if (!id && password.length < 8) {
-    return { error: "Passwort muss mindestens 8 Zeichen lang sein." };
-  }
-  if (id && password && password.length < 8) {
-    return { error: "Passwort muss mindestens 8 Zeichen lang sein." };
+  // A password is required when creating a user, and optional when editing one
+  // — an empty field there means "leave it alone" rather than "set it to empty".
+  if (!id || password) {
+    const parsedPassword = passwordSchema.safeParse(password);
+    if (!parsedPassword.success) {
+      return { error: parsedPassword.error.issues[0]?.message ?? "Ungültiges Passwort." };
+    }
   }
 
   // An account demoting itself would lock the admin out of user management

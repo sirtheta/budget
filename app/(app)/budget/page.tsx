@@ -182,6 +182,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Searc
                       {line.plannedCents > 0 && (
                         <Progress
                           value={line.progress ?? 0}
+                          label={line.name}
                           className="mt-2"
                           indicatorClassName={STATUS_BAR[line.status]}
                         />

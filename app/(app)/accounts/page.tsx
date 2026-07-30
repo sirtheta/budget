@@ -1,11 +1,18 @@
 import Link from "next/link";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
-import { ACCOUNT_TYPE_LABELS, accountBalances, netWorthCents } from "@/lib/balances";
+import {
+  ACCOUNT_TYPE_LABELS,
+  accountBalances,
+  illiquidNetWorthCents,
+  liquidNetWorthCents,
+  netWorthCents,
+} from "@/lib/balances";
 import { categoryOptions } from "@/lib/categories";
 import { todayInZone } from "@/lib/date";
 import { config } from "@/lib/config";
 import { btcChfRate } from "@/lib/crypto-price";
+import { formatMoney } from "@/lib/money";
 import { PageHeader } from "@/components/page-header";
 import { Money } from "@/components/money";
 import { Badge } from "@/components/ui/badge";
@@ -49,7 +56,9 @@ export default async function AccountsPage() {
     .map((a) => ({ id: a.id, name: a.name }));
   const today = todayInZone(config.recurring.timezone);
   const currentRateChf = accounts.some((a) => a.type === "Crypto") ? await btcChfRate() : null;
-  const activeNetWorth = netWorthCents(balances.filter((b) => accounts.find((a) => a.id === b.id)?.isActive));
+  const activeBalances = balances.filter((b) => accounts.find((a) => a.id === b.id)?.isActive);
+  const activeNetWorth = netWorthCents(activeBalances);
+  const activeIlliquid = illiquidNetWorthCents(activeBalances);
 
   return (
     <>
@@ -67,6 +76,14 @@ export default async function AccountsPage() {
             <Money cents={activeNetWorth} withCurrency colored />
           </CardTitle>
         </CardHeader>
+        {activeIlliquid !== 0 && (
+          <CardContent className="pt-0">
+            <p className="text-xs text-muted-foreground">
+              Flüssig: {formatMoney(liquidNetWorthCents(activeBalances), { withCurrency: true })} ·
+              nicht flüssig: {formatMoney(activeIlliquid, { withCurrency: true })}
+            </p>
+          </CardContent>
+        )}
       </Card>
 
       <Card>

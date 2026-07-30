@@ -46,7 +46,7 @@
           <ns2:TxDtls>
             <ns2:Refs><ns2:EndToEndId>E2E-E2E-001</ns2:EndToEndId></ns2:Refs>
             <ns2:RltdPties><ns2:Cdtr><ns2:Nm>Coop Bern</ns2:Nm></ns2:Cdtr></ns2:RltdPties>
-            <ns2:RmtInf><ns2:Ustrd>E2E Wocheneinkauf Coop</ns2:Ustrd></ns2:RmtInf>
+            <ns2:RmtInf><ns2:Ustrd>Auszug Wocheneinkauf Coop</ns2:Ustrd></ns2:RmtInf>
           </ns2:TxDtls>
         </ns2:NtryDtls>
       </ns2:Ntry>
@@ -62,7 +62,7 @@
           <ns2:TxDtls>
             <ns2:Refs><ns2:EndToEndId>E2E-E2E-002</ns2:EndToEndId></ns2:Refs>
             <ns2:RltdPties><ns2:Dbtr><ns2:Nm>Arbeitgeber AG</ns2:Nm></ns2:Dbtr></ns2:RltdPties>
-            <ns2:RmtInf><ns2:Ustrd>E2E Lohnzahlung Januar</ns2:Ustrd></ns2:RmtInf>
+            <ns2:RmtInf><ns2:Ustrd>Auszug Lohnzahlung Januar</ns2:Ustrd></ns2:RmtInf>
           </ns2:TxDtls>
         </ns2:NtryDtls>
       </ns2:Ntry>
@@ -76,7 +76,7 @@
         <ns2:AcctSvcrRef>E2E-REF-003</ns2:AcctSvcrRef>
         <ns2:NtryDtls>
           <ns2:TxDtls>
-            <ns2:RmtInf><ns2:Ustrd>E2E Krankenkasse Praemie</ns2:Ustrd></ns2:RmtInf>
+            <ns2:RmtInf><ns2:Ustrd>Auszug Krankenkasse Praemie</ns2:Ustrd></ns2:RmtInf>
           </ns2:TxDtls>
         </ns2:NtryDtls>
       </ns2:Ntry>

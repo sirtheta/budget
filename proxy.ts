@@ -59,5 +59,11 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|public/).*)"],
+  // The manifest and its icons are fetched without credentials — a browser
+  // decides whether the app is installable before anyone signs in — so they
+  // have to be reachable logged-out. Redirecting them to /login would make the
+  // app silently uninstallable, with no error anywhere to explain why.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|icon-192.png|icon-512.png|apple-icon.png|manifest.webmanifest|public/).*)",
+  ],
 };

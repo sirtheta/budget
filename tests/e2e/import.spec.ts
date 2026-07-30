@@ -14,6 +14,8 @@ import { login } from "./helpers";
  *
  * The tests run in order against one shared database (workers: 1), so the
  * import performed by the first is what the duplicate and undo tests act on.
+ * The fixture's descriptions all begin with "Auszug", a token no other spec
+ * writes — the counts below share a database with everything else in the run.
  */
 
 const FIXTURE = path.join(__dirname, "fixtures", "camt053-e2e.xml");
@@ -44,7 +46,7 @@ async function readFixture(page: Page): Promise<void> {
   await page.locator("#file").setInputFiles(FIXTURE);
   await page.getByRole("button", { name: "Datei einlesen" }).click();
 
-  await expect(page.getByText("E2E Wocheneinkauf Coop").first()).toBeVisible();
+  await expect(page.getByText("Auszug Wocheneinkauf Coop").first()).toBeVisible();
 }
 
 test.describe("Import", () => {
@@ -53,11 +55,11 @@ test.describe("Import", () => {
     await readFixture(page);
 
     // All three entries parsed, in both directions.
-    await expect(page.getByText("E2E Lohnzahlung Januar").first()).toBeVisible();
-    await expect(page.getByText("E2E Krankenkasse Praemie").first()).toBeVisible();
+    await expect(page.getByText("Auszug Lohnzahlung Januar").first()).toBeVisible();
+    await expect(page.getByText("Auszug Krankenkasse Praemie").first()).toBeVisible();
 
     // Nothing is written before the user confirms — the preview is the point.
-    expect(await bookingCount(page, "E2E ")).toBe(0);
+    expect(await bookingCount(page, "Auszug")).toBe(0);
   });
 
   test("übernimmt die ausgewählten Buchungen", async ({ page }) => {
@@ -71,8 +73,8 @@ test.describe("Import", () => {
     await expect(page.getByText(/3 Buchung\(en\) importiert/).first()).toBeVisible();
 
     await page.goto("/transactions");
-    await expect(page.getByText("E2E Wocheneinkauf Coop").first()).toBeVisible();
-    await expect(page.getByText("E2E Lohnzahlung Januar").first()).toBeVisible();
+    await expect(page.getByText("Auszug Wocheneinkauf Coop").first()).toBeVisible();
+    await expect(page.getByText("Auszug Lohnzahlung Januar").first()).toBeVisible();
     // Debit stored negative, credit positive — the sign convention survives
     // the parser, the preview and the commit. Expenses carry a typographic
     // minus; income in the list is rendered without a forced plus.
@@ -93,7 +95,7 @@ test.describe("Import", () => {
     await expect(page.getByRole("button", { name: /Buchung\(en\) importieren/ })).toBeDisabled();
 
     // Still three, not six.
-    expect(await bookingCount(page, "E2E ")).toBe(3);
+    expect(await bookingCount(page, "Auszug")).toBe(3);
   });
 
   test("macht einen Import als Ganzes rückgängig", async ({ page }) => {
@@ -106,6 +108,6 @@ test.describe("Import", () => {
     await expect(page.getByText(/3 Buchung\(en\) entfernt/)).toBeVisible();
 
     // The batch goes as a whole — that is what makes trying an import safe.
-    expect(await bookingCount(page, "E2E ")).toBe(0);
+    expect(await bookingCount(page, "Auszug")).toBe(0);
   });
 });

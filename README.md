@@ -69,6 +69,45 @@ Für eigene Werte siehe [`.env.example`](.env.example).
 
 ---
 
+## Backup und Wiederherstellung
+
+Jede Nacht (`BACKUP_CRON_SCHEDULE`, Standard 02:30) schreibt die App einen
+konsistenten Schnappschuss nach `data/backups/budget-backup-JJJJ-MM-TT.db` und
+löscht Sicherungen, die älter als `BACKUP_MAX_KEEP_DAYS` Tage sind.
+
+Jeder Schnappschuss wird direkt nach dem Schreiben geprüft — lesbar, nicht
+korrupt, Schema vorhanden. Schlägt die Prüfung fehl, wird die Datei verworfen
+und **nichts** gelöscht: ein Lauf, der keine brauchbare Sicherung erzeugt hat,
+darf nicht derjenige sein, der die letzte gute wegräumt.
+
+### Wiederherstellen
+
+```bash
+docker compose exec budget ls /app/data/backups
+docker compose exec budget node scripts/restore.js /app/data/backups/budget-backup-2026-07-29.db
+docker compose restart
+```
+
+Das Skript prüft die Sicherung, **bevor** es irgendetwas anfasst, und zeigt an,
+was drinsteht (Anzahl Buchungen, Konten, Benutzer, letzte Buchung) — bei
+mehreren Sicherungen ist das der Unterschied zwischen Wiederherstellen und
+Raten. Ist die Datei unbrauchbar, bricht es ab, ohne die laufende Datenbank
+anzurühren.
+
+Die ersetzte Datenbank wird nicht überschrieben, sondern nach
+`budget.db.pre-restore-<Zeitstempel>` verschoben. Die falsche Sicherung
+einzuspielen ist damit korrigierbar. Ist alles in Ordnung, kann die Datei
+später gelöscht werden.
+
+Der Neustart am Schluss ist nicht optional: der laufende Server hält die alte
+Datei offen und würde sonst weiter aus ihr lesen.
+
+> **Einmal ausprobieren.** Eine Wiederherstellung, die nie getestet wurde, ist
+> eine Vermutung. Der Weg oben lässt sich gefahrlos auf einer Kopie des
+> `data`-Verzeichnisses durchspielen.
+
+---
+
 ## Entwicklung
 
 ```bash

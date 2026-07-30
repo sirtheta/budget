@@ -12,6 +12,20 @@ export default defineConfig({
       reporter: ["text", "html"],
       include: ["lib/**/*.ts", "app/api/**/*.ts", "app/**/actions.ts"],
       exclude: ["**/*.test.ts"],
+      // Set a few points under the numbers the suite currently reaches, so the
+      // CI run that already collects coverage fails on a real regression
+      // without tripping over the noise of a single refactor. Coverage was
+      // collected but never enforced before, which let it drift down silently
+      // — the point of a ratchet is that it only moves one way.
+      //
+      // Raise these when the suite genuinely improves; do not lower them to
+      // make a red build green.
+      thresholds: {
+        statements: 85,
+        branches: 75,
+        functions: 88,
+        lines: 87,
+      },
     },
   },
   resolve: {

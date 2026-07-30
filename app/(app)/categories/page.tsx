@@ -1,10 +1,8 @@
-import { Plus } from "lucide-react";
 import type { Category } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { CATEGORY_KIND_LABELS } from "@/lib/categories";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CategoryFormDialog } from "./category-form-dialog";
@@ -45,11 +43,6 @@ export default async function CategoriesPage() {
         {categories.length === 0 && <SeedDefaultsButton />}
         <CategoryFormDialog
           parents={parents}
-          trigger={
-            <Button>
-              <Plus className="h-4 w-4" /> Neue Kategorie
-            </Button>
-          }
         />
       </PageHeader>
 
@@ -129,11 +122,6 @@ function CategorySection({
                   parents={parents}
                   defaultParentId={group.id}
                   defaultKind={group.kind}
-                  trigger={
-                    <Button variant="ghost" size="icon" className="size-7" aria-label="Unterkategorie hinzufügen">
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  }
                 />
                 <CategoryRowActions category={group} parents={parents} />
               </div>

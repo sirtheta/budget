@@ -1,10 +1,8 @@
-import { Pencil, Plus } from "lucide-react";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { categoryOptions } from "@/lib/categories";
 import { formatDateCH } from "@/lib/date";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -88,13 +86,7 @@ export default async function ImportPage() {
           </div>
           <div className="flex gap-2 flex-wrap w-full sm:w-auto sm:shrink-0">
             {mappings.length === 0 && <SeedDefaultMappingsButton />}
-            <CsvMappingDialog
-              trigger={
-                <Button size="sm">
-                  <Plus className="h-3.5 w-3.5" /> Neues Mapping
-                </Button>
-              }
-            />
+            <CsvMappingDialog />
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -134,19 +126,7 @@ export default async function ImportPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end">
-                          <CsvMappingDialog
-                            mapping={mapping}
-                            trigger={
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-8"
-                                aria-label="Mapping bearbeiten"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                            }
-                          />
+                          <CsvMappingDialog mapping={mapping} />
                           <DeleteMappingButton id={mapping.id} name={mapping.name} />
                         </div>
                       </TableCell>
@@ -173,19 +153,7 @@ export default async function ImportPage() {
                     </p>
                   </div>
                   <div className="flex items-center shrink-0">
-                    <CsvMappingDialog
-                      mapping={mapping}
-                      trigger={
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-8"
-                          aria-label="Mapping bearbeiten"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                      }
-                    />
+                    <CsvMappingDialog mapping={mapping} />
                     <DeleteMappingButton id={mapping.id} name={mapping.name} />
                   </div>
                 </li>

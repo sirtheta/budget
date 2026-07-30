@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Pencil, Plus } from "lucide-react";
 import { toast } from "sonner";
 import type { CsvMapping } from "@prisma/client";
 import { saveCsvMappingAction } from "./mapping-actions";
@@ -39,7 +40,8 @@ export function CsvMappingDialog({
   trigger,
 }: {
   mapping?: CsvMapping;
-  trigger: React.ReactNode;
+  /** Omit to get the default button — building it in a Server Component page breaks Radix's Slot. */
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useDialogFormAction(saveCsvMappingAction, {
@@ -70,7 +72,18 @@ export function CsvMappingDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>
+        {trigger ??
+          (mapping ? (
+            <Button variant="ghost" size="icon" className="size-8" aria-label="Mapping bearbeiten">
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button size="sm">
+              <Plus className="h-3.5 w-3.5" /> Neues Mapping
+            </Button>
+          ))}
+      </DialogTrigger>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{mapping ? "Mapping bearbeiten" : "Neues CSV-Mapping"}</DialogTitle>

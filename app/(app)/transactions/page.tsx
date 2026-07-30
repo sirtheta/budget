@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeftRight, Download, Plus, SplitSquareHorizontal } from "lucide-react";
+import { ArrowLeftRight, Download, SplitSquareHorizontal } from "lucide-react";
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireSession } from "@/lib/permissions";
@@ -136,16 +136,7 @@ export default async function TransactionsPage({
           </a>
         </Button>
         {canEdit && accounts.length > 0 && (
-          <TransactionFormDialog
-            accounts={accounts}
-            categories={categories}
-            today={today}
-            trigger={
-              <Button>
-                <Plus className="h-4 w-4" /> Neue Buchung
-              </Button>
-            }
-          />
+          <TransactionFormDialog accounts={accounts} categories={categories} today={today} />
         )}
       </PageHeader>
 

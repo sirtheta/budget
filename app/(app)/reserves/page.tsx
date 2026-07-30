@@ -1,4 +1,4 @@
-import { AlertTriangle, Pencil, Plus, Target } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import prisma from "@/lib/prisma";
 import { hasRole, requireSession } from "@/lib/permissions";
 import { config } from "@/lib/config";
@@ -9,7 +9,6 @@ import { categoryOptions } from "@/lib/categories";
 import { PageHeader } from "@/components/page-header";
 import { Money } from "@/components/money";
 import { Progress } from "@/components/ui/progress";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReserveFormDialog } from "./reserve-form-dialog";
@@ -52,24 +51,8 @@ export default async function ReservesPage() {
       >
         {canEdit && (
           <>
-            <GoalFormDialog
-              accounts={accounts}
-              trigger={
-                <Button variant="outline">
-                  <Target className="h-4 w-4" /> Neues Sparziel
-                </Button>
-              }
-            />
-            <ReserveFormDialog
-              accounts={accounts}
-              categories={categories}
-              today={today}
-              trigger={
-                <Button>
-                  <Plus className="h-4 w-4" /> Neue Rückstellung
-                </Button>
-              }
-            />
+            <GoalFormDialog accounts={accounts} />
+            <ReserveFormDialog accounts={accounts} categories={categories} today={today} />
           </>
         )}
       </PageHeader>
@@ -158,11 +141,6 @@ export default async function ReservesPage() {
                       accounts={accounts}
                       categories={categories}
                       today={today}
-                      trigger={
-                        <Button variant="ghost" size="icon" className="size-8" aria-label="Bearbeiten">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                      }
                     />
                     <DeletePotButton id={reserve.id} name={reserve.name} kind="reserve" />
                   </div>
@@ -255,15 +233,7 @@ export default async function ReservesPage() {
                 </div>
                 {canEdit && (
                   <div className="flex items-center shrink-0">
-                    <GoalFormDialog
-                      goal={goal}
-                      accounts={accounts}
-                      trigger={
-                        <Button variant="ghost" size="icon" className="size-8" aria-label="Bearbeiten">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                      }
-                    />
+                    <GoalFormDialog goal={goal} accounts={accounts} />
                     <DeletePotButton id={goal.id} name={goal.name} kind="goal" />
                   </div>
                 )}

@@ -1,8 +1,6 @@
-import { Plus } from "lucide-react";
 import prisma from "@/lib/prisma";
 import { requireAdmin } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -36,13 +34,7 @@ export default async function UsersPage() {
         title="Benutzer"
         description="Alle Benutzer teilen sich dieselben Konten und Buchungen."
       >
-        <UserFormDialog
-          trigger={
-            <Button>
-              <Plus className="h-4 w-4" /> Neuer Benutzer
-            </Button>
-          }
-        />
+        <UserFormDialog />
       </PageHeader>
 
       <Card>

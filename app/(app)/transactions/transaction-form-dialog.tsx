@@ -55,7 +55,13 @@ export function TransactionFormDialog({
   categories: CategoryOption[];
   /** Today in the app timezone; the server must not rely on the browser clock. */
   today: string;
-  trigger: React.ReactNode;
+  /**
+   * Omit to get the default "Neue Buchung" button. Building the trigger element
+   * in a Server Component and passing it in intermittently breaks Radix's Slot
+   * (`DialogTrigger asChild`) under RSC streaming, so callers in Server Component
+   * pages should leave this unset rather than pass a server-rendered `<Button>`.
+   */
+  trigger?: React.ReactNode;
 }) {
   const isTransfer = !!transaction?.transferGroupId;
   const isSplit = !!transaction?.splitGroupId;
@@ -70,7 +76,13 @@ export function TransactionFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen} modal={false}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>
+        {trigger ?? (
+          <Button>
+            <Plus className="h-4 w-4" /> Neue Buchung
+          </Button>
+        )}
+      </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{transaction ? "Buchung bearbeiten" : "Neue Buchung"}</DialogTitle>

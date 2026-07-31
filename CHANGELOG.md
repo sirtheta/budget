@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/sirtheta/budget/compare/budget-v0.1.11...budget-v0.1.12) (2026-07-31)
+
+
+### Bug Fixes
+
+* **deps:** pin nodemailer to 8.x for next-auth peer range ([#41](https://github.com/sirtheta/budget/issues/41)) ([7808470](https://github.com/sirtheta/budget/commit/780847051460d99c3eceef732ec3a843d56b446b))
+
 ## [0.1.11](https://github.com/sirtheta/budget/compare/budget-v0.1.10...budget-v0.1.11) (2026-07-31)
 
 

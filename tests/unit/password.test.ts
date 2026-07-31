@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { hash, compare } from "bcryptjs";
-import { dummyCompare, bcryptRounds, passwordSchema, MAX_PASSWORD_BYTES } from "@/lib/password";
+import {
+  dummyCompare,
+  bcryptRounds,
+  passwordSchema,
+  MAX_PASSWORD_BYTES,
+  isCommonPassword,
+} from "@/lib/password";
 
 describe("dummyCompare", () => {
   it("resolves without throwing, regardless of input", async () => {
@@ -52,5 +58,24 @@ describe("passwordSchema", () => {
 
     expect(await compare(`${base}zweiter-zusatz`, hashed)).toBe(true);
     expect(passwordSchema.safeParse(`${base}erster-zusatz`).success).toBe(false);
+  });
+
+  it("rejects a password that appears in the common-passwords list", () => {
+    const result = passwordSchema.safeParse("password123");
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe(
+      "Dieses Passwort kommt in Listen bekannter Datenlecks vor und ist zu unsicher."
+    );
+  });
+});
+
+describe("isCommonPassword", () => {
+  it("flags well-known breached passwords regardless of case", () => {
+    expect(isCommonPassword("123456")).toBe(true);
+    expect(isCommonPassword("PaSsWoRd")).toBe(true);
+  });
+
+  it("does not flag an unlikely passphrase", () => {
+    expect(isCommonPassword("correct-horse-battery-staple-xyzzy-42")).toBe(false);
   });
 });

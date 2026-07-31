@@ -55,6 +55,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static               ./.nex
 # PWA icons and the Benutzerhandbuch would 404 in the container.
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+# Standalone tracing doesn't follow the gunzip+readFileSync path in
+# lib/password.ts, so the breached-password wordlist needs an explicit copy.
+COPY --from=builder --chown=nextjs:nodejs /app/lib/data ./lib/data
 
 COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma

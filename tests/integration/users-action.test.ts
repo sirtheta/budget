@@ -114,6 +114,19 @@ describe("saveUserAction", () => {
     expect(token).toBeTruthy();
   });
 
+  it("still creates the user when the invite email fails to send", async () => {
+    sendMailMock.mockRejectedValueOnce(new Error("smtp down"));
+
+    const result = await saveUserAction(
+      undefined,
+      form({ email: "invite-fails@test.ch", name: "Invite Fails", role: "Viewer", password: "" })
+    );
+
+    expect(result).toEqual({ success: true });
+    const created = await prisma.user.findUniqueOrThrow({ where: { email: "invite-fails@test.ch" } });
+    expect(created.passwordHash).toBeTruthy();
+  });
+
   it("rejects a duplicate email with a friendly message", async () => {
     const result = await saveUserAction(
       undefined,

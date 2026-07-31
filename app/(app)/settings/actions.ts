@@ -5,8 +5,8 @@ import { z } from "zod";
 import prisma from "@/lib/prisma";
 import { requireAdmin } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
-import { encryptSecret } from "@/lib/crypto";
-import { sendMail } from "@/lib/email";
+import { encryptSecret, decryptSecret } from "@/lib/crypto";
+import { sendMail, testConnection } from "@/lib/email";
 import { runBackup } from "@/lib/backup";
 import logger from "@/lib/logger";
 
@@ -80,6 +80,42 @@ export async function saveSettingsAction(
 
   await logAudit(session, "SETTINGS", "Settings", 1, { currency: data.currency });
   revalidatePath("/settings");
+  return { success: true };
+}
+
+/**
+ * Verifies host/port/auth against the SMTP server, without sending any mail.
+ * Reads straight from the form so the connection can be checked before saving —
+ * a blank password field falls back to the already-stored one, same as save.
+ */
+export async function testConnectionAction(
+  _prevState: ActionState | undefined,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireAdmin();
+
+  const host = String(formData.get("smtpHost") ?? "").trim();
+  const port = Number(formData.get("smtpPort")) || 587;
+  const user = String(formData.get("smtpUser") ?? "").trim();
+  const passwordInput = String(formData.get("smtpPassword") ?? "");
+  if (!host || !user) return { error: "SMTP-Server und Benutzer sind erforderlich." };
+
+  // A blank field means "use the already-saved password", same as saveSettingsAction.
+  let password = passwordInput;
+  if (!password) {
+    const stored = await prisma.systemSettings.findUnique({ where: { id: 1 } });
+    password = stored?.smtpPassword ? decryptSecret(stored.smtpPassword) : "";
+  }
+  if (!password) return { error: "SMTP-Passwort ist erforderlich." };
+
+  try {
+    await testConnection({ smtpHost: host, smtpPort: port, smtpUser: user }, password);
+  } catch (err) {
+    log.error({ err }, "SMTP connection test failed");
+    return { error: err instanceof Error ? err.message : "Verbindung fehlgeschlagen." };
+  }
+
+  await logAudit(session, "SETTINGS", "Settings", 1, { action: "testConnection" });
   return { success: true };
 }
 

@@ -1,14 +1,17 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { createTestDb } from "./helpers";
+import { encryptSecret } from "@/lib/crypto";
 
-const { prismaHolder, sessionHolder, revalidatePathMock, sendMailMock, runBackupMock } = vi.hoisted(() => ({
-  prismaHolder: { current: undefined as unknown },
-  sessionHolder: { current: { user: { id: "1", role: "Admin", name: "Admin", email: "admin@test.ch" } } },
-  revalidatePathMock: vi.fn(),
-  sendMailMock: vi.fn().mockResolvedValue(undefined),
-  runBackupMock: vi.fn().mockResolvedValue("/backups/budget-backup-2026-07-29.db"),
-}));
+const { prismaHolder, sessionHolder, revalidatePathMock, sendMailMock, testConnectionMock, runBackupMock } =
+  vi.hoisted(() => ({
+    prismaHolder: { current: undefined as unknown },
+    sessionHolder: { current: { user: { id: "1", role: "Admin", name: "Admin", email: "admin@test.ch" } } },
+    revalidatePathMock: vi.fn(),
+    sendMailMock: vi.fn().mockResolvedValue(undefined),
+    testConnectionMock: vi.fn().mockResolvedValue(undefined),
+    runBackupMock: vi.fn().mockResolvedValue("/backups/budget-backup-2026-07-29.db"),
+  }));
 
 vi.mock("@/lib/prisma", () => ({
   get default() {
@@ -20,10 +23,15 @@ vi.mock("@/lib/permissions", () => ({
   requireAdmin: vi.fn(async () => sessionHolder.current),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
-vi.mock("@/lib/email", () => ({ sendMail: sendMailMock }));
+vi.mock("@/lib/email", () => ({ sendMail: sendMailMock, testConnection: testConnectionMock }));
 vi.mock("@/lib/backup", () => ({ runBackup: runBackupMock }));
 
-import { saveSettingsAction, sendTestMailAction, runBackupNowAction } from "@/app/(app)/settings/actions";
+import {
+  saveSettingsAction,
+  sendTestMailAction,
+  testConnectionAction,
+  runBackupNowAction,
+} from "@/app/(app)/settings/actions";
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -43,6 +51,7 @@ afterAll(async () => cleanup());
 afterEach(() => {
   revalidatePathMock.mockClear();
   sendMailMock.mockClear();
+  testConnectionMock.mockClear();
   runBackupMock.mockClear();
 });
 
@@ -127,6 +136,58 @@ describe("sendTestMailAction", () => {
     sendMailMock.mockRejectedValueOnce(new Error("SMTP nicht konfiguriert."));
     const result = await sendTestMailAction();
     expect(result.error).toBe("SMTP nicht konfiguriert.");
+  });
+});
+
+describe("testConnectionAction", () => {
+  it("requires host and user", async () => {
+    await prisma.systemSettings.deleteMany();
+    const result = await testConnectionAction(undefined, form({}));
+    expect(result.error).toBe("SMTP-Server und Benutzer sind erforderlich.");
+  });
+
+  it("fails when no password is typed and none is stored", async () => {
+    await prisma.systemSettings.deleteMany();
+    const result = await testConnectionAction(
+      undefined,
+      form({ smtpHost: "smtp.example.ch", smtpUser: "user@example.ch" })
+    );
+    expect(result.error).toBe("SMTP-Passwort ist erforderlich.");
+  });
+
+  it("verifies unsaved form values without requiring a save first", async () => {
+    await prisma.systemSettings.deleteMany();
+    const result = await testConnectionAction(
+      undefined,
+      form({ smtpHost: "smtp.example.ch", smtpUser: "user@example.ch", smtpPassword: "hunter2" })
+    );
+    expect(result).toEqual({ success: true });
+    expect(testConnectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ smtpHost: "smtp.example.ch", smtpUser: "user@example.ch", smtpPort: 587 }),
+      "hunter2"
+    );
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the stored password when the field is left blank", async () => {
+    await prisma.systemSettings.create({
+      data: { id: 1, smtpHost: "old.example.ch", smtpUser: "old-user", smtpPassword: encryptSecret("stored-pw") },
+    });
+    const result = await testConnectionAction(
+      undefined,
+      form({ smtpHost: "smtp.example.ch", smtpUser: "user@example.ch" })
+    );
+    expect(result).toEqual({ success: true });
+    expect(testConnectionMock).toHaveBeenCalledWith(expect.anything(), "stored-pw");
+  });
+
+  it("reports the underlying error when verification fails", async () => {
+    testConnectionMock.mockRejectedValueOnce(new Error("connection refused"));
+    const result = await testConnectionAction(
+      undefined,
+      form({ smtpHost: "smtp.example.ch", smtpUser: "user@example.ch", smtpPassword: "hunter2" })
+    );
+    expect(result.error).toBe("connection refused");
   });
 });
 

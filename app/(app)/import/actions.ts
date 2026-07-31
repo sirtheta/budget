@@ -159,20 +159,33 @@ export async function previewImportAction(
     : [];
   const transferAccountNames = new Map(transferAccounts.map((a) => [a.id, a.name]));
 
+  // Only fresh (non-duplicate) rows are ever committed, so only they can
+  // adopt a pending transfer leg — consumed in the same earliest-date-first
+  // order commitImportAction/findAdoptableTransferLeg apply, so at most one
+  // row per leg is marked adopted instead of every row within tolerance.
+  const unclaimedCandidates = [...adoptCandidates];
+  const adoptedHashes = new Set<string>();
+  for (const row of hashed) {
+    if (existingHashes.has(row.hash)) continue;
+    const matchIndex = unclaimedCandidates
+      .map((candidate, index) => ({ candidate, index }))
+      .filter(
+        ({ candidate }) =>
+          candidate.amountCents === row.amountCents &&
+          candidate.date >= addDays(row.date, -TRANSFER_MATCH_TOLERANCE_DAYS) &&
+          candidate.date <= addDays(row.date, TRANSFER_MATCH_TOLERANCE_DAYS)
+      )
+      .sort((a, b) => a.candidate.date.localeCompare(b.candidate.date))[0]?.index;
+    if (matchIndex !== undefined) {
+      unclaimedCandidates.splice(matchIndex, 1);
+      adoptedHashes.add(row.hash);
+    }
+  }
+
   const rows: PreviewRow[] = hashed.map((row) => {
-    const isAdopted = adoptCandidates.some(
-      (candidate) =>
-        candidate.amountCents === row.amountCents &&
-        candidate.date >= addDays(row.date, -TRANSFER_MATCH_TOLERANCE_DAYS) &&
-        candidate.date <= addDays(row.date, TRANSFER_MATCH_TOLERANCE_DAYS)
-    );
-    // Computed even when isAdopted: two fresh rows in the same batch can
-    // both fall within tolerance of a single not-yet-real leg, but only the
-    // first actually adopts it at commit time (findAdoptableTransferLeg
-    // there re-checks per row, now inside the same transaction as the
-    // create — see the atomicity fix above). The rule match travels with
-    // the row as the fallback categorisation for whichever row doesn't get
-    // adopted, instead of silently falling through to "ohne Kategorie".
+    // The rule match travels with the row as the fallback categorisation for
+    // whichever row doesn't get adopted, instead of silently falling through
+    // to "ohne Kategorie".
     const rule = matchRule(rules, row);
     // History only fills in when no rule matched at all — a transfer rule is
     // still an explicit decision for this counterparty and must not be
@@ -191,7 +204,7 @@ export async function previewImportAction(
       transferAccountName: rule?.transferAccountId
         ? (transferAccountNames.get(rule.transferAccountId) ?? null)
         : null,
-      isAdopted,
+      isAdopted: adoptedHashes.has(row.hash),
       isDuplicate: existingHashes.has(row.hash),
     };
   });
@@ -209,26 +222,13 @@ export async function previewImportAction(
     // priorSum already counts every synthetic transfer leg still waiting to
     // be confirmed (see adoptCandidates above), so a fresh row that adopts
     // one at commit time must not be added again here — it updates that row
-    // in place rather than creating a new one. Consumed in commit order
-    // (earliest-date candidate first, same as findAdoptableTransferLeg) so a
-    // second fresh row past the first adopter is correctly counted as new.
-    const unclaimedCandidates = [...adoptCandidates];
-    const freshSum = fresh.reduce((sum, row) => {
-      const matchIndex = unclaimedCandidates
-        .map((candidate, index) => ({ candidate, index }))
-        .filter(
-          ({ candidate }) =>
-            candidate.amountCents === row.amountCents &&
-            candidate.date >= addDays(row.date, -TRANSFER_MATCH_TOLERANCE_DAYS) &&
-            candidate.date <= addDays(row.date, TRANSFER_MATCH_TOLERANCE_DAYS)
-        )
-        .sort((a, b) => a.candidate.date.localeCompare(b.candidate.date))[0]?.index;
-      if (matchIndex !== undefined) {
-        unclaimedCandidates.splice(matchIndex, 1);
-        return sum;
-      }
-      return sum + row.amountCents;
-    }, 0);
+    // in place rather than creating a new one. adoptedHashes (computed above)
+    // already reflects which row wins each leg, so the sum simply excludes
+    // those rows' amounts instead of re-running the consumption logic.
+    const freshSum = fresh.reduce(
+      (sum, row) => (adoptedHashes.has(row.hash) ? sum : sum + row.amountCents),
+      0
+    );
     const projected = account.openingBalanceCents + (priorSum._sum.amountCents ?? 0) + freshSum;
     balanceDeltaCents = statement.closingBalanceCents - projected;
   }

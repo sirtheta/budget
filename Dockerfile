@@ -51,6 +51,9 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone/server.js ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone/.next     ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static               ./.next/static
+# output: "standalone" does not copy public/ on its own — without this, the
+# PWA icons and the Benutzerhandbuch would 404 in the container.
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
 COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules

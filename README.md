@@ -45,6 +45,15 @@ einem Raspberry Pi.
 
 ---
 
+## Benutzerhandbuch
+
+Eine vollständige, bebilderte Anleitung liegt unter
+[`public/benutzerhandbuch.html`](public/benutzerhandbuch.html) – im Browser öffnen,
+oder in der laufenden App über das Benutzermenü rechts oben bzw. direkt unter
+`/benutzerhandbuch.html`.
+
+---
+
 ## Betrieb mit Docker
 
 ```bash

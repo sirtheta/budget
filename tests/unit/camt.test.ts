@@ -135,6 +135,87 @@ describe("parseCamt053", () => {
     expect(result.transactions.map((t) => t.description)).toEqual(["Teil A", "Teil B"]);
   });
 
+  it("does not leak the collective booking's own reference onto split legs without one", () => {
+    // The Ntry-level AcctSvcrRef belongs to the collective booking as a whole.
+    // Falling back to it per split leg would give both legs the same
+    // bankReference, which collapses their import fingerprints onto one hash
+    // (see lib/import/dedupe.ts) and makes the second leg look like a
+    // duplicate of the first.
+    const collective = `
+      <Ntry>
+        <Amt Ccy="CHF">150.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-01-10</Dt></BookgDt>
+        <AcctSvcrRef>COLLECTIVE-REF</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Amt Ccy="CHF">100.00</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <RmtInf><Ustrd>Teil A</Ustrd></RmtInf>
+          </TxDtls>
+          <TxDtls>
+            <Amt Ccy="CHF">50.00</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <RmtInf><Ustrd>Teil B</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>`;
+    const result = parseCamt053(camt(collective));
+    expect(result.transactions).toHaveLength(2);
+    expect(result.transactions.map((t) => t.bankReference)).toEqual([null, null]);
+  });
+
+  it("still uses a split leg's own reference when it has one", () => {
+    const collective = `
+      <Ntry>
+        <Amt Ccy="CHF">150.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-01-10</Dt></BookgDt>
+        <AcctSvcrRef>COLLECTIVE-REF</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><AcctSvcrRef>LEG-A</AcctSvcrRef></Refs>
+            <Amt Ccy="CHF">100.00</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <RmtInf><Ustrd>Teil A</Ustrd></RmtInf>
+          </TxDtls>
+          <TxDtls>
+            <Refs><AcctSvcrRef>LEG-B</AcctSvcrRef></Refs>
+            <Amt Ccy="CHF">50.00</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <RmtInf><Ustrd>Teil B</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>`;
+    const result = parseCamt053(camt(collective));
+    expect(result.transactions.map((t) => t.bankReference)).toEqual(["LEG-A", "LEG-B"]);
+  });
+
+  it("treats a literal NOTPROVIDED InstrId as no reference at all", () => {
+    // Card/ATM bookings without a real SEPA reference get "NOTPROVIDED" in
+    // InstrId as well as EndToEndId — not just EndToEndId. Accepting it as a
+    // real reference would give every such booking the same bankReference,
+    // colliding two genuinely distinct withdrawals onto one import fingerprint.
+    const atmWithdrawal = `
+      <Ntry>
+        <Amt Ccy="CHF">50.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-01-22</Dt></BookgDt>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><InstrId>NOTPROVIDED</InstrId><EndToEndId>NOTPROVIDED</EndToEndId></Refs>
+            <RmtInf><Ustrd>Bancomatbezug</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>`;
+    const result = parseCamt053(camt(atmWithdrawal));
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0].bankReference).toBeNull();
+  });
+
   it("skips entries that are not booked yet", () => {
     const pending = DEBIT_ENTRY.replace("<Sts>BOOK</Sts>", "<Sts>PDNG</Sts>");
     const result = parseCamt053(camt(pending));

@@ -27,7 +27,7 @@ npm-debug.log*
 next-env.d.ts
 
 # data / sqlite
-/data/**/*.db
+/data/**/*.*
 
 # playwright
 /tests/e2e/.data/

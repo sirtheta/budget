@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Plus } from "lucide-react";
 import type { Category } from "@prisma/client";
 import { CategoryKind } from "@prisma/client";
 import { saveCategoryAction } from "./actions";
@@ -41,7 +42,8 @@ export function CategoryFormDialog({
   parents: Pick<Category, "id" | "name" | "kind" | "color">[];
   defaultParentId?: number | null;
   defaultKind?: CategoryKind;
-  trigger: React.ReactNode;
+  /** Omit to get the default button — building it in a Server Component page breaks Radix's Slot. */
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useDialogFormAction(saveCategoryAction, {
@@ -64,7 +66,23 @@ export function CategoryFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen} modal={false}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>
+        {trigger ??
+          (defaultParentId != null ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              aria-label="Unterkategorie hinzufügen"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button>
+              <Plus className="h-4 w-4" /> Neue Kategorie
+            </Button>
+          ))}
+      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{category ? "Kategorie bearbeiten" : "Neue Kategorie"}</DialogTitle>

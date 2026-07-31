@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Pencil, Plus } from "lucide-react";
 import type { RecurringTransaction } from "@prisma/client";
 import { saveRecurringAction } from "./actions";
 import { useDialogFormAction } from "@/components/use-dialog-form";
@@ -43,7 +44,8 @@ export function RecurringFormDialog({
   accounts: AccountOption[];
   categories: CategoryOption[];
   today: string;
-  trigger: React.ReactNode;
+  /** Omit to get the default button — building it in a Server Component page breaks Radix's Slot. */
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useDialogFormAction(saveRecurringAction, {
@@ -72,7 +74,18 @@ export function RecurringFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen} modal={false}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>
+        {trigger ??
+          (recurring ? (
+            <Button variant="ghost" size="icon" aria-label="Bearbeiten">
+              <Pencil className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button>
+              <Plus className="h-4 w-4" /> Neue Buchung
+            </Button>
+          ))}
+      </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
@@ -147,7 +160,9 @@ export function RecurringFormDialog({
                     direction === value
                       ? value === "income"
                         ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 shadow-sm"
-                        : "bg-destructive/15 text-destructive shadow-sm"
+                        // See transaction-form-dialog: text-destructive on its
+                        // own tint does not reach the contrast floor.
+                        : "bg-destructive/15 text-red-800 dark:text-red-400 shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { ImportFormat } from "@prisma/client";
+import { ImportFormat, Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
@@ -22,6 +22,7 @@ import {
 } from "@/lib/transactions";
 import type { ParsedStatement } from "@/lib/import/types";
 import logger from "@/lib/logger";
+import { IMPORT_HISTORY_PAGE_SIZE } from "./history-constants";
 
 const log = logger.child({ module: "import" });
 
@@ -158,20 +159,33 @@ export async function previewImportAction(
     : [];
   const transferAccountNames = new Map(transferAccounts.map((a) => [a.id, a.name]));
 
+  // Only fresh (non-duplicate) rows are ever committed, so only they can
+  // adopt a pending transfer leg — consumed in the same earliest-date-first
+  // order commitImportAction/findAdoptableTransferLeg apply, so at most one
+  // row per leg is marked adopted instead of every row within tolerance.
+  const unclaimedCandidates = [...adoptCandidates];
+  const adoptedHashes = new Set<string>();
+  for (const row of hashed) {
+    if (existingHashes.has(row.hash)) continue;
+    const matchIndex = unclaimedCandidates
+      .map((candidate, index) => ({ candidate, index }))
+      .filter(
+        ({ candidate }) =>
+          candidate.amountCents === row.amountCents &&
+          candidate.date >= addDays(row.date, -TRANSFER_MATCH_TOLERANCE_DAYS) &&
+          candidate.date <= addDays(row.date, TRANSFER_MATCH_TOLERANCE_DAYS)
+      )
+      .sort((a, b) => a.candidate.date.localeCompare(b.candidate.date))[0]?.index;
+    if (matchIndex !== undefined) {
+      unclaimedCandidates.splice(matchIndex, 1);
+      adoptedHashes.add(row.hash);
+    }
+  }
+
   const rows: PreviewRow[] = hashed.map((row) => {
-    const isAdopted = adoptCandidates.some(
-      (candidate) =>
-        candidate.amountCents === row.amountCents &&
-        candidate.date >= addDays(row.date, -TRANSFER_MATCH_TOLERANCE_DAYS) &&
-        candidate.date <= addDays(row.date, TRANSFER_MATCH_TOLERANCE_DAYS)
-    );
-    // Computed even when isAdopted: two fresh rows in the same batch can
-    // both fall within tolerance of a single not-yet-real leg, but only the
-    // first actually adopts it at commit time (findAdoptableTransferLeg
-    // there re-checks per row, now inside the same transaction as the
-    // create — see the atomicity fix above). The rule match travels with
-    // the row as the fallback categorisation for whichever row doesn't get
-    // adopted, instead of silently falling through to "ohne Kategorie".
+    // The rule match travels with the row as the fallback categorisation for
+    // whichever row doesn't get adopted, instead of silently falling through
+    // to "ohne Kategorie".
     const rule = matchRule(rules, row);
     // History only fills in when no rule matched at all — a transfer rule is
     // still an explicit decision for this counterparty and must not be
@@ -190,7 +204,7 @@ export async function previewImportAction(
       transferAccountName: rule?.transferAccountId
         ? (transferAccountNames.get(rule.transferAccountId) ?? null)
         : null,
-      isAdopted,
+      isAdopted: adoptedHashes.has(row.hash),
       isDuplicate: existingHashes.has(row.hash),
     };
   });
@@ -205,10 +219,17 @@ export async function previewImportAction(
       where: { accountId, date: { lte: statement.periodTo } },
       _sum: { amountCents: true },
     });
-    const projected =
-      account.openingBalanceCents +
-      (priorSum._sum.amountCents ?? 0) +
-      fresh.reduce((sum, row) => sum + row.amountCents, 0);
+    // priorSum already counts every synthetic transfer leg still waiting to
+    // be confirmed (see adoptCandidates above), so a fresh row that adopts
+    // one at commit time must not be added again here — it updates that row
+    // in place rather than creating a new one. adoptedHashes (computed above)
+    // already reflects which row wins each leg, so the sum simply excludes
+    // those rows' amounts instead of re-running the consumption logic.
+    const freshSum = fresh.reduce(
+      (sum, row) => (adoptedHashes.has(row.hash) ? sum : sum + row.amountCents),
+      0
+    );
+    const projected = account.openingBalanceCents + (priorSum._sum.amountCents ?? 0) + freshSum;
     balanceDeltaCents = statement.closingBalanceCents - projected;
   }
 
@@ -311,72 +332,85 @@ export async function commitImportAction(
   // synthetic transfer leg) does not, unless it's wrapped explicitly.
   const incomePayments: { transactionId: number; description: string; amountCents: number; bookingDate: string }[] = [];
 
-  const batch = await prisma.$transaction(async (tx) => {
-    const created = await tx.importBatch.create({
-      data: {
-        filename,
-        format,
-        accountId,
-        userId,
-        importedCount: fresh.length,
-        skippedCount: rows.length - fresh.length,
-        statementBalanceCents: parsed.data.closingBalanceCents,
-        periodFrom: parsed.data.periodFrom,
-        periodTo: parsed.data.periodTo,
-      },
-    });
-
-    // Each row may (a) adopt an existing synthetic transfer leg left behind
-    // by an earlier auto-transfer on this account, (b) trigger a new
-    // auto-transfer to another account, or (c) land as a plain, possibly
-    // categorised booking — see lib/transactions.ts for what each does.
-    for (const row of fresh) {
-      const adoptable = await findAdoptableTransferLeg(tx, accountId, row.amountCents, row.date);
-      if (adoptable) {
-        await adoptTransferLeg(tx, adoptable.id, {
-          date: row.date,
-          description: row.description,
-          counterparty: row.counterparty,
-          bankReference: row.bankReference,
-          importHash: row.hash,
-          importBatchId: created.id,
-        });
-        continue;
-      }
-
-      const transaction = await tx.transaction.create({
+  let batch;
+  try {
+    batch = await prisma.$transaction(async (tx) => {
+      const created = await tx.importBatch.create({
         data: {
-          date: row.date,
-          amountCents: row.amountCents,
+          filename,
+          format,
           accountId,
-          categoryId: row.transferAccountId ? null : row.categoryId,
-          description: row.description,
-          counterparty: row.counterparty,
-          bankReference: row.bankReference,
-          importHash: row.hash,
-          importBatchId: created.id,
-          source: "Import" as const,
-          createdById: userId,
+          userId,
+          importedCount: fresh.length,
+          skippedCount: rows.length - fresh.length,
+          statementBalanceCents: parsed.data.closingBalanceCents,
+          periodFrom: parsed.data.periodFrom,
+          periodTo: parsed.data.periodTo,
         },
       });
 
-      if (row.transferAccountId && row.transferAccountId !== accountId) {
-        await applyAutoTransfer(tx, {
-          transactionId: transaction.id,
-          targetAccountId: row.transferAccountId,
-        });
-      } else if (row.amountCents > 0) {
-        incomePayments.push({
-          transactionId: transaction.id,
-          description: row.description,
-          amountCents: row.amountCents,
-          bookingDate: row.date,
-        });
-      }
-    }
+      // Each row may (a) adopt an existing synthetic transfer leg left behind
+      // by an earlier auto-transfer on this account, (b) trigger a new
+      // auto-transfer to another account, or (c) land as a plain, possibly
+      // categorised booking — see lib/transactions.ts for what each does.
+      for (const row of fresh) {
+        const adoptable = await findAdoptableTransferLeg(tx, accountId, row.amountCents, row.date);
+        if (adoptable) {
+          await adoptTransferLeg(tx, adoptable.id, {
+            date: row.date,
+            description: row.description,
+            counterparty: row.counterparty,
+            bankReference: row.bankReference,
+            importHash: row.hash,
+            importBatchId: created.id,
+          });
+          continue;
+        }
 
-    return created;
-  }, { timeout: 60_000 });
+        const transaction = await tx.transaction.create({
+          data: {
+            date: row.date,
+            amountCents: row.amountCents,
+            accountId,
+            categoryId: row.transferAccountId ? null : row.categoryId,
+            description: row.description,
+            counterparty: row.counterparty,
+            bankReference: row.bankReference,
+            importHash: row.hash,
+            importBatchId: created.id,
+            source: "Import" as const,
+            createdById: userId,
+          },
+        });
+
+        if (row.transferAccountId && row.transferAccountId !== accountId) {
+          await applyAutoTransfer(tx, {
+            transactionId: transaction.id,
+            targetAccountId: row.transferAccountId,
+          });
+        } else if (row.amountCents > 0) {
+          incomePayments.push({
+            transactionId: transaction.id,
+            description: row.description,
+            amountCents: row.amountCents,
+            bookingDate: row.date,
+          });
+        }
+      }
+
+      return created;
+    }, { timeout: 60_000 });
+  } catch (err) {
+    // The existing-hash check above is a pre-filter, not a lock: two
+    // concurrent commits of the same statement (double-click, two tabs) can
+    // both see a row as fresh and both try to insert it, so the unique index
+    // on importHash is the actual guarantee and can still reject here.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      log.warn({ accountId, filename }, "import commit hit importHash race, aborting");
+      return { error: "Diese Buchungen wurden soeben bereits importiert (z. B. in einem anderen Tab). Bitte die Vorschau neu laden." };
+    }
+    throw err;
+  }
 
   await logAudit(session, "IMPORT", "Transaction", batch.id, {
     filename,
@@ -443,6 +477,46 @@ export async function deleteImportBatchAction(id: number): Promise<ActionState &
   revalidatePath("/dashboard");
   revalidatePath("/accounts");
   return { success: true, deleted: count };
+}
+
+export interface ImportBatchRow {
+  id: number;
+  filename: string;
+  format: ImportFormat;
+  accountName: string | null;
+  periodFrom: string | null;
+  periodTo: string | null;
+  importedCount: number;
+  skippedCount: number;
+}
+
+/** Next page of the import history, for the "Mehr laden" button on the Verlauf tab. */
+export async function loadMoreImportBatchesAction(
+  offset: number
+): Promise<{ batches: ImportBatchRow[]; hasMore: boolean }> {
+  await requireEditor();
+
+  const batches = await prisma.importBatch.findMany({
+    orderBy: { createdAt: "desc" },
+    skip: offset,
+    take: IMPORT_HISTORY_PAGE_SIZE + 1,
+    include: { account: { select: { name: true } } },
+  });
+
+  const hasMore = batches.length > IMPORT_HISTORY_PAGE_SIZE;
+  return {
+    batches: batches.slice(0, IMPORT_HISTORY_PAGE_SIZE).map((batch) => ({
+      id: batch.id,
+      filename: batch.filename,
+      format: batch.format,
+      accountName: batch.account?.name ?? null,
+      periodFrom: batch.periodFrom,
+      periodTo: batch.periodTo,
+      importedCount: batch.importedCount,
+      skippedCount: batch.skippedCount,
+    })),
+    hasMore,
+  };
 }
 
 /** First rows of a CSV upload, for building a column mapping interactively. */

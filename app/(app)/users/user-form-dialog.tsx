@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Pencil, Plus } from "lucide-react";
 import { UserRole } from "@prisma/client";
 import type { UserListItem } from "./types";
 import { saveUserAction } from "./actions";
@@ -43,7 +44,8 @@ export function UserFormDialog({
   trigger,
 }: {
   user?: UserListItem;
-  trigger: React.ReactNode;
+  /** Omit to get the default button — building it in a Server Component page breaks Radix's Slot. */
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useDialogFormAction(saveUserAction, {
@@ -54,7 +56,18 @@ export function UserFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>
+        {trigger ??
+          (user ? (
+            <Button variant="ghost" size="icon" aria-label="Benutzer bearbeiten">
+              <Pencil className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button>
+              <Plus className="h-4 w-4" /> Neuer Benutzer
+            </Button>
+          ))}
+      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{user ? "Benutzer bearbeiten" : "Neuer Benutzer"}</DialogTitle>
@@ -104,15 +117,15 @@ export function UserFormDialog({
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="user-password">
-              {user ? "Neues Passwort (leer = unverändert)" : "Passwort"}
+              {user ? "Neues Passwort (leer = unverändert)" : "Passwort (optional)"}
             </Label>
-            <PasswordInput
-              id="user-password"
-              name="password"
-              autoComplete="new-password"
-              minLength={user ? undefined : 8}
-              required={!user}
-            />
+            <PasswordInput id="user-password" name="password" autoComplete="new-password" minLength={8} />
+            {!user && (
+              <p className="text-xs text-muted-foreground">
+                Leer lassen, damit der Benutzer eine E-Mail mit einem Link erhält, um selbst ein
+                Passwort zu setzen.
+              </p>
+            )}
           </div>
 
           {state?.error && <p className="text-sm text-destructive">{state.error}</p>}

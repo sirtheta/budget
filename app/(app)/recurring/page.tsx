@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Plus } from "lucide-react";
+import { ArrowLeftRight } from "lucide-react";
 import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { config } from "@/lib/config";
@@ -7,7 +7,6 @@ import { intervalLabel } from "@/lib/recurring";
 import { categoryOptions } from "@/lib/categories";
 import { PageHeader } from "@/components/page-header";
 import { Money } from "@/components/money";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -58,16 +57,7 @@ export default async function RecurringPage() {
       >
         <RunNowButton />
         {accounts.length > 0 && (
-          <RecurringFormDialog
-            accounts={accounts}
-            categories={categories}
-            today={today}
-            trigger={
-              <Button>
-                <Plus className="h-4 w-4" /> Neue Buchung
-              </Button>
-            }
-          />
+          <RecurringFormDialog accounts={accounts} categories={categories} today={today} />
         )}
       </PageHeader>
 

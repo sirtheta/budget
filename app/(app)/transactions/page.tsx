@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ArrowLeftRight, Download, Plus } from "lucide-react";
+import { ArrowLeftRight, Download, SplitSquareHorizontal } from "lucide-react";
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireSession } from "@/lib/permissions";
 import { hasRole } from "@/lib/permissions";
 import { categoryOptions } from "@/lib/categories";
+import { transactionSearchFilter } from "@/lib/search";
 import { config } from "@/lib/config";
 import { formatMoney } from "@/lib/money";
 import { formatDateCH, todayInZone } from "@/lib/date";
@@ -46,8 +47,10 @@ function buildWhere(params: Record<string, string | undefined>): Prisma.Transact
     };
   }
   if (params.accountId) where.accountId = parseInt(params.accountId, 10);
-  if (params.categoryId === "none") where.categoryId = null;
-  else if (params.categoryId) where.categoryId = parseInt(params.categoryId, 10);
+  if (params.categoryId === "none") {
+    where.categoryId = null;
+    where.transferGroupId = null;
+  } else if (params.categoryId) where.categoryId = parseInt(params.categoryId, 10);
 
   if (params.type === "transfer") where.transferGroupId = { not: null };
   else if (params.type === "income") {
@@ -58,13 +61,9 @@ function buildWhere(params: Record<string, string | undefined>): Prisma.Transact
     where.transferGroupId = null;
   }
 
-  if (params.q) {
-    where.OR = [
-      { description: { contains: params.q } },
-      { counterparty: { contains: params.q } },
-      { notes: { contains: params.q } },
-    ];
-  }
+  const search = transactionSearchFilter(params.q);
+  if (search) where.OR = search;
+
   return where;
 }
 
@@ -137,16 +136,7 @@ export default async function TransactionsPage({
           </a>
         </Button>
         {canEdit && accounts.length > 0 && (
-          <TransactionFormDialog
-            accounts={accounts}
-            categories={categories}
-            today={today}
-            trigger={
-              <Button>
-                <Plus className="h-4 w-4" /> Neue Buchung
-              </Button>
-            }
-          />
+          <TransactionFormDialog accounts={accounts} categories={categories} today={today} />
         )}
       </PageHeader>
 
@@ -198,6 +188,12 @@ export default async function TransactionsPage({
                                 <ArrowLeftRight
                                   className="h-3.5 w-3.5 text-muted-foreground shrink-0"
                                   aria-label="Umbuchung"
+                                />
+                              )}
+                              {transaction.splitGroupId && (
+                                <SplitSquareHorizontal
+                                  className="h-3.5 w-3.5 text-muted-foreground shrink-0"
+                                  aria-label="Aufgeteilte Buchung"
                                 />
                               )}
                               <span className="font-medium">{transaction.description}</span>
@@ -257,6 +253,12 @@ export default async function TransactionsPage({
                             <ArrowLeftRight
                               className="h-3.5 w-3.5 text-muted-foreground shrink-0"
                               aria-label="Umbuchung"
+                            />
+                          )}
+                          {transaction.splitGroupId && (
+                            <SplitSquareHorizontal
+                              className="h-3.5 w-3.5 text-muted-foreground shrink-0"
+                              aria-label="Aufgeteilte Buchung"
                             />
                           )}
                           <span className="font-medium truncate">{transaction.description}</span>

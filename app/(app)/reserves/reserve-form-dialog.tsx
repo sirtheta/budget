@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Pencil, Plus } from "lucide-react";
 import type { Reserve } from "@prisma/client";
 import { saveReserveAction } from "./actions";
 import { useDialogFormAction } from "@/components/use-dialog-form";
@@ -42,7 +43,8 @@ export function ReserveFormDialog({
   accounts: AccountOption[];
   categories: CategoryOption[];
   today: string;
-  trigger: React.ReactNode;
+  /** Omit to get the default button — building it in a Server Component page breaks Radix's Slot. */
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useDialogFormAction(saveReserveAction, {
@@ -55,7 +57,18 @@ export function ReserveFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen} modal={false}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>
+        {trigger ??
+          (reserve ? (
+            <Button variant="ghost" size="icon" className="size-8" aria-label="Bearbeiten">
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button>
+              <Plus className="h-4 w-4" /> Neue Rückstellung
+            </Button>
+          ))}
+      </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{reserve ? "Rückstellung bearbeiten" : "Neue Rückstellung"}</DialogTitle>

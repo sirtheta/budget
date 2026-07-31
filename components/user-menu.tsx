@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { KeyRound, LogOut, ShieldCheck, User as UserIcon } from "lucide-react";
+import { HelpCircle, KeyRound, LogOut, ShieldCheck, User as UserIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,6 +58,12 @@ export function UserMenu({
           <DropdownMenuItem onSelect={() => setTwoFactorDialogOpen(true)}>
             <ShieldCheck className="mr-2 inline h-4 w-4" />
             Zwei-Faktor-Authentifizierung{twoFactorEnabled ? " (aktiv)" : ""}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <a href="/benutzerhandbuch.html" target="_blank" rel="noopener noreferrer">
+              <HelpCircle className="mr-2 inline h-4 w-4" /> Benutzerhandbuch
+            </a>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => signOutAction()}>

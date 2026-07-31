@@ -26,6 +26,23 @@ export function isValidDateString(str: string): boolean {
   return !!d && toDateString(d) === str;
 }
 
+/**
+ * Bounds of a calendar year the app can represent.
+ *
+ * Not an arbitrary range: dates are stored as `YYYY-MM-DD` strings and both
+ * filtered and sorted by string comparison, so a year that is not exactly four
+ * digits would order wrongly against every other row — `999-12-31` sorts
+ * before `1000-01-01`, but also before `0500-01-01` in a way that depends on
+ * how it was written.
+ */
+export const MIN_YEAR = 1000;
+export const MAX_YEAR = 9999;
+
+/** True for a year the `YYYY-MM-DD` storage format can represent unambiguously. */
+export function isValidYear(year: number): boolean {
+  return Number.isInteger(year) && year >= MIN_YEAR && year <= MAX_YEAR;
+}
+
 /** Format a `YYYY-MM-DD` string as Swiss-standard `DD.MM.YYYY`. */
 export function formatDateCH(str: string): string {
   const [y, m, d] = str.split("-");

@@ -75,6 +75,12 @@ describe("budgetStatus", () => {
     expect(budgetStatus(10000, 10000)).toBe("warning");
     expect(budgetStatus(10000, 10001)).toBe("over");
   });
+
+  it("never flags Income as warning/over — reaching the plan is the goal, not a ceiling", () => {
+    expect(budgetStatus(680000, 340000, "Income")).toBe("ok");
+    expect(budgetStatus(680000, 680000, "Income")).toBe("ok");
+    expect(budgetStatus(680000, 700000, "Income")).toBe("ok");
+  });
 });
 
 describe("loadBudgetMonth", () => {
@@ -97,6 +103,8 @@ describe("loadBudgetMonth", () => {
       .flatMap((group) => group.lines)
       .find((line) => line.categoryId === fixtures.income.id)!;
     expect(income.actualCents).toBe(680000);
+    // Salary landed exactly on plan — that is success, not "almost exhausted".
+    expect(income.status).toBe("ok");
   });
 
   it("reports uncategorised bookings separately", async () => {

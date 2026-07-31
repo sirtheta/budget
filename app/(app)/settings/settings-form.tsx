@@ -2,8 +2,13 @@
 
 import { useActionState, useEffect, useTransition } from "react";
 import { toast } from "sonner";
-import { DatabaseBackup, Mail } from "lucide-react";
-import { runBackupNowAction, saveSettingsAction, sendTestMailAction } from "./actions";
+import { DatabaseBackup, Mail, Plug } from "lucide-react";
+import {
+  runBackupNowAction,
+  saveSettingsAction,
+  sendTestMailAction,
+  testConnectionAction,
+} from "./actions";
 import type { EditableSettings } from "./types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,10 +121,34 @@ export function SettingsForm({
         <Button type="submit" disabled={pending}>
           {pending ? "Speichern…" : "Einstellungen speichern"}
         </Button>
+        <TestConnectionButton />
         <TestMailButton />
         <BackupNowButton />
       </div>
     </form>
+  );
+}
+
+function TestConnectionButton() {
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      disabled={pending}
+      onClick={(e) => {
+        const formEl = e.currentTarget.form;
+        startTransition(async () => {
+          const result = await testConnectionAction(undefined, new FormData(formEl ?? undefined));
+          if (result.error) toast.error(result.error);
+          else toast.success("Verbindung erfolgreich.");
+        });
+      }}
+    >
+      <Plug className="h-4 w-4" />
+      {pending ? "Prüfen…" : "Verbindung testen"}
+    </Button>
   );
 }
 

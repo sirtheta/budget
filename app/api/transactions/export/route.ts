@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { attachmentHeader, csvAmount, toCsv } from "@/lib/csv-export";
+import { transactionSearchFilter } from "@/lib/search";
 import { formatDateCH, toDateString } from "@/lib/date";
 
 /**
@@ -31,8 +32,10 @@ export async function GET(request: NextRequest) {
   if (accountId) where.accountId = parseInt(accountId, 10);
 
   const categoryId = params.get("categoryId");
-  if (categoryId === "none") where.categoryId = null;
-  else if (categoryId) where.categoryId = parseInt(categoryId, 10);
+  if (categoryId === "none") {
+    where.categoryId = null;
+    where.transferGroupId = null;
+  } else if (categoryId) where.categoryId = parseInt(categoryId, 10);
 
   const type = params.get("type");
   if (type === "transfer") where.transferGroupId = { not: null };
@@ -44,14 +47,9 @@ export async function GET(request: NextRequest) {
     where.transferGroupId = null;
   }
 
-  const query = params.get("q");
-  if (query) {
-    where.OR = [
-      { description: { contains: query } },
-      { counterparty: { contains: query } },
-      { notes: { contains: query } },
-    ];
-  }
+  // Same helper as the page, so "export what I'm looking at" keeps meaning it.
+  const search = transactionSearchFilter(params.get("q"));
+  if (search) where.OR = search;
 
   const transactions = await prisma.transaction.findMany({
     where,

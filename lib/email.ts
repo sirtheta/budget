@@ -5,8 +5,11 @@ import logger from "@/lib/logger";
 
 const log = logger.child({ module: "email" });
 
-function buildTransport(settings: SystemSettings) {
-  if (!settings.smtpHost || !settings.smtpUser || !settings.smtpPassword) {
+type TransportSettings = Pick<SystemSettings, "smtpHost" | "smtpPort" | "smtpUser">;
+
+/** `password` is always plaintext — callers decrypt a stored secret before calling in. */
+function buildTransport(settings: TransportSettings, password: string) {
+  if (!settings.smtpHost || !settings.smtpUser || !password) {
     throw new Error("SMTP nicht konfiguriert. Bitte SMTP-Einstellungen hinterlegen.");
   }
   return nodemailer.createTransport({
@@ -15,7 +18,7 @@ function buildTransport(settings: SystemSettings) {
     secure: (settings.smtpPort ?? 587) === 465,
     auth: {
       user: settings.smtpUser,
-      pass: decryptSecret(settings.smtpPassword),
+      pass: password,
     },
   });
 }
@@ -44,6 +47,12 @@ function quoteDisplayName(name: string): string {
   return name.replace(/[\\"]/g, "\\$&").replace(/[\r\n]/g, " ");
 }
 
+/** Checks that the SMTP account can be reached and authenticated, without sending anything. */
+export async function testConnection(settings: TransportSettings, password: string): Promise<void> {
+  const transporter = buildTransport(settings, password);
+  await transporter.verify();
+}
+
 /** Sends a plain-text mail through the configured SMTP account. */
 export async function sendMail(
   settings: SystemSettings,
@@ -55,7 +64,7 @@ export async function sendMail(
     log.info("E-Mail-Versand deaktiviert (DISABLE_EMAIL=true)");
     return;
   }
-  const transporter = buildTransport(settings);
+  const transporter = buildTransport(settings, decryptSecret(settings.smtpPassword ?? ""));
   const fromName = settings.smtpFromName || settings.smtpUser!;
   const fromAddress = settings.smtpFromAddress || settings.smtpUser!;
   await transporter.sendMail({

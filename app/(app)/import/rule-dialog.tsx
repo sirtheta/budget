@@ -60,7 +60,7 @@ export function RuleDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen} modal={false}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{rule ? "Regel bearbeiten" : "Neue Importregel"}</DialogTitle>
           <DialogDescription>

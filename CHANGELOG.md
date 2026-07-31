@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.1.10](https://github.com/sirtheta/budget/compare/budget-v0.1.9...budget-v0.1.10) (2026-07-30)
+
+
+### Features
+
+* **analytics:** split net worth into liquid and illiquid assets ([#31](https://github.com/sirtheta/budget/issues/31)) ([5c415ee](https://github.com/sirtheta/budget/commit/5c415ee4780397cda4e14bc070c6dcccbc341ef4))
+* **backup:** verify snapshots and add a restore path ([849df2c](https://github.com/sirtheta/budget/commit/849df2cd7830477bc9dce29f0b20e7007d4dbc9b))
+* **dashboard:** add month navigation ([1a1d373](https://github.com/sirtheta/budget/commit/1a1d37382bdccb89b396fdf1cbdd8ec07ffdd40b))
+* **ops:** add /api/health probe that touches the database ([cd4a0af](https://github.com/sirtheta/budget/commit/cd4a0af1d18bffe1f190f54fb6c5a62b38a54703))
+* **pwa:** add a web app manifest so the app installs to a home screen ([1a5c7f6](https://github.com/sirtheta/budget/commit/1a5c7f67aa0c335ca2314d1f5893bac44f300896))
+* **ui:** add error, not-found and loading boundaries ([f64fb17](https://github.com/sirtheta/budget/commit/f64fb174d3702cc6045e819816ac1e362ee29f94))
+
+
+### Bug Fixes
+
+* **a11y:** add automated checks and fix the contrast failures they found ([e63e7df](https://github.com/sirtheta/budget/commit/e63e7df127491c5edbac340629a56a590ddfa0df))
+* **actions:** validate Server Action arguments at runtime ([933e859](https://github.com/sirtheta/budget/commit/933e859eece9f581e253ecf58877745a4324ba4d))
+* **analytics:** stop grid cards overflowing on narrow phones ([#29](https://github.com/sirtheta/budget/issues/29)) ([bddccdd](https://github.com/sirtheta/budget/commit/bddccdd5c02994b9c069b9a06a8f90116d50a3c1))
+* **transactions:** make search find umlauts regardless of case ([bdd0fa9](https://github.com/sirtheta/budget/commit/bdd0fa9deb10fff8c37ae7377041ea8d70db45fd))
+* **ui:** build dialog triggers client-side, not in server components ([351c5f7](https://github.com/sirtheta/budget/commit/351c5f7ae86d169386a9e55f6c6a45de01e8e273))
+
+
+### Performance Improvements
+
+* **accounts:** stop blocking the render on the BTC rate fetch ([ab09003](https://github.com/sirtheta/budget/commit/ab09003a044e4e7a6c2732c5328694d7cf5d246b))
+
+## [0.1.9](https://github.com/sirtheta/budget/compare/budget-v0.1.8...budget-v0.1.9) (2026-07-29)
+
+
+### Bug Fixes
+
+* **budget:** remount amount input on month change ([5454c7e](https://github.com/sirtheta/budget/commit/5454c7e4fc11671923648b01b0fe6cdc61ec0366))
+* **budget:** stop flagging Income lines as warning/over ([46bcd6b](https://github.com/sirtheta/budget/commit/46bcd6b3383983156206e2ccc91666b190df912b))
+* **import:** handle importHash race in commitImportAction ([69dc4ae](https://github.com/sirtheta/budget/commit/69dc4aeede717839439156e15b4b3c8e6f240383))
+* **import:** stop preview freezing the tab on large statements ([1f72af3](https://github.com/sirtheta/budget/commit/1f72af3f700373e15ca2fe14d06fba2391dbc97d))
+* **import:** stop treating NOTPROVIDED InstrId as a real bank reference ([16a8a22](https://github.com/sirtheta/budget/commit/16a8a224debc0be9241f7be44ee419978e4265eb))
+* **transactions:** load real account IDs when editing a transfer ([080c520](https://github.com/sirtheta/budget/commit/080c520cae6a76c5785b731fd3d873fe0acfbf16))
+* **transactions:** show row action buttons on mobile ([691536d](https://github.com/sirtheta/budget/commit/691536d9a5e14d474bf358b285d44c1dcc38307e))
+
+## [0.1.8](https://github.com/sirtheta/budget/compare/budget-v0.1.7...budget-v0.1.8) (2026-07-29)
+
+
+### Features
+
+* **accounts:** link account name to its filtered transactions ([e184103](https://github.com/sirtheta/budget/commit/e18410398686232bca111fb6ab6ff7e54e4ba308))
+* **import:** add "Both" field option to import rules ([defa9a0](https://github.com/sirtheta/budget/commit/defa9a0ca5f4ea92d2346a231ee9850083d048cd))
+* **import:** add date range filter to import preview ([ccc36ca](https://github.com/sirtheta/budget/commit/ccc36ca4b1ec741ee2cf4add2a96f0fda1cc371a))
+* **import:** create categories inline during import review ([f897185](https://github.com/sirtheta/budget/commit/f89718509eb2f0918e5ff9195529f7339ea904f0))
+
+
+### Bug Fixes
+
+* **accounts:** reject negative BTC cost basis ([f03ab8d](https://github.com/sirtheta/budget/commit/f03ab8d5e362068614c5bed3485b78c1d8a2e3c9))
+* **import:** make rule dialog usable on mobile ([#26](https://github.com/sirtheta/budget/issues/26)) ([6800615](https://github.com/sirtheta/budget/commit/68006158c1c5e3ab4d6382ef14c8c7b35494fd2b))
+* **test:** mutate config through a typed view in invoicing test ([88061f6](https://github.com/sirtheta/budget/commit/88061f6dfff24c6cb389569b10cd51dffd499c24))
+* **transactions:** default rule-creation checkbox to unchecked ([ed7d72b](https://github.com/sirtheta/budget/commit/ed7d72b8be61488ef6e04b07ea66343b5269bd06))
+* **transactions:** exclude transfers from "no category" filter ([ea825b1](https://github.com/sirtheta/budget/commit/ea825b13969a8ddef60867ac93951e8875107a75))
+* **transactions:** reject negative split-part amounts ([fc1ea59](https://github.com/sirtheta/budget/commit/fc1ea59f098cab0f7aeb04a9d3107c94b5b74fc5))
+
+## [0.1.7](https://github.com/sirtheta/budget/compare/budget-v0.1.6...budget-v0.1.7) (2026-07-27)
+
+
+### Features
+
+* **analytics:** add net worth growth forecast ([#25](https://github.com/sirtheta/budget/issues/25)) ([33c494f](https://github.com/sirtheta/budget/commit/33c494f0897530094e09a65ea2a0a517dc05dd2b))
+* **transactions:** support splitting a booking across categories ([#21](https://github.com/sirtheta/budget/issues/21)) ([036425a](https://github.com/sirtheta/budget/commit/036425a7ce3ab28426a62b0c3318a9d4489d31f7))
+
 ## [0.1.6](https://github.com/sirtheta/budget/compare/budget-v0.1.5...budget-v0.1.6) (2026-07-27)
 
 

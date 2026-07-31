@@ -10,6 +10,8 @@ A self-hosted household budgeting app for a private Swiss household, implemented
 
 The UI, user-facing text, and documentation are **in German**. Code, comments, and commit messages are in English.
 
+A full illustrated end-user manual (with screenshots) lives at `public/benutzerhandbuch.html` — open it in a browser, or in the running app via the user menu / at `/benutzerhandbuch.html`. It documents app behavior for end users, not implementation details; regenerate its screenshots after significant UI changes rather than hand-editing stale ones (see `scripts/manual-screenshots.ts` for the capture pipeline).
+
 ---
 
 ## Web Application (repo root)
@@ -158,7 +160,7 @@ The scope is optional but encouraged, e.g. `feat(import): support collective boo
 
 ## CI/CD
 
-The **`web.yml`** GitHub Actions workflow triggers on pushes/PRs to `main` (ignoring doc-only changes). It runs ESLint, then Vitest with coverage, then a production build, then Playwright. On push to `main`, `release-please` opens/updates a release PR (tags as `budget-v<version>`); once a release is created (or on manual `workflow_dispatch`), the job builds and pushes a Docker image to `ghcr.io/sirtheta/budget` (ARM64 target).
+The **`ci.yml`** GitHub Actions workflow triggers on PRs to `main` (ignoring doc-only changes). It runs ESLint, then Vitest with coverage, then a production build, then Playwright — this is the PR gate. The **`release.yml`** workflow triggers on push to `main`: `release-please` opens/updates a release PR (tags as `budget-v<version>`); once a release is created (or on manual `workflow_dispatch`), it re-runs the same checks and then builds and pushes a Docker image to `ghcr.io/sirtheta/budget` (ARM64 target).
 
 ---
 

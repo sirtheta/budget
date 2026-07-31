@@ -11,6 +11,11 @@ import { config } from "@/lib/config";
 
 const session = { user: { id: "1", name: "Admin", email: "admin@test.ch" } } as never;
 
+// The real config is `as const` (readonly) so app code can't mutate it by
+// accident; this test needs to flip it between cases, so it goes through a
+// mutable view rather than loosening the production type.
+const customerManagementConfig = config.customerManagement as { url: string | null; apiKey: string | null };
+
 const params = {
   transactionId: 42,
   description: "Zahlung Rechnung R-26070042",
@@ -21,11 +26,11 @@ const params = {
 describe("matchInvoicePayment", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    config.customerManagement.url = "https://crm.example.ch";
+    customerManagementConfig.url = "https://crm.example.ch";
   });
 
   it("does nothing when CustomerManagement isn't configured", async () => {
-    config.customerManagement.url = null;
+    customerManagementConfig.url = null;
     const fetchSpy = vi.spyOn(global, "fetch");
 
     await matchInvoicePayment(session, params);

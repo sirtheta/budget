@@ -1,6 +1,7 @@
 import type { CategoryKind, PrismaClient } from "@prisma/client";
-import { MONTH_NAMES_SHORT, monthKey, monthRange } from "@/lib/date";
+import { MONTH_NAMES_SHORT, monthEnd, monthKey, monthRange, monthsBetween, trailingMonths } from "@/lib/date";
 import { colorFor } from "@/lib/colors";
+import { isLiquidAccountType } from "@/lib/balances";
 
 /**
  * Read models for the dashboard and the analytics page.
@@ -148,10 +149,14 @@ export interface NetWorthPoint {
   month: number;
   label: string;
   netWorthCents: number;
+  /** Checking, savings, cash, credit card — spendable within days. */
+  liquidCents: number;
+  /** 3a, depots — tied up, moves with the market. */
+  illiquidCents: number;
 }
 
 /**
- * Net worth at the end of each month.
+ * Net worth at the end of each month, split into liquid and illiquid.
  *
  * Unlike the income/expense series this deliberately includes transfers and
  * excluded accounts: the point is total wealth, and money moved into a
@@ -168,34 +173,153 @@ export async function netWorthSeries(
   if (months.length === 0) return [];
   const from = monthRange(months[0].year, months[0].month).from;
 
-  const [openingSum, priorSum, rows] = await Promise.all([
-    prisma.account.aggregate({ _sum: { openingBalanceCents: true } }),
-    prisma.transaction.aggregate({
+  const [accounts, priorRows, rows] = await Promise.all([
+    prisma.account.findMany({ select: { id: true, type: true, openingBalanceCents: true } }),
+    prisma.transaction.findMany({
       where: { date: { lt: from } },
-      _sum: { amountCents: true },
+      select: { accountId: true, amountCents: true },
     }),
     prisma.transaction.findMany({
       where: { date: { gte: from } },
-      select: { date: true, amountCents: true },
+      select: { date: true, accountId: true, amountCents: true },
     }),
   ]);
 
-  const deltas = new Map<string, number>();
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+
+  let liquidRunning = 0;
+  let illiquidRunning = 0;
+  for (const account of accounts) {
+    if (isLiquidAccountType(account.type)) liquidRunning += account.openingBalanceCents;
+    else illiquidRunning += account.openingBalanceCents;
+  }
+  for (const row of priorRows) {
+    const account = accountById.get(row.accountId);
+    if (!account) continue;
+    if (isLiquidAccountType(account.type)) liquidRunning += row.amountCents;
+    else illiquidRunning += row.amountCents;
+  }
+
+  const liquidDeltas = new Map<string, number>();
+  const illiquidDeltas = new Map<string, number>();
   for (const row of rows) {
+    const account = accountById.get(row.accountId);
+    if (!account) continue;
     const key = monthKey(row.date);
+    const deltas = isLiquidAccountType(account.type) ? liquidDeltas : illiquidDeltas;
     deltas.set(key, (deltas.get(key) ?? 0) + row.amountCents);
   }
 
-  let running = (openingSum._sum.openingBalanceCents ?? 0) + (priorSum._sum.amountCents ?? 0);
   return months.map(({ year, month }) => {
-    running += deltas.get(`${year}-${String(month).padStart(2, "0")}`) ?? 0;
+    const key = `${year}-${String(month).padStart(2, "0")}`;
+    liquidRunning += liquidDeltas.get(key) ?? 0;
+    illiquidRunning += illiquidDeltas.get(key) ?? 0;
     return {
       year,
       month,
       label: `${MONTH_NAMES_SHORT[month - 1]} ${String(year).slice(2)}`,
-      netWorthCents: running,
+      netWorthCents: liquidRunning + illiquidRunning,
+      liquidCents: liquidRunning,
+      illiquidCents: illiquidRunning,
     };
   });
+}
+
+export interface NetWorthForecastPoint extends NetWorthPoint {
+  /** True for months after "today" — a projection, not a booked balance. */
+  projected: boolean;
+}
+
+export interface NetWorthForecast {
+  /** History followed by the projection, in chronological order. */
+  points: NetWorthForecastPoint[];
+  /** Average net worth change per month over the history window, in Rappen. */
+  monthlyGrowthCents: number;
+  /** Number of past months the average is based on. */
+  historyMonths: number;
+  /** Fewer than two booked months exist, so no projection could be built. */
+  insufficientData: boolean;
+}
+
+/**
+ * Projects net worth forward by extending the average monthly change observed
+ * over the trailing history window in a straight line.
+ *
+ * A linear extrapolation of past savings behaviour rather than a compounding
+ * one: a household's net worth grows from income minus expenses booked by
+ * hand, not from interest accruing on the balance itself, so compounding
+ * would overstate the projection.
+ */
+export async function netWorthForecast(
+  prisma: PrismaClient,
+  options: {
+    asOfYear: number;
+    asOfMonth: number;
+    historyMonths?: number;
+    forecastMonths?: number;
+  }
+): Promise<NetWorthForecast> {
+  const requestedHistory = options.historyMonths ?? 12;
+  const forecastMonths = options.forecastMonths ?? 12;
+
+  // A household that only started using the app recently has nothing but
+  // flat opening-balance months before its first transaction — including
+  // those in the average would understate a genuinely higher savings rate.
+  const bounds = await prisma.transaction.aggregate({ _min: { date: true } });
+  const today = monthEnd(options.asOfYear, options.asOfMonth);
+  const elapsed = bounds._min.date ? monthsBetween(bounds._min.date, today) + 1 : 1;
+  const historyMonths = Math.max(1, Math.min(requestedHistory, elapsed));
+
+  const months = trailingMonths(options.asOfYear, options.asOfMonth, historyMonths);
+  const history = await netWorthSeries(prisma, months);
+
+  const first = history[0];
+  const last = history[history.length - 1];
+  const span = history.length - 1;
+  const insufficientData = span < 1;
+  const monthlyGrowthCents = insufficientData
+    ? 0
+    : Math.round((last.netWorthCents - first.netWorthCents) / span);
+  // Projected separately so the split still adds up in every projected point,
+  // rather than carrying today's liquid/illiquid split forward unchanged.
+  const liquidGrowthCents = insufficientData
+    ? 0
+    : Math.round((last.liquidCents - first.liquidCents) / span);
+  const illiquidGrowthCents = insufficientData
+    ? 0
+    : Math.round((last.illiquidCents - first.illiquidCents) / span);
+
+  const points: NetWorthForecastPoint[] = history.map((point) => ({
+    ...point,
+    projected: false,
+  }));
+
+  if (!insufficientData) {
+    let runningLiquid = last.liquidCents;
+    let runningIlliquid = last.illiquidCents;
+    let year = last.year;
+    let month = last.month;
+    for (let i = 0; i < forecastMonths; i++) {
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+      runningLiquid += liquidGrowthCents;
+      runningIlliquid += illiquidGrowthCents;
+      points.push({
+        year,
+        month,
+        label: `${MONTH_NAMES_SHORT[month - 1]} ${String(year).slice(2)}`,
+        netWorthCents: runningLiquid + runningIlliquid,
+        liquidCents: runningLiquid,
+        illiquidCents: runningIlliquid,
+        projected: true,
+      });
+    }
+  }
+
+  return { points, monthlyGrowthCents, historyMonths: history.length, insufficientData };
 }
 
 export interface CounterpartySlice {

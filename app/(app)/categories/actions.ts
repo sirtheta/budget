@@ -8,7 +8,7 @@ import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { seedDefaultCategories } from "@/lib/categories";
 
-export type ActionState = { error?: string; success?: boolean };
+export type ActionState = { error?: string; success?: boolean; id?: number };
 
 const categorySchema = z.object({
   name: z.string().trim().min(1, "Name darf nicht leer sein.").max(60),
@@ -82,6 +82,9 @@ export async function saveCategoryAction(
       data: { ...parsed.data, sortOrder: (last?.sortOrder ?? -1) + 1 },
     });
     await logAudit(session, "CREATE", "Category", created.id, { name: parsed.data.name });
+    revalidatePath("/categories");
+    revalidatePath("/budget");
+    return { success: true, id: created.id };
   }
 
   revalidatePath("/categories");

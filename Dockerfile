@@ -51,7 +51,13 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone/server.js ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone/.next     ./.next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static               ./.next/static
+# output: "standalone" does not copy public/ on its own — without this, the
+# PWA icons and the Benutzerhandbuch would 404 in the container.
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+# Standalone tracing doesn't follow the gunzip+readFileSync path in
+# lib/password.ts, so the breached-password wordlist needs an explicit copy.
+COPY --from=builder --chown=nextjs:nodejs /app/lib/data ./lib/data
 
 COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
@@ -67,7 +73,7 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget -qO- http://localhost:3000/api/auth/session > /dev/null || exit 1
+  CMD wget -qO- http://localhost:3000/api/health > /dev/null || exit 1
 
 # startup.js may generate AUTH_SECRET/ENCRYPTION_KEY into <data>/secrets.env
 # (only the values not already provided via environment); source them so the

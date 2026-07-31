@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Search, X } from "lucide-react";
 import type { CategoryOption } from "@/lib/categories";
 import type { AccountOption } from "./transaction-form-dialog";
@@ -30,8 +30,10 @@ export function TransactionFilters({
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState(params.get("q") ?? "");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const apply = (updates: Record<string, string | null>) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     const next = new URLSearchParams(params.toString());
     for (const [key, value] of Object.entries(updates)) {
       if (value === null || value === "" || value === ALL) next.delete(key);
@@ -41,6 +43,15 @@ export function TransactionFilters({
     next.delete("page");
     startTransition(() => router.push(`/transactions?${next.toString()}`));
   };
+
+  useEffect(() => {
+    if (query === (params.get("q") ?? "")) return;
+    debounceRef.current = setTimeout(() => apply({ q: query }), 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   const hasFilters = ["q", "from", "to", "accountId", "categoryId", "type"].some((key) =>
     params.has(key)

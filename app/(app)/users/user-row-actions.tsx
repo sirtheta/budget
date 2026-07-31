@@ -2,9 +2,9 @@
 
 import { useTransition } from "react";
 import { toast } from "sonner";
-import { Eye, EyeOff, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Mail, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import type { UserListItem } from "./types";
-import { deleteUserAction, toggleUserActiveAction } from "./actions";
+import { deleteUserAction, sendPasswordSetupEmailAction, toggleUserActiveAction } from "./actions";
 import { UserFormDialog } from "./user-form-dialog";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -65,6 +65,16 @@ export function UserRowActions({ user, isSelf }: { user: UserListItem; isSelf: b
                 <Eye className="mr-2 h-4 w-4" /> Aktivieren
               </>
             )}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() =>
+              run(
+                () => sendPasswordSetupEmailAction(user.id),
+                "Passwort-Link gesendet."
+              )
+            }
+          >
+            <Mail className="mr-2 h-4 w-4" /> Passwort-Link senden
           </DropdownMenuItem>
           <DropdownMenuItem
             className="text-destructive"

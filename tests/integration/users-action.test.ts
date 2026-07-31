@@ -2,10 +2,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import type { PrismaClient } from "@prisma/client";
 import { createTestDb } from "./helpers";
 
-const { prismaHolder, sessionHolder, revalidatePathMock } = vi.hoisted(() => ({
+const { prismaHolder, sessionHolder, revalidatePathMock, sendMailMock } = vi.hoisted(() => ({
   prismaHolder: { current: undefined as unknown },
   sessionHolder: { current: { user: { id: "1", role: "Admin", name: "Admin", email: "admin@test.ch" } } },
   revalidatePathMock: vi.fn(),
+  sendMailMock: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -18,8 +19,14 @@ vi.mock("@/lib/permissions", () => ({
   requireAdmin: vi.fn(async () => sessionHolder.current),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
+vi.mock("@/lib/email", () => ({ sendMail: sendMailMock }));
 
-import { saveUserAction, toggleUserActiveAction, deleteUserAction } from "@/app/(app)/users/actions";
+import {
+  saveUserAction,
+  toggleUserActiveAction,
+  deleteUserAction,
+  sendPasswordSetupEmailAction,
+} from "@/app/(app)/users/actions";
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -38,12 +45,15 @@ beforeAll(async () => {
   sessionHolder.current = {
     user: { id: String(adminId), role: "Admin", name: "Admin", email: "admin@test.ch" },
   };
+  await prisma.systemSettings.upsert({ where: { id: 1 }, create: { id: 1 }, update: {} });
+  process.env.AUTH_URL = "https://budget.example.ch";
 });
 
 afterAll(async () => cleanup());
 
 afterEach(() => {
   revalidatePathMock.mockClear();
+  sendMailMock.mockClear();
 });
 
 function form(fields: Record<string, string>) {
@@ -82,6 +92,26 @@ describe("saveUserAction", () => {
 
     const audit = await prisma.auditLog.findFirst({ where: { entityId: created.id, action: "CREATE" } });
     expect(audit).toBeTruthy();
+  });
+
+  it("creates a user without a password and sends an invite email instead", async () => {
+    const result = await saveUserAction(
+      undefined,
+      form({ email: "invited@test.ch", name: "Invited", role: "Viewer", password: "" })
+    );
+    expect(result).toEqual({ success: true });
+
+    const created = await prisma.user.findUniqueOrThrow({ where: { email: "invited@test.ch" } });
+    expect(created.passwordHash).toBeTruthy();
+
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const [, to, subject, text] = sendMailMock.mock.calls[0];
+    expect(to).toBe("invited@test.ch");
+    expect(subject).toContain("Konto erstellt");
+    expect(text).toContain("https://budget.example.ch/reset-password?token=");
+
+    const token = await prisma.passwordResetToken.findFirst({ where: { userId: created.id } });
+    expect(token).toBeTruthy();
   });
 
   it("rejects a duplicate email with a friendly message", async () => {
@@ -141,6 +171,29 @@ describe("toggleUserActiveAction", () => {
     expect(revalidatePathMock).toHaveBeenCalledWith("/users");
     const updated = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(updated.isActive).toBe(false);
+  });
+});
+
+describe("sendPasswordSetupEmailAction", () => {
+  it("sends a password setup link for an existing user", async () => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: "invited@test.ch" } });
+    const result = await sendPasswordSetupEmailAction(user.id);
+    expect(result).toEqual({ success: true });
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    expect(sendMailMock.mock.calls[0][1]).toBe("invited@test.ch");
+  });
+
+  it("returns an error for an unknown user", async () => {
+    const result = await sendPasswordSetupEmailAction(999999);
+    expect(result.error).toBe("Benutzer nicht gefunden.");
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a friendly error when the mail send fails", async () => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: "invited@test.ch" } });
+    sendMailMock.mockRejectedValueOnce(new Error("smtp down"));
+    const result = await sendPasswordSetupEmailAction(user.id);
+    expect(result.error).toBeTruthy();
   });
 });
 

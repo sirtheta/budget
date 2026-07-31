@@ -1,0 +1,35 @@
+name: Dependabot Auto-Merge
+
+on: pull_request
+
+# Dependabot pull requests run with a read-only token unless the workflow
+# raises the permissions explicitly.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Auto-Merge aktivieren
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Metadaten des Updates lesen
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # For grouped pull requests fetch-metadata reports the highest
+      # update-type in the group, so a group containing a major is never
+      # auto-merged. Runtime majors keep waiting for a manual review.
+      - name: Auto-Merge aktivieren
+        if: >-
+          steps.metadata.outputs.dependency-group == 'dev-dependencies' ||
+          steps.metadata.outputs.dependency-type == 'direct:development' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

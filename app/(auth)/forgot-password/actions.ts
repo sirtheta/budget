@@ -30,6 +30,9 @@ export async function requestPasswordResetAction(
 
   // The per-IP bucket only applies when the address can be trusted; the
   // per-email one is what actually caps mail sent to any single account.
+  // The global bucket is the backstop against a distributed attacker who
+  // spreads requests across many IPs and target addresses to flood the
+  // mail queue rather than any single recipient.
   const ip = clientIp(await headers());
   const emailAllowed = checkRateLimit(`pwreset:${email.toLowerCase()}`, { maxAttempts: 3 });
   const ipAllowed =
@@ -37,7 +40,10 @@ export async function requestPasswordResetAction(
     checkRateLimit(`pwreset-ip:${ip}`, {
       maxAttempts: config.rateLimit.maxAttempts * 10,
     });
-  if (!emailAllowed || !ipAllowed) {
+  const globalAllowed = checkRateLimit("pwreset-global", {
+    maxAttempts: config.rateLimit.maxAttempts * 50,
+  });
+  if (!emailAllowed || !ipAllowed || !globalAllowed) {
     log.warn({ email: maskEmail(email), ip }, "password reset blocked: rate limit exceeded");
     return { success: true };
   }

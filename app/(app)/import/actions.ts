@@ -205,10 +205,30 @@ export async function previewImportAction(
       where: { accountId, date: { lte: statement.periodTo } },
       _sum: { amountCents: true },
     });
-    const projected =
-      account.openingBalanceCents +
-      (priorSum._sum.amountCents ?? 0) +
-      fresh.reduce((sum, row) => sum + row.amountCents, 0);
+    // priorSum already counts every synthetic transfer leg still waiting to
+    // be confirmed (see adoptCandidates above), so a fresh row that adopts
+    // one at commit time must not be added again here — it updates that row
+    // in place rather than creating a new one. Consumed in commit order
+    // (earliest-date candidate first, same as findAdoptableTransferLeg) so a
+    // second fresh row past the first adopter is correctly counted as new.
+    const unclaimedCandidates = [...adoptCandidates];
+    const freshSum = fresh.reduce((sum, row) => {
+      const matchIndex = unclaimedCandidates
+        .map((candidate, index) => ({ candidate, index }))
+        .filter(
+          ({ candidate }) =>
+            candidate.amountCents === row.amountCents &&
+            candidate.date >= addDays(row.date, -TRANSFER_MATCH_TOLERANCE_DAYS) &&
+            candidate.date <= addDays(row.date, TRANSFER_MATCH_TOLERANCE_DAYS)
+        )
+        .sort((a, b) => a.candidate.date.localeCompare(b.candidate.date))[0]?.index;
+      if (matchIndex !== undefined) {
+        unclaimedCandidates.splice(matchIndex, 1);
+        return sum;
+      }
+      return sum + row.amountCents;
+    }, 0);
+    const projected = account.openingBalanceCents + (priorSum._sum.amountCents ?? 0) + freshSum;
     balanceDeltaCents = statement.closingBalanceCents - projected;
   }
 

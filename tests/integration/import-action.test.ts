@@ -140,6 +140,47 @@ describe("previewImportAction", () => {
     // Clean up so later tests see a fresh account.
     await prisma.transaction.deleteMany({ where: { importHash: hashed.hash } });
   });
+
+  it("does not count a row adopting a pending transfer leg twice in the balance check", async () => {
+    // Simulates a recurring auto-transfer that already posted its synthetic,
+    // not-yet-confirmed leg on this account (see applyAutoTransfer).
+    const pending = await prisma.transaction.create({
+      data: {
+        date: "2026-08-01",
+        amountCents: -5000,
+        accountId: fixtures.account.id,
+        description: "Umbuchung",
+        transferGroupId: "pending-transfer-test",
+      },
+    });
+
+    const xml = `<Document><BkToCstmrStmt><Stmt>
+      <FrToDt><FrDtTm>2026-08-01T00:00:00</FrDtTm><ToDtTm>2026-08-02T23:59:59</ToDtTm></FrToDt>
+      <Bal><Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp><Amt Ccy="CHF">1000.00</Amt><CdtDbtInd>CRDT</CdtDbtInd></Bal>
+      <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="CHF">950.00</Amt><CdtDbtInd>CRDT</CdtDbtInd></Bal>
+      <Ntry>
+        <Amt Ccy="CHF">50.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-08-02</Dt></BookgDt>
+        <NtryDtls><TxDtls><Refs><AcctSvcrRef>REF-ADOPT-1</AcctSvcrRef></Refs></TxDtls></NtryDtls>
+      </Ntry>
+    </Stmt></BkToCstmrStmt></Document>`;
+
+    const data = new FormData();
+    data.append("file", new File([xml], "statement.xml", { type: "application/xml" }));
+    data.append("format", "Camt053");
+    data.append("accountId", String(fixtures.account.id));
+
+    const result = await previewImportAction(undefined, data);
+    expect(result.error).toBeUndefined();
+    // The fresh row will adopt `pending` at commit time (same amount, date
+    // within tolerance) instead of creating a second row, so the projected
+    // balance must count that -50.00 movement only once.
+    expect(result.preview?.balanceDeltaCents).toBe(0);
+
+    await prisma.transaction.delete({ where: { id: pending.id } });
+  });
 });
 
 describe("commitImportAction", () => {

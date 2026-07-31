@@ -144,6 +144,10 @@ export function ImportHistoryList({
   initialHasMore: boolean;
 }) {
   const [batches, setBatches] = useState(initialBatches);
+  // Tracks how many rows have been fetched from the server, independent of
+  // `batches.length` — deleting a row shrinks the displayed list but must not
+  // shift the next page's offset, or the row after the gap gets re-fetched.
+  const [fetchedCount, setFetchedCount] = useState(initialBatches.length);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loading, startLoading] = useTransition();
 
@@ -151,8 +155,9 @@ export function ImportHistoryList({
 
   const loadMore = () =>
     startLoading(async () => {
-      const result = await loadMoreImportBatchesAction(batches.length);
+      const result = await loadMoreImportBatchesAction(fetchedCount);
       setBatches((prev) => [...prev, ...result.batches]);
+      setFetchedCount((prev) => prev + result.batches.length);
       setHasMore(result.hasMore);
     });
 

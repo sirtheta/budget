@@ -22,6 +22,7 @@ import {
 } from "@/lib/transactions";
 import type { ParsedStatement } from "@/lib/import/types";
 import logger from "@/lib/logger";
+import { IMPORT_HISTORY_PAGE_SIZE } from "./history-constants";
 
 const log = logger.child({ module: "import" });
 
@@ -476,6 +477,46 @@ export async function deleteImportBatchAction(id: number): Promise<ActionState &
   revalidatePath("/dashboard");
   revalidatePath("/accounts");
   return { success: true, deleted: count };
+}
+
+export interface ImportBatchRow {
+  id: number;
+  filename: string;
+  format: ImportFormat;
+  accountName: string | null;
+  periodFrom: string | null;
+  periodTo: string | null;
+  importedCount: number;
+  skippedCount: number;
+}
+
+/** Next page of the import history, for the "Mehr laden" button on the Verlauf tab. */
+export async function loadMoreImportBatchesAction(
+  offset: number
+): Promise<{ batches: ImportBatchRow[]; hasMore: boolean }> {
+  await requireEditor();
+
+  const batches = await prisma.importBatch.findMany({
+    orderBy: { createdAt: "desc" },
+    skip: offset,
+    take: IMPORT_HISTORY_PAGE_SIZE + 1,
+    include: { account: { select: { name: true } } },
+  });
+
+  const hasMore = batches.length > IMPORT_HISTORY_PAGE_SIZE;
+  return {
+    batches: batches.slice(0, IMPORT_HISTORY_PAGE_SIZE).map((batch) => ({
+      id: batch.id,
+      filename: batch.filename,
+      format: batch.format,
+      accountName: batch.account?.name ?? null,
+      periodFrom: batch.periodFrom,
+      periodTo: batch.periodTo,
+      importedCount: batch.importedCount,
+      skippedCount: batch.skippedCount,
+    })),
+    hasMore,
+  };
 }
 
 /** First rows of a CSV upload, for building a column mapping interactively. */

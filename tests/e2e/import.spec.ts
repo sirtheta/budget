@@ -102,8 +102,7 @@ test.describe("Import", () => {
     await login(page);
     await page.goto("/import");
 
-    // The batch history lives on its own tab now, not on the page directly.
-    await page.getByRole("tab", { name: "Verlauf" }).click();
+    // The batch history lives on the "Neuer Import" tab, shown by default.
     await page.getByRole("button", { name: "Import rückgängig machen" }).first().click();
     await page.getByRole("button", { name: "Rückgängig machen" }).click();
 

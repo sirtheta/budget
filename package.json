@@ -70,11 +70,11 @@
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10",
-    "eslint-config-next": "16.2.11",
+    "eslint-config-next": "16.2.12",
     "prisma": "^7.9.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.0",
-    "typescript": "^6",
+    "typescript": "^7",
     "vitest": "^4.1.10"
   },
   "allowScripts": {

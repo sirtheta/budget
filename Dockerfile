@@ -5,7 +5,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── 1. Base ───────────────────────────────────────────────────────────────────
-FROM node:24-alpine AS base
+FROM node:25-alpine AS base
 RUN apk upgrade --no-cache \
  && apk add --no-cache libc6-compat python3 make g++
 
@@ -33,7 +33,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # ── 4. Runner ─────────────────────────────────────────────────────────────────
-FROM node:24-alpine AS runner
+FROM node:25-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

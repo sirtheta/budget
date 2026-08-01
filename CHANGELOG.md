@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/sirtheta/budget/compare/budget-v0.1.12...budget-v0.1.13) (2026-08-01)
+
+
+### Bug Fixes
+
+* **import:** keep tab bar within viewport on mobile ([#43](https://github.com/sirtheta/budget/issues/43)) ([0b64e63](https://github.com/sirtheta/budget/commit/0b64e638d2c09b91ca518985d2c5e1b4dadbb264))
+
 ## [0.1.12](https://github.com/sirtheta/budget/compare/budget-v0.1.11...budget-v0.1.12) (2026-07-31)
 
 

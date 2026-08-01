@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.14](https://github.com/sirtheta/budget/compare/budget-v0.1.13...budget-v0.1.14) (2026-08-01)
+
+
+### Features
+
+* **accounts:** allow reordering accounts via drag and drop ([5d90148](https://github.com/sirtheta/budget/commit/5d901486b0007182ea02b46e70f585dd9241d863))
+
+
+### Bug Fixes
+
+* **import:** move history into first tab, show latest 5 with load more ([7400f64](https://github.com/sirtheta/budget/commit/7400f648dc87b9c2a42a35691f317fcb2a0dc04b))
+
+
+### Reverts
+
+* drop Dependabot grouping and auto-merge ([#52](https://github.com/sirtheta/budget/issues/52)) ([829174c](https://github.com/sirtheta/budget/commit/829174c4e7c80b11161ec0b493846329d8977913))
+
 ## [0.1.13](https://github.com/sirtheta/budget/compare/budget-v0.1.12...budget-v0.1.13) (2026-08-01)
 
 

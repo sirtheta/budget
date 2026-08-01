@@ -76,10 +76,9 @@ export default async function ImportPage() {
           <TabsTrigger value="wizard">Neuer Import</TabsTrigger>
           <TabsTrigger value="rules">Regeln ({rules.length})</TabsTrigger>
           <TabsTrigger value="mappings">CSV-Mappings ({mappings.length})</TabsTrigger>
-          <TabsTrigger value="history">Verlauf</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="wizard">
+        <TabsContent value="wizard" className="space-y-6">
           {accounts.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-sm text-muted-foreground">
@@ -89,6 +88,11 @@ export default async function ImportPage() {
           ) : (
             <ImportWizard accounts={accounts} categories={categories} parents={parents} mappings={mappings} />
           )}
+
+          <div>
+            <h2 className="text-sm font-medium mb-2">Verlauf</h2>
+            <ImportHistoryList initialBatches={batches} initialHasMore={hasMoreBatches} />
+          </div>
         </TabsContent>
 
         <TabsContent value="rules">
@@ -183,10 +187,6 @@ export default async function ImportPage() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="history">
-          <ImportHistoryList initialBatches={batches} initialHasMore={hasMoreBatches} />
         </TabsContent>
       </Tabs>
     </>

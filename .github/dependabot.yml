@@ -13,12 +13,16 @@ updates:
       - dependency-name: "nodemailer"
         update-types: ["version-update:semver-major"]
     groups:
+      # Narrow groups first: a dependency lands in the first group it matches.
+      # react and react-dom must always move together.
       react:
         patterns:
           - "react"
           - "react-dom"
         update-types:
           - "major"
+      # ESLint majors usually need config work: separate PR, so a red run is
+      # attributable without unpacking the whole dev batch.
       eslint:
         patterns:
           - "eslint"
@@ -26,3 +30,36 @@ updates:
           - "@typescript-eslint/*"
         update-types:
           - "major"
+      # Everything else that only affects lint/test/build, including majors:
+      # a breaking change here fails CI rather than production.
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      # Runtime dependencies without a breaking change. Majors stay ungrouped
+      # so each one gets its own PR to review.
+      production-minor:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      docker:
+        patterns:
+          - "*"

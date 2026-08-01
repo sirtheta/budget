@@ -23,10 +23,16 @@ jobs:
       # For grouped pull requests fetch-metadata reports the highest
       # update-type in the group, so a group containing a major is never
       # auto-merged. Runtime majors keep waiting for a manual review.
+      #
+      # A bare `dependency-type == 'direct:development'` check matches ANY
+      # major dev dependency (e.g. the isolated `eslint` group), defeating
+      # the point of splitting it out for manual review — see #48. Require
+      # a non-major update-type alongside it.
       - name: Auto-Merge aktivieren
         if: >-
           steps.metadata.outputs.dependency-group == 'dev-dependencies' ||
-          steps.metadata.outputs.dependency-type == 'direct:development' ||
+          (steps.metadata.outputs.dependency-type == 'direct:development' &&
+           steps.metadata.outputs.update-type != 'version-update:semver-major') ||
           steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
           steps.metadata.outputs.update-type == 'version-update:semver-patch'
         run: gh pr merge --auto --squash "$PR_URL"

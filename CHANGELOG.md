@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.1.12](https://github.com/sirtheta/budget/compare/budget-v0.1.11...budget-v0.1.12) (2026-07-31)
+
+
+### Bug Fixes
+
+* **deps:** pin nodemailer to 8.x for next-auth peer range ([#41](https://github.com/sirtheta/budget/issues/41)) ([7808470](https://github.com/sirtheta/budget/commit/780847051460d99c3eceef732ec3a843d56b446b))
+
+## [0.1.11](https://github.com/sirtheta/budget/compare/budget-v0.1.10...budget-v0.1.11) (2026-07-31)
+
+
+### Features
+
+* add embedded user manual with screenshot pipeline ([d8515ec](https://github.com/sirtheta/budget/commit/d8515ec76ce3b3bf33451e24111801227b0e0ca9))
+* **auth:** reject passwords found in known data breaches ([dbcf222](https://github.com/sirtheta/budget/commit/dbcf222c7a0bea067b023e0db20541050a256dbf))
+* **import:** split import page into tabs with paginated history ([0cfb283](https://github.com/sirtheta/budget/commit/0cfb28317b2adf24472116e1bca1816e50569cdb))
+* **settings:** add SMTP connection test ([01690aa](https://github.com/sirtheta/budget/commit/01690aade2480666e40e9ebe7157e1e7fb817327))
+* **transactions:** live search with 300ms debounce ([79992c4](https://github.com/sirtheta/budget/commit/79992c46fdb1c9db75e7b2ec71c54142f8eb88fd))
+* **users:** let new users set their own password via email invite ([aa99aaf](https://github.com/sirtheta/budget/commit/aa99aafdd776e7d41f672ed39890d63c68588237))
+
+
+### Bug Fixes
+
+* **auth:** add global rate limit to password reset requests ([3b3cfa8](https://github.com/sirtheta/budget/commit/3b3cfa890c4b56c9e6c4ab5e9fc75eec54f2b860))
+* **ci:** check PR author instead of event actor for dependabot skip ([dcf5800](https://github.com/sirtheta/budget/commit/dcf580027a42ebefa458283b76bf2eb26b2fe797))
+* **import:** only mark one row as adopting a pending transfer leg ([f2c9731](https://github.com/sirtheta/budget/commit/f2c973170c9e37ec055c2f94bd8b3e447dcfd303))
+* **import:** stop double-counting adopted transfer legs in balance check ([5f19387](https://github.com/sirtheta/budget/commit/5f19387cb47bf1ccbf8ad9d47b7f52807e279dc7))
+* **import:** track fetched row count separately from displayed batches ([ce2dd02](https://github.com/sirtheta/budget/commit/ce2dd02aa29562991bf093191ffe492f26804c0b))
+
 ## [0.1.10](https://github.com/sirtheta/budget/compare/budget-v0.1.9...budget-v0.1.10) (2026-07-30)
 
 

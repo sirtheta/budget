@@ -212,6 +212,27 @@ export async function recordBtcPurchaseAction(
   return { success: true };
 }
 
+/**
+ * Persists a drag-and-drop reorder: the client sends the full new id order,
+ * we write sortOrder = index for each. Rewriting the whole list (rather than
+ * touching only the moved row) also heals ties left over from before
+ * reordering existed (every account defaulted to sortOrder 0).
+ */
+export async function reorderAccountsAction(orderedIds: number[]): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const count = await prisma.account.count({ where: { id: { in: orderedIds } } });
+  if (count !== orderedIds.length) return { error: "Konto nicht gefunden." };
+
+  await prisma.$transaction(
+    orderedIds.map((id, i) => prisma.account.update({ where: { id }, data: { sortOrder: i } }))
+  );
+  await logAudit(session, "UPDATE", "Account", undefined, { reordered: orderedIds });
+
+  revalidatePath("/accounts");
+  return { success: true };
+}
+
 export async function toggleAccountActiveAction(id: number, isActive: boolean): Promise<ActionState> {
   const session = await requireEditor();
   const account = await prisma.account.update({ where: { id }, data: { isActive } });

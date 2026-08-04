@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.15](https://github.com/sirtheta/budget/compare/budget-v0.1.14...budget-v0.1.15) (2026-08-04)
+
+
+### Bug Fixes
+
+* **budget:** recover from a stuck saving state in the Soll input ([e26993c](https://github.com/sirtheta/budget/commit/e26993c9a69048379edb18026469ab7d02277c1c))
+
 ## [0.1.14](https://github.com/sirtheta/budget/compare/budget-v0.1.13...budget-v0.1.14) (2026-08-01)
 
 

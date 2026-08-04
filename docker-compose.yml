@@ -26,6 +26,12 @@ services:
       AUTH_URL: ${AUTH_URL:-http://localhost:3000}
       # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # Node's HTTP keep-alive timeout (ms). Must exceed the reverse proxy's
+      # own upstream keep-alive timeout, or the proxy occasionally reuses a
+      # connection Node already closed — the request then hangs silently with
+      # no response and no server-side log line. 70000 covers Nginx Proxy
+      # Manager's ~65-75s default; raise it further if your proxy's is higher.
+      KEEP_ALIVE_TIMEOUT: ${KEEP_ALIVE_TIMEOUT:-70000}
       # Server timezone (log timestamps etc.). Which calendar day a recurring
       # booking is due on follows APP_TIMEZONE (default Europe/Zurich) and
       # works regardless of TZ.

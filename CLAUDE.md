@@ -133,6 +133,7 @@ Dialog forms use `useDialogFormAction` (`components/use-dialog-form.ts`) rather 
 | `BACKUP_CRON_SCHEDULE` / `BACKUP_MAX_KEEP_DAYS` | No | Nightly backup schedule (`30 2 * * *`) and retention (`14`, `0` = keep all) |
 | `AUDIT_RETENTION_DAYS` | No | Days to keep audit rows (`0` = forever), default `365` |
 | `IMPORT_MAX_FILE_SIZE_BYTES` | No | Upload guard for statement files, default 10 MB |
+| `KEEP_ALIVE_TIMEOUT` | Behind reverse proxy | Node HTTP keep-alive timeout in ms, default 5000; must exceed the proxy's own upstream keep-alive timeout or requests occasionally hang silently (see [`docs/01-app/03-api-reference/06-cli/next.md`](node_modules/next/dist/docs/01-app/03-api-reference/06-cli/next.md)) |
 | `DISABLE_EMAIL` / `DISABLE_BACKUP` / `DISABLE_RECURRING` | No | Dev/staging switches |
 
 See `.env.example` for the full list.

@@ -50,10 +50,14 @@ export default function globalSetup(): void {
      VALUES (?, 'Checking', 100000, 0, 1, 0, ?, ?)`
   ).run("Privatkonto", now, now);
 
-  db.prepare(
+  // Two categories, so the budget page renders more than one Soll input —
+  // saving into a second field after a first save is its own failure mode.
+  const insertCategory = db.prepare(
     `INSERT INTO Category (name, kind, sortOrder, isActive, createdAt, updatedAt)
-     VALUES (?, 'Expense', 0, 1, ?, ?)`
-  ).run("Lebensmittel", now, now);
+     VALUES (?, 'Expense', ?, 1, ?, ?)`
+  );
+  insertCategory.run("Lebensmittel", 0, now, now);
+  insertCategory.run("Wohnen", 1, now, now);
 
   db.prepare(`INSERT INTO SystemSettings (id, currency, updatedAt) VALUES (1, 'CHF', ?)`).run(now);
 

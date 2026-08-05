@@ -6,14 +6,11 @@ import { setBudgetAction, type ActionState } from "./actions";
 import { Input } from "@/components/ui/input";
 
 /**
- * Safety net for commit(): if the server action's promise never settles —
- * e.g. the session's periodic re-check (lib/auth.ts) invalidates mid-edit and
- * the resulting redirect() confuses the client action runtime, which expects
- * an RSC flight response and instead follows a redirect to /login — the
- * field must not stay disabled forever with no feedback. Raced *inside* the
- * transition (not by bypassing it) so the normal case still lets Next apply
- * the revalidated data as part of this same transition, instead of only on
- * the next unrelated action.
+ * Backstop for commit(): the field must never stay disabled forever with no
+ * feedback, whatever goes wrong between blur and the saved value coming back.
+ * Raced *inside* the transition (not by bypassing it) so the normal case still
+ * lets Next apply the revalidated data as part of this same transition, instead
+ * of only on the next unrelated action.
  */
 const SAVE_TIMEOUT_MS = 10_000;
 
@@ -47,7 +44,14 @@ export function BudgetAmountInput({
   const initial = plannedCents > 0 ? (plannedCents / 100).toFixed(2) : "";
   const [value, setValue] = useState(initial);
   const [saved, setSaved] = useState(initial);
-  const [pending, startTransition] = useTransition();
+  // Deliberately not `pending` from useTransition: that stays true until React
+  // commits the *whole* transition, which includes Next applying the action's
+  // revalidated router data. Whenever that step is delayed, a `pending`-driven
+  // `disabled` locks the input for exactly as long — which is how a router bug
+  // in Next 16.2 turned into a permanently grey field. This flag tracks the
+  // save itself and nothing else.
+  const [saving, setSaving] = useState(false);
+  const [, startTransition] = useTransition();
   const skipNextCommitRef = useRef(false);
 
   const commit = () => {
@@ -58,22 +62,31 @@ export function BudgetAmountInput({
     if (value === saved) return;
 
     const amount = value;
+    setSaving(true);
     startTransition(async () => {
+      let error: string | undefined;
       try {
         const result = await Promise.race([
           setBudgetAction(categoryId, year, month, amount),
           timeout(SAVE_TIMEOUT_MS),
         ]);
-        if (result.error) {
-          toast.error(result.error);
+        error = result.error;
+      } catch {
+        error = "Speichern fehlgeschlagen. Bitte Seite neu laden.";
+      }
+      // Escape the transition scope. State set directly here would be a
+      // transition update and would queue behind the very router update that
+      // may be stuck; a macrotask puts these back at normal priority so
+      // unlocking the field and reporting the error cannot be held up.
+      setTimeout(() => {
+        setSaving(false);
+        if (error) {
+          toast.error(error);
           setValue(saved);
         } else {
           setSaved(amount);
         }
-      } catch {
-        toast.error("Speichern fehlgeschlagen. Bitte Seite neu laden.");
-        setValue(saved);
-      }
+      }, 0);
     });
   };
 
@@ -81,7 +94,7 @@ export function BudgetAmountInput({
     <Input
       inputMode="decimal"
       value={value}
-      disabled={disabled || pending}
+      disabled={disabled || saving}
       onChange={(event) => setValue(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {

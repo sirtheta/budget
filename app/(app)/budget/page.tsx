@@ -144,6 +144,10 @@ export default async function BudgetPage({ searchParams }: { searchParams: Searc
                           <div className="flex items-center gap-2">
                             <Link
                               href={`/transactions?categoryId=${line.categoryId}&from=${year}-${String(month).padStart(2, "0")}-01`}
+                              // One link per category line, each pointing at a
+                              // differently filtered dynamic page: prefetching
+                              // them renders the booking list once per row.
+                              prefetch={false}
                               className="text-sm font-medium hover:underline truncate"
                             >
                               {line.name}

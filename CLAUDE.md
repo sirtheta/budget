@@ -144,6 +144,8 @@ Tests live in `tests/unit/` and `tests/integration/`. Integration tests build a 
 
 Playwright E2E tests live in `tests/e2e/` (`npm run test:e2e`): the config boots a dev server on port 3111 against a freshly migrated SQLite DB (`tests/e2e/global-setup.ts`, admin login `admin@e2e.local`).
 
+`tests/e2e-prod/` (`npm run build && npm run test:e2e:prod`, port 3112) is a second, opt-in suite running against `next start`. It exists because the client router dispatches Server Action results through a different code path in a production build than in dev — a stale-by-one-dispatch router bug in Next 16.2 was invisible to the dev-server suite and to `npm run dev`, and only this setup reproduced it.
+
 ---
 
 ## Commit Conventions
@@ -168,3 +170,13 @@ The **`ci.yml`** GitHub Actions workflow triggers on PRs to `main` (ignoring doc
 ## Next.js Version Note
 
 This project uses **Next.js 16**, which has breaking changes from earlier versions. Before modifying routing, middleware, or data-fetching patterns, check `node_modules/next/dist/docs/` for current API conventions — do not assume behavior from older Next.js knowledge.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

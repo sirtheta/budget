@@ -112,7 +112,16 @@ export function AccountsList({
           just hides one via CSS), so a single SortableContext would register
           each account id on two nodes at once and dnd-kit would track drag
           deltas against the wrong one — rows never visibly moved. */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      {/* Explicit ids: without one, dnd-kit derives the drag handles'
+          aria-describedby from a module-level counter that keeps incrementing
+          across requests on the server while the client starts from zero, so
+          the markup never matches on hydration. */}
+      <DndContext
+        id="accounts-table"
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
         <SortableContext items={order} strategy={verticalListSortingStrategy}>
           <div className="hidden md:block overflow-x-auto">
             <Table>
@@ -145,7 +154,12 @@ export function AccountsList({
         </SortableContext>
       </DndContext>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext
+        id="accounts-list"
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
         <SortableContext items={order} strategy={verticalListSortingStrategy}>
           <ul className="md:hidden divide-y">
             {ordered.map((account) => (
@@ -212,7 +226,13 @@ function SortableRow({
             style={{ backgroundColor: account.color ?? "#6366f1" }}
             aria-hidden
           />
-          <Link href={`/transactions?accountId=${account.id}`} className="font-medium hover:underline">
+          <Link
+            href={`/transactions?accountId=${account.id}`}
+            // Rendered once per account in both the table and the mobile list:
+            // prefetching every one of them renders the booking list that often.
+            prefetch={false}
+            className="font-medium hover:underline"
+          >
             {account.name}
           </Link>
           {!account.isActive && <Badge variant="outline">Inaktiv</Badge>}
@@ -312,7 +332,13 @@ function SortableListItem({
                 style={{ backgroundColor: account.color ?? "#6366f1" }}
                 aria-hidden
               />
-              <Link href={`/transactions?accountId=${account.id}`} className="font-medium hover:underline">
+              <Link
+            href={`/transactions?accountId=${account.id}`}
+            // Rendered once per account in both the table and the mobile list:
+            // prefetching every one of them renders the booking list that often.
+            prefetch={false}
+            className="font-medium hover:underline"
+          >
                 {account.name}
               </Link>
               {!account.isActive && <Badge variant="outline">Inaktiv</Badge>}

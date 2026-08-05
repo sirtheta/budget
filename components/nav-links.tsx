@@ -36,6 +36,14 @@ export function NavLinks({
         <Link
           key={link.href}
           href={link.href}
+          // Every route here is dynamic and has no loading.js boundary, so the
+          // default "auto" prefetch renders each target page in full — twelve
+          // server renders with their database queries per page view, and again
+          // after every mutation, since a Server Action's revalidation
+          // invalidates the client cache and all visible links refetch. On the
+          // hardware this runs on that costs more than the instant navigation
+          // it buys.
+          prefetch={false}
           onClick={onNavigate}
           className={cn(
             "rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground whitespace-nowrap",

@@ -65,4 +65,32 @@ test.describe("Budget", () => {
 
     await expect(page.getByText("600.00").first()).toBeVisible();
   });
+
+  test("bleibt nach mehreren Speicherungen editierbar", async ({ page }) => {
+    await login(page);
+    await page.goto("/budget");
+
+    // The reported bug never showed up on the first save, only on a later one:
+    // the input stayed disabled because it was tied to the transition's pending
+    // flag, and that transition was still waiting on the revalidated router
+    // data. Editing a different field pushed a new response through and
+    // released it — hence the two fields here.
+    const first = page.getByLabel("Budgetbetrag").nth(0);
+    const second = page.getByLabel("Budgetbetrag").nth(1);
+
+    await first.fill("240");
+    await first.blur();
+    await expect(first).toBeEnabled();
+
+    await first.fill("245");
+    await first.blur();
+    await expect(first).toBeEnabled();
+
+    await second.fill("310");
+    await second.blur();
+    await expect(second).toBeEnabled();
+    await expect(first).toBeEnabled();
+
+    await expect(page.getByText("310.00").first()).toBeVisible();
+  });
 });

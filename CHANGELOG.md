@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/sirtheta/budget/compare/budget-v0.1.15...budget-v0.1.16) (2026-08-05)
+
+
+### Bug Fixes
+
+* apply revalidated data immediately after a Server Action ([#56](https://github.com/sirtheta/budget/issues/56)) ([be4774a](https://github.com/sirtheta/budget/commit/be4774a7f860dea6fb12881a1bbc0db97b87de70))
+
 ## [0.1.15](https://github.com/sirtheta/budget/compare/budget-v0.1.14...budget-v0.1.15) (2026-08-04)
 
 

@@ -82,3 +82,72 @@ export function btcToCents(btcAmount: number, rateChfPerBtc: number | null): num
   if (rateChfPerBtc === null) return null;
   return Math.round(btcAmount * rateChfPerBtc * 100);
 }
+
+export type BtcHistoryDays = 7 | 30 | 365;
+
+export interface BtcPricePoint {
+  /** Milliseconds since epoch, as returned by CoinGecko. */
+  timestamp: number;
+  /** CHF, already a plain float — not Rappen. */
+  price: number;
+}
+
+/**
+ * Historical BTC/CHF series, one cache entry per range. A chart doesn't
+ * visibly change minute to minute the way the displayed live rate does, and
+ * the dashboard reloads on every navigation (`force-dynamic`) — a much
+ * longer TTL than the live rate keeps well clear of CoinGecko's free-tier
+ * rate limit without the chart ever looking stale to a user.
+ */
+const HISTORY_CACHE_TTL_MS = 30 * 60 * 1000;
+/** market_chart payloads are bigger than the single-price call, hence the higher timeouts. */
+const HISTORY_COLD_FETCH_TIMEOUT_MS = 3_000;
+const HISTORY_BACKGROUND_FETCH_TIMEOUT_MS = 15_000;
+
+function historyUrl(days: BtcHistoryDays): string {
+  return `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=chf&days=${days}`;
+}
+
+const historyCache = new Map<BtcHistoryDays, { data: BtcPricePoint[]; fetchedAt: number }>();
+/** One in-flight refresh per range, same dedup rationale as the live-rate `inFlight`. */
+const historyInFlight = new Map<BtcHistoryDays, Promise<BtcPricePoint[] | null>>();
+
+async function fetchHistory(days: BtcHistoryDays, timeoutMs: number): Promise<BtcPricePoint[] | null> {
+  try {
+    const res = await fetch(historyUrl(days), { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) throw new Error(`CoinGecko responded ${res.status}`);
+    const body = (await res.json()) as { prices?: [number, number][] };
+    if (!Array.isArray(body.prices)) throw new Error("Unexpected CoinGecko response shape");
+    const data = body.prices.map(([timestamp, price]) => ({ timestamp, price }));
+    historyCache.set(days, { data, fetchedAt: Date.now() });
+    return data;
+  } catch (err) {
+    logger.warn({ err, days }, "Failed to fetch BTC/CHF price history");
+    // Stale series beats no chart at all, same reasoning as the live rate.
+    return historyCache.get(days)?.data ?? null;
+  }
+}
+
+function refreshHistory(days: BtcHistoryDays, timeoutMs: number): Promise<BtcPricePoint[] | null> {
+  let inFlightForRange = historyInFlight.get(days);
+  if (!inFlightForRange) {
+    inFlightForRange = fetchHistory(days, timeoutMs).finally(() => {
+      historyInFlight.delete(days);
+    });
+    historyInFlight.set(days, inFlightForRange);
+  }
+  return inFlightForRange;
+}
+
+/** BTC/CHF price history for the given range, or null if it could not be fetched and no cache exists. */
+export async function btcChfHistory(days: BtcHistoryDays): Promise<BtcPricePoint[] | null> {
+  const cached = historyCache.get(days);
+  if (cached && Date.now() - cached.fetchedAt < HISTORY_CACHE_TTL_MS) return cached.data;
+
+  if (cached) {
+    void refreshHistory(days, HISTORY_BACKGROUND_FETCH_TIMEOUT_MS);
+    return cached.data;
+  }
+
+  return refreshHistory(days, HISTORY_COLD_FETCH_TIMEOUT_MS);
+}

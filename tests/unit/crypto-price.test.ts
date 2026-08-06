@@ -140,3 +140,118 @@ describe("btcChfRate", () => {
     expect(await btcChfRate()).toBeNull();
   });
 });
+
+function historyResponse(prices: [number, number][]) {
+  return { ok: true, json: async () => ({ prices }) } as Response;
+}
+
+describe("btcChfHistory", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("fetches the series when nothing is cached", async () => {
+    fetchMock.mockResolvedValue(historyResponse([[1_000, 90_000]]));
+    const { btcChfHistory } = await loadModule();
+
+    expect(await btcChfHistory(7)).toEqual([{ timestamp: 1_000, price: 90_000 }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("days=7");
+  });
+
+  it("serves a fresh series from cache without hitting the network again", async () => {
+    fetchMock.mockResolvedValue(historyResponse([[1_000, 90_000]]));
+    const { btcChfHistory } = await loadModule();
+
+    await btcChfHistory(30);
+    expect(await btcChfHistory(30)).toEqual([{ timestamp: 1_000, price: 90_000 }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns null when the first fetch fails and there is nothing cached", async () => {
+    fetchMock.mockRejectedValue(new Error("network down"));
+    const { btcChfHistory } = await loadModule();
+
+    expect(await btcChfHistory(7)).toBeNull();
+  });
+
+  it("treats a non-ok response as a failure", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 429 } as Response);
+    const { btcChfHistory } = await loadModule();
+
+    expect(await btcChfHistory(7)).toBeNull();
+  });
+
+  it("keeps serving the last known series when a refresh fails", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(historyResponse([[1_000, 90_000]]));
+    const { btcChfHistory } = await loadModule();
+    expect(await btcChfHistory(7)).toEqual([{ timestamp: 1_000, price: 90_000 }]);
+
+    vi.advanceTimersByTime(31 * 60 * 1000);
+    fetchMock.mockRejectedValue(new Error("CoinGecko down"));
+
+    expect(await btcChfHistory(7)).toEqual([{ timestamp: 1_000, price: 90_000 }]);
+  });
+
+  it("serves the stale series immediately instead of waiting for the refresh", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(historyResponse([[1_000, 90_000]]));
+    const { btcChfHistory } = await loadModule();
+    await btcChfHistory(7);
+
+    vi.advanceTimersByTime(31 * 60 * 1000);
+
+    fetchMock.mockReturnValue(new Promise<Response>(() => {}));
+    expect(await btcChfHistory(7)).toEqual([{ timestamp: 1_000, price: 90_000 }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("collapses concurrent cold callers for the same range into a single request", async () => {
+    let resolveFetch: (res: Response) => void = () => {};
+    fetchMock.mockReturnValue(
+      new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      })
+    );
+    const { btcChfHistory } = await loadModule();
+
+    const pending = Promise.all([btcChfHistory(7), btcChfHistory(7), btcChfHistory(7)]);
+    resolveFetch(historyResponse([[1_000, 90_000]]));
+
+    expect(await pending).toEqual([
+      [{ timestamp: 1_000, price: 90_000 }],
+      [{ timestamp: 1_000, price: 90_000 }],
+      [{ timestamp: 1_000, price: 90_000 }],
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches and caches different ranges independently", async () => {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes("days=7") ? historyResponse([[1, 7]]) : historyResponse([[2, 30]])
+      )
+    );
+    const { btcChfHistory } = await loadModule();
+
+    const [sevenDay, thirtyDay] = await Promise.all([btcChfHistory(7), btcChfHistory(30)]);
+
+    expect(sevenDay).toEqual([{ timestamp: 1, price: 7 }]);
+    expect(thirtyDay).toEqual([{ timestamp: 2, price: 30 }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // Both ranges now serve from their own cache without a further fetch.
+    await btcChfHistory(7);
+    await btcChfHistory(30);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

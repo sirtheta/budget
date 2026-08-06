@@ -18,11 +18,13 @@ import { totalMonthlyReserveCents } from "@/lib/reserves";
 import { pendingSuggestions } from "@/lib/recurring";
 import { categoryOptions } from "@/lib/categories";
 import { formatMoney } from "@/lib/money";
+import { btcChfHistory, btcToCents } from "@/lib/crypto-price";
 import { PageHeader } from "@/components/page-header";
 import { MonthNav } from "@/components/month-nav";
 import { Money } from "@/components/money";
 import { MonthlyBarChart } from "@/components/charts/monthly-bar-chart";
 import { CategoryPieChart } from "@/components/charts/category-pie-chart";
+import { BtcPriceChart } from "@/components/charts/btc-price-chart";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -114,6 +116,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       </>
     );
   }
+
+  const hasCrypto = balances.some((account) => account.type === "Crypto");
+  // Reuse the rate accountBalances() already resolved instead of a second,
+  // rate-limited CoinGecko hit for the "current price" tile (see accounts/page.tsx).
+  const currentBtcRateChf = balances.find((account) => account.btcRateChf !== null)?.btcRateChf ?? null;
+  const btcHistory = hasCrypto
+    ? await Promise.all([btcChfHistory(7), btcChfHistory(30), btcChfHistory(365)])
+    : null;
 
   return (
     <>
@@ -334,6 +344,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           )}
         </CardContent>
       </Card>
+
+      {hasCrypto && btcHistory && (
+        <div className="grid gap-6 lg:grid-cols-3 mt-6">
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-base">Bitcoin-Kurs</CardTitle>
+              <CardDescription>BTC/CHF</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <BtcPriceChart series={{ 7: btcHistory[0], 30: btcHistory[1], 365: btcHistory[2] }} />
+            </CardContent>
+          </Card>
+          <Tile
+            label="Bitcoin-Kurs"
+            cents={btcToCents(1, currentBtcRateChf)}
+            hint={currentBtcRateChf === null ? "Kurs momentan nicht verfügbar" : "pro BTC, live"}
+          />
+        </div>
+      )}
     </>
   );
 }
@@ -345,7 +374,7 @@ function Tile({
   hint,
 }: {
   label: string;
-  cents: number;
+  cents: number | null;
   colored?: boolean;
   hint?: string;
 }) {
@@ -354,7 +383,11 @@ function Tile({
       <CardHeader className="pb-2">
         <CardDescription>{label}</CardDescription>
         <CardTitle className="text-2xl">
-          <Money cents={cents} colored={colored} />
+          {cents === null ? (
+            <span className="text-muted-foreground">–</span>
+          ) : (
+            <Money cents={cents} colored={colored} />
+          )}
         </CardTitle>
       </CardHeader>
       {hint && (

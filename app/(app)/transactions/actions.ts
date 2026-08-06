@@ -11,6 +11,7 @@ import { isValidDateString } from "@/lib/date";
 import {
   applyAutoTransfer,
   createTransfer,
+  deleteBtcPurchase,
   deleteTransfer,
   mergeSplit,
   splitTransaction,
@@ -112,6 +113,12 @@ export async function saveTransactionAction(
     }
     if (existing.splitGroupId) {
       return { error: "Aufgeteilte Buchungen müssen über das Aufteilen-Formular bearbeitet werden." };
+    }
+    if (existing.btcWalletId) {
+      return {
+        error:
+          "Bitcoin-Käufe können nicht bearbeitet werden — Buchung löschen und über „Bitcoin-Kauf erfassen“ neu erfassen.",
+      };
     }
     await prisma.transaction.update({ where: { id }, data });
     await logAudit(session, "UPDATE", "Transaction", id, data);
@@ -259,6 +266,9 @@ export async function convertToTransferAction(
   if (existing.splitGroupId) {
     return { error: "Aufgeteilte Buchungen können nicht in eine Umbuchung umgewandelt werden." };
   }
+  if (existing.btcWalletId) {
+    return { error: "Bitcoin-Käufe können nicht in eine Umbuchung umgewandelt werden." };
+  }
 
   try {
     await applyAutoTransfer(prisma, {
@@ -361,6 +371,18 @@ export async function deleteTransactionAction(id: number): Promise<ActionState> 
       count,
       date: existing.date,
       description: existing.description,
+    });
+  } else if (existing.btcWalletId !== null) {
+    // The wallet's btcAmount was incremented directly when this was booked
+    // (see recordBtcPurchase) — take it back out, or the wallet keeps BTC
+    // that no longer has a booking behind it.
+    await deleteBtcPurchase(prisma, existing);
+    await logAudit(session, "DELETE", "Transaction", id, {
+      btcPurchase: true,
+      date: existing.date,
+      amountCents: existing.amountCents,
+      btcQuantity: existing.btcQuantity,
+      btcWalletId: existing.btcWalletId,
     });
   } else {
     await prisma.transaction.delete({ where: { id } });

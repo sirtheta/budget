@@ -146,6 +146,27 @@ describe("splitTransaction", () => {
     ).rejects.toThrow(/Umbuchungen/);
   });
 
+  it("refuses to split a BTC purchase's CHF leg", async () => {
+    const wallet = await prisma.account.create({ data: { name: "BTC Wallet", type: "Crypto" } });
+    const chfLeg = await prisma.transaction.create({
+      data: {
+        date: "2026-11-12",
+        amountCents: -5000,
+        accountId: fixtures.account.id,
+        description: "Bitcoin-Kauf",
+        btcWalletId: wallet.id,
+        btcQuantity: 0.001,
+      },
+    });
+
+    await expect(
+      splitTransaction(prisma, chfLeg.id, [
+        { categoryId: fixtures.groceries.id, amountCents: 2500 },
+        { categoryId: fixtures.groceries.id, amountCents: 2500 },
+      ])
+    ).rejects.toThrow(/Bitcoin/);
+  });
+
   it("re-splitting an already-split booking replaces the existing parts", async () => {
     const booking = await prisma.transaction.create({
       data: {

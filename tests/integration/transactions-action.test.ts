@@ -153,6 +153,25 @@ describe("saveTransactionAction", () => {
     expect(result.error).toMatch(/Umbuchungs-Formular/);
   });
 
+  it("refuses to edit a BTC purchase's CHF leg through the plain form", async () => {
+    const wallet = await prisma.account.create({ data: { name: "BTC Wallet", type: "Crypto" } });
+    const chfLeg = await prisma.transaction.create({
+      data: {
+        date: "2026-07-06",
+        amountCents: -5000,
+        accountId: fixtures.account.id,
+        description: "Bitcoin-Kauf",
+        btcWalletId: wallet.id,
+        btcQuantity: 0.001,
+      },
+    });
+    const result = await saveTransactionAction(
+      undefined,
+      form(baseTxFields({ id: String(chfLeg.id) }))
+    );
+    expect(result.error).toMatch(/Bitcoin/);
+  });
+
   it("creates a counterparty rule and sweeps matching pending bookings when createRule is checked", async () => {
     await prisma.transaction.create({
       data: {
@@ -275,6 +294,25 @@ describe("convertToTransferAction", () => {
     );
     expect(result.error).toBe("Buchung ist bereits eine Umbuchung.");
   });
+
+  it("refuses to convert a BTC purchase's CHF leg into a transfer", async () => {
+    const wallet = await prisma.account.create({ data: { name: "BTC Wallet 2", type: "Crypto" } });
+    const chfLeg = await prisma.transaction.create({
+      data: {
+        date: "2026-07-07",
+        amountCents: -5000,
+        accountId: fixtures.account.id,
+        description: "Bitcoin-Kauf",
+        btcWalletId: wallet.id,
+        btcQuantity: 0.001,
+      },
+    });
+    const result = await convertToTransferAction(
+      undefined,
+      form({ id: String(chfLeg.id), targetAccountId: String(fixtures.savings.id) })
+    );
+    expect(result.error).toBe("Bitcoin-Käufe können nicht in eine Umbuchung umgewandelt werden.");
+  });
 });
 
 describe("deleteTransactionAction", () => {
@@ -305,6 +343,30 @@ describe("deleteTransactionAction", () => {
     const result = await deleteTransactionAction(row.id);
     expect(result).toEqual({ success: true });
     await expect(prisma.transaction.findUniqueOrThrow({ where: { id: row.id } })).rejects.toBeTruthy();
+  });
+
+  it("deleting a BTC purchase's CHF leg reverses the wallet's btcAmount and cost basis", async () => {
+    const wallet = await prisma.account.create({
+      data: { name: "BTC Wallet 3", type: "Crypto", btcAmount: 0.02, btcCostBasisCents: 100000 },
+    });
+    const chfLeg = await prisma.transaction.create({
+      data: {
+        date: "2026-07-12",
+        amountCents: -5000,
+        accountId: fixtures.account.id,
+        description: "Bitcoin-Kauf",
+        btcWalletId: wallet.id,
+        btcQuantity: 0.001,
+      },
+    });
+
+    const result = await deleteTransactionAction(chfLeg.id);
+    expect(result).toEqual({ success: true });
+
+    await expect(prisma.transaction.findUniqueOrThrow({ where: { id: chfLeg.id } })).rejects.toBeTruthy();
+    const updatedWallet = await prisma.account.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(updatedWallet.btcAmount).toBeCloseTo(0.019);
+    expect(updatedWallet.btcCostBasisCents).toBe(95000);
   });
 });
 

@@ -39,6 +39,10 @@ function single(value: string | string[] | undefined): string | undefined {
 /** Turns the URL filters into a Prisma `where`. */
 function buildWhere(params: Record<string, string | undefined>): Prisma.TransactionWhereInput {
   const where: Prisma.TransactionWhereInput = {};
+  // Both an accountId filter and a text search need their own `OR`, so they
+  // can't both live at the top level of `where` — the second would just
+  // overwrite the first. Each becomes one AND-ed clause instead.
+  const and: Prisma.TransactionWhereInput[] = [];
 
   if (params.from || params.to) {
     where.date = {
@@ -46,7 +50,14 @@ function buildWhere(params: Record<string, string | undefined>): Prisma.Transact
       ...(params.to ? { lte: params.to } : {}),
     };
   }
-  if (params.accountId) where.accountId = parseInt(params.accountId, 10);
+  if (params.accountId) {
+    const accountId = parseInt(params.accountId, 10);
+    // A Bitcoin purchase books its CHF leg on the source account and only
+    // links the wallet via btcWalletId (see recordBtcPurchase) rather than a
+    // second ledger row — browsing the wallet account's history must still
+    // surface it, not just the account it was actually debited from.
+    and.push({ OR: [{ accountId }, { btcWalletId: accountId }] });
+  }
   if (params.categoryId === "none") {
     where.categoryId = null;
     where.transferGroupId = null;
@@ -62,7 +73,9 @@ function buildWhere(params: Record<string, string | undefined>): Prisma.Transact
   }
 
   const search = transactionSearchFilter(params.q);
-  if (search) where.OR = search;
+  if (search) and.push({ OR: search });
+
+  if (and.length > 0) where.AND = and;
 
   return where;
 }

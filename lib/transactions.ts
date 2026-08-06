@@ -176,6 +176,7 @@ export async function splitTransaction(
     const source = await tx.transaction.findUnique({ where: { id: transactionId } });
     if (!source) throw new Error("Buchung nicht gefunden.");
     if (source.transferGroupId) throw new Error("Umbuchungen können nicht aufgeteilt werden.");
+    if (source.btcWalletId) throw new Error("Bitcoin-Käufe können nicht aufgeteilt werden.");
 
     const group = source.splitGroupId
       ? await tx.transaction.findMany({
@@ -338,6 +339,12 @@ export async function recordBtcPurchase(
         notes: input.notes ?? null,
         source: "Manual",
         createdById: input.createdById ?? null,
+        // Links this CHF leg to the wallet it funded, so deleting or
+        // otherwise reversing it later (see deleteBtcPurchase) knows how
+        // much to take back out of btcAmount/btcCostBasisCents — the wallet
+        // itself carries no ledger row of its own.
+        btcWalletId: input.cryptoAccountId,
+        btcQuantity: input.btcAmount,
       },
     }),
     // Atomic, NULL-safe increment. `{ btcAmount: { increment } }` compiles to
@@ -353,6 +360,23 @@ export async function recordBtcPurchase(
   ]);
 
   return transaction;
+}
+
+/**
+ * Reverses a booked BTC purchase: takes the CHF/BTC amounts it added back out
+ * of the wallet (the mirror image of the `$executeRaw` increment in
+ * `recordBtcPurchase`), then deletes the CHF leg. Used when such a booking is
+ * deleted — without this, the wallet's `btcAmount` would keep BTC that no
+ * longer has a corresponding booking anywhere.
+ */
+export async function deleteBtcPurchase(prisma: PrismaClient, transaction: Transaction): Promise<void> {
+  if (transaction.btcWalletId === null || transaction.btcQuantity === null) {
+    throw new Error("Buchung ist keinem Bitcoin-Kauf zugeordnet.");
+  }
+  await prisma.$transaction([
+    prisma.$executeRaw`UPDATE "Account" SET "btcAmount" = COALESCE("btcAmount", 0) - ${transaction.btcQuantity}, "btcCostBasisCents" = COALESCE("btcCostBasisCents", 0) + ${transaction.amountCents} WHERE "id" = ${transaction.btcWalletId}`,
+    prisma.transaction.delete({ where: { id: transaction.id } }),
+  ]);
 }
 
 /**

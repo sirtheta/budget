@@ -89,30 +89,34 @@ export function BtcPurchaseDialog({
             value={categoryId === NO_CATEGORY ? "" : categoryId}
           />
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="chfAmount">CHF-Betrag (inkl. Gebühr)</Label>
-              <Input
-                id="chfAmount"
-                name="chfAmount"
-                inputMode="decimal"
-                placeholder="50.00"
-                value={chfAmount}
-                onChange={(e) => setChfAmount(e.target.value)}
-                required
-                autoFocus
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="btcAmount">BTC erhalten</Label>
-              <Input
-                id="btcAmount"
-                name="btcAmount"
-                inputMode="decimal"
-                placeholder={estimate ? estimate.toFixed(8) : "0.00050000"}
-                required
-              />
-            </div>
+          {/*
+            Explicit label/input rows (not two "flex flex-col" columns): a
+            column layout lets one column's own label height (e.g. wrapping
+            to two lines on a narrow phone) push its input down without
+            affecting the sibling column, so the two inputs end up at
+            different heights. Grid rows keep both labels in one shared row
+            and both inputs in the next, whatever either label's height is.
+          */}
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+            <Label htmlFor="chfAmount">CHF-Betrag (inkl. Gebühr)</Label>
+            <Label htmlFor="btcAmount">BTC erhalten</Label>
+            <Input
+              id="chfAmount"
+              name="chfAmount"
+              inputMode="decimal"
+              placeholder="50.00"
+              value={chfAmount}
+              onChange={(e) => setChfAmount(e.target.value)}
+              required
+              autoFocus
+            />
+            <Input
+              id="btcAmount"
+              name="btcAmount"
+              inputMode="decimal"
+              placeholder={estimate ? estimate.toFixed(8) : "0.00050000"}
+              required
+            />
           </div>
           {estimate !== null && (
             <p className="-mt-2 text-xs text-muted-foreground">
@@ -136,40 +140,36 @@ export function BtcPurchaseDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="source-trigger">Von Konto</Label>
-              <Combobox
-                id="source-trigger"
-                value={sourceAccountId}
-                onValueChange={setSourceAccountId}
-                options={sourceAccounts.map((account) => ({
-                  value: String(account.id),
-                  label: account.name,
-                }))}
-                placeholder="Quellkonto"
-                searchPlaceholder="Konto suchen…"
-                emptyText="Kein Konto gefunden."
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="category-trigger">Kategorie (optional)</Label>
-              <Combobox
-                id="category-trigger"
-                value={categoryId}
-                onValueChange={setCategoryId}
-                options={[
-                  { value: NO_CATEGORY, label: "Ohne Kategorie" },
-                  ...expenseCategories.map((category) => ({
-                    value: String(category.id),
-                    label: category.label,
-                  })),
-                ]}
-                placeholder="Kategorie wählen"
-                searchPlaceholder="Kategorie suchen…"
-                emptyText="Keine Kategorie gefunden."
-              />
-            </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+            <Label htmlFor="source-trigger">Von Konto</Label>
+            <Label htmlFor="category-trigger">Kategorie (optional)</Label>
+            <Combobox
+              id="source-trigger"
+              value={sourceAccountId}
+              onValueChange={setSourceAccountId}
+              options={sourceAccounts.map((account) => ({
+                value: String(account.id),
+                label: account.name,
+              }))}
+              placeholder="Quellkonto"
+              searchPlaceholder="Konto suchen…"
+              emptyText="Kein Konto gefunden."
+            />
+            <Combobox
+              id="category-trigger"
+              value={categoryId}
+              onValueChange={setCategoryId}
+              options={[
+                { value: NO_CATEGORY, label: "Ohne Kategorie" },
+                ...expenseCategories.map((category) => ({
+                  value: String(category.id),
+                  label: category.label,
+                })),
+              ]}
+              placeholder="Kategorie wählen"
+              searchPlaceholder="Kategorie suchen…"
+              emptyText="Keine Kategorie gefunden."
+            />
           </div>
 
           <div className="flex flex-col gap-2">

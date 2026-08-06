@@ -174,6 +174,15 @@ describe("recordBtcPurchaseAction", () => {
     const updatedWallet = await prisma.account.findUniqueOrThrow({ where: { id: wallet.id } });
     expect(updatedWallet.btcAmount).toBeCloseTo(0.51);
 
+    // The CHF leg carries the wallet link and BTC quantity, not just the CHF
+    // amount — deleting it later (see deleteTransactionAction) needs both to
+    // reverse the wallet update.
+    const chfLeg = await prisma.transaction.findFirstOrThrow({
+      where: { description: "Kauf via Kraken" },
+    });
+    expect(chfLeg.btcWalletId).toBe(wallet.id);
+    expect(chfLeg.btcQuantity).toBeCloseTo(0.01);
+
     const audit = await prisma.auditLog.findFirst({
       where: { entityType: "Transaction", details: { contains: "btcPurchase" } },
     });

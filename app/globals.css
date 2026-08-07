@@ -208,4 +208,18 @@ html.dark[data-color="rose"] {
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold tracking-tight;
   }
+  /* Tailwind 4 dropped `button { cursor: pointer }` from its preflight, so
+     without this every control in the app hovers with the arrow cursor and
+     reads as inert. Radix builds its menu, select and tab entries from divs
+     carrying a role rather than from buttons — hence the role selectors.
+     Disabled controls keep the default cursor. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="menuitemcheckbox"]:not([aria-disabled="true"]),
+  [role="menuitemradio"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
 }

@@ -157,15 +157,12 @@ function LegendRow({
 }) {
   const Chevron = expanded ? ChevronDown : ChevronRight;
 
-  // `cursor-pointer` is explicit because Tailwind 4 dropped
-  // `button { cursor: pointer }` from its preflight — without it the row reads
-  // as inert next to the donut segment it mirrors.
   return (
     <button
       type="button"
       onClick={onClick}
       aria-expanded={expanded}
-      className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-accent text-left cursor-pointer"
+      className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-accent text-left"
     >
       {expanded === undefined ? (
         <span

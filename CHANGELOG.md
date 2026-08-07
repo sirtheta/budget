@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.18](https://github.com/sirtheta/budget/compare/budget-v0.1.17...budget-v0.1.18) (2026-08-07)
+
+
+### Features
+
+* **analytics:** drill down from pie slices and "Übrige" ([#67](https://github.com/sirtheta/budget/issues/67)) ([62cf191](https://github.com/sirtheta/budget/commit/62cf1917ed54f471a1c5e9b270da6e7984ed4d69))
+
 ## [0.1.17](https://github.com/sirtheta/budget/compare/budget-v0.1.16...budget-v0.1.17) (2026-08-06)
 
 

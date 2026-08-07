@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.17](https://github.com/sirtheta/budget/compare/budget-v0.1.16...budget-v0.1.17) (2026-08-06)
+
+
+### Features
+
+* **dashboard:** show BTC/CHF price and history chart ([#60](https://github.com/sirtheta/budget/issues/60)) ([33d342d](https://github.com/sirtheta/budget/commit/33d342db8b92bcb2be3ae54334b6614e114e4540))
+
+
+### Bug Fixes
+
+* **accounts:** fix BTC purchase mobile layout, deletion, and history ([#58](https://github.com/sirtheta/budget/issues/58)) ([75a5eca](https://github.com/sirtheta/budget/commit/75a5eca7efb01c6e9ee2006388934ad01c0909dd))
+
 ## [0.1.16](https://github.com/sirtheta/budget/compare/budget-v0.1.15...budget-v0.1.16) (2026-08-05)
 
 

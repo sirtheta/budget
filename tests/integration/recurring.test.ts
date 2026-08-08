@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@prisma/client";
-import { dueRecurring, pendingSuggestions, postDueRecurring } from "@/lib/recurring";
+import {
+  dueRecurring,
+  pendingSuggestions,
+  postDueRecurring,
+  upcomingRecurring,
+} from "@/lib/recurring";
 import { createTestDb, seedBasics } from "./helpers";
 
 let prisma: PrismaClient;
@@ -42,6 +47,23 @@ describe("dueRecurring", () => {
 
     expect(dueRecurring(rows, "2026-02-01").map((r) => r.id)).toEqual([1]);
     expect(pendingSuggestions(rows, "2026-02-01").map((r) => r.id)).toEqual([4]);
+  });
+});
+
+describe("upcomingRecurring", () => {
+  it("takes the next 30 days, skipping what is already due or ended", async () => {
+    const rows = [
+      { id: 1, name: "Miete", isActive: true, nextDate: "2026-02-05", endDate: null },
+      { id: 2, name: "Serafe", isActive: true, nextDate: "2026-02-20", endDate: null },
+      // Already due — posted or waiting as a suggestion, not "coming up".
+      { id: 3, name: "Alt", isActive: true, nextDate: "2026-02-01", endDate: null },
+      // Beyond the horizon.
+      { id: 4, name: "Steuern", isActive: true, nextDate: "2026-04-01", endDate: null },
+      { id: 5, name: "Inaktiv", isActive: false, nextDate: "2026-02-06", endDate: null },
+      { id: 6, name: "Ausgelaufen", isActive: true, nextDate: "2026-02-07", endDate: "2026-01-31" },
+    ] as Parameters<typeof upcomingRecurring>[0];
+
+    expect(upcomingRecurring(rows, "2026-02-01", 30).map((r) => r.id)).toEqual([1, 2]);
   });
 });
 

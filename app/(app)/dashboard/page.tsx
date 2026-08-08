@@ -15,7 +15,7 @@ import { accountBalances, illiquidNetWorthCents, liquidNetWorthCents, netWorthCe
 import { loadBudgetMonth } from "@/lib/budget";
 import { categoryBreakdown, monthlySeries } from "@/lib/analytics";
 import { goalStatus, reserveStatus, totalMonthlyReserveCents } from "@/lib/reserves";
-import { pendingSuggestions } from "@/lib/recurring";
+import { pendingSuggestions, upcomingRecurring } from "@/lib/recurring";
 import { categoryOptions } from "@/lib/categories";
 import { formatMoney } from "@/lib/money";
 import { colorFor } from "@/lib/colors";
@@ -95,6 +95,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   ]);
 
   const suggestions = isCurrentMonth ? pendingSuggestions(recurring, today) : [];
+  const upcoming = isCurrentMonth ? upcomingRecurring(recurring, today, 30) : [];
+  const upcomingTotalCents = upcoming.reduce((sum, row) => sum + row.amountCents, 0);
   const reserveMonthly = totalMonthlyReserveCents(reserves, today);
 
   // Underfunded first, then whatever falls due next: a reserve that is already
@@ -363,86 +365,135 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </Card>
       </div>
 
-      {(reserveStatuses.length > 0 || goalStatuses.length > 0) && (
+      {(reserveStatuses.length > 0 || goalStatuses.length > 0 || upcoming.length > 0) && (
         <div className="grid gap-6 lg:grid-cols-2 mb-6">
-          <Card>
-            <CardHeader className="flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base">Rückstellungen & Sparziele</CardTitle>
-                <CardDescription>
-                  Monatlich zurückzulegen: {formatMoney(reserveMonthly, { withCurrency: true })}
-                </CardDescription>
-              </div>
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/reserves">
-                  Alle <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              {reserveStatuses.slice(0, 4).map((status) => (
-                <div key={`reserve-${status.id}`}>
-                  <div className="flex items-center justify-between gap-2 text-sm mb-1">
-                    <span className="truncate flex items-center gap-2">
-                      {status.name}
-                      {status.isShort ? (
-                        <Badge variant="destructive">Unterdeckt</Badge>
-                      ) : (
-                        status.isDue && <Badge variant="secondary">Fällig</Badge>
-                      )}
-                    </span>
-                    <span className="shrink-0 text-muted-foreground tabular-nums">
-                      <Money cents={status.savedCents} /> / <Money cents={status.targetAmountCents} />
-                    </span>
-                  </div>
-                  <Progress
-                    value={status.progress}
-                    label={status.name}
-                    indicatorClassName={status.isShort ? "bg-destructive" : "bg-primary"}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {status.missingCents === 0
-                      ? `Vollständig · fällig am ${formatDateCH(status.nextDueDate)}`
-                      : status.monthsRemaining > 0
-                        ? `${formatMoney(status.monthlyRateCents, {
-                            withCurrency: true,
-                          })} pro Monat bis ${formatDateCH(status.nextDueDate)}`
-                        : `Jetzt fällig — es fehlen ${formatMoney(status.missingCents, {
-                            withCurrency: true,
-                          })}`}
-                  </p>
+          {upcoming.length > 0 && (
+            <Card>
+              <CardHeader className="flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <CalendarClock className="h-4 w-4" />
+                    Kommende 30 Tage
+                  </CardTitle>
+                  <CardDescription>
+                    Wiederkehrende Buchungen, Saldo{" "}
+                    {formatMoney(upcomingTotalCents, { withCurrency: true, forceSign: true })}
+                  </CardDescription>
                 </div>
-              ))}
-
-              {goalStatuses.slice(0, 2).map((status) => (
-                <div key={`goal-${status.id}`}>
-                  <div className="flex items-center justify-between gap-2 text-sm mb-1">
-                    <span className="truncate flex items-center gap-2">
-                      <span
-                        className="size-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: status.color ?? "#6366f1" }}
-                        aria-hidden
-                      />
-                      {status.name}
-                      {status.isReached && (
-                        <Badge className="bg-emerald-500 text-white border-transparent">
-                          Erreicht
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/recurring">
+                    Alle <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <ul className="divide-y">
+                  {upcoming.slice(0, 6).map((row) => (
+                    <li key={row.id} className="flex items-center gap-3 py-2">
+                      <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">
+                        {formatDateCH(row.nextDate)}
+                      </span>
+                      <span className="text-sm truncate flex-1">{row.name}</span>
+                      {!row.autoPost && (
+                        <Badge variant="outline" className="shrink-0">
+                          Bestätigung
                         </Badge>
                       )}
-                    </span>
-                    <span className="shrink-0 text-muted-foreground tabular-nums">
-                      <Money cents={status.savedCents} /> / <Money cents={status.targetAmountCents} />
-                    </span>
-                  </div>
-                  <Progress
-                    value={status.progress}
-                    label={status.name}
-                    indicatorClassName={status.isReached ? "bg-emerald-500" : "bg-primary"}
-                  />
+                      <span className="shrink-0 font-medium text-sm">
+                        <Money cents={row.amountCents} colored />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {upcoming.length > 6 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    und {upcoming.length - 6} weitere
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {(reserveStatuses.length > 0 || goalStatuses.length > 0) && (
+            <Card>
+              <CardHeader className="flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Rückstellungen & Sparziele</CardTitle>
+                  <CardDescription>
+                    Monatlich zurückzulegen: {formatMoney(reserveMonthly, { withCurrency: true })}
+                  </CardDescription>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/reserves">
+                    Alle <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                {reserveStatuses.slice(0, 4).map((status) => (
+                  <div key={`reserve-${status.id}`}>
+                    <div className="flex items-center justify-between gap-2 text-sm mb-1">
+                      <span className="truncate flex items-center gap-2">
+                        {status.name}
+                        {status.isShort ? (
+                          <Badge variant="destructive">Unterdeckt</Badge>
+                        ) : (
+                          status.isDue && <Badge variant="secondary">Fällig</Badge>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-muted-foreground tabular-nums">
+                        <Money cents={status.savedCents} /> / <Money cents={status.targetAmountCents} />
+                      </span>
+                    </div>
+                    <Progress
+                      value={status.progress}
+                      label={status.name}
+                      indicatorClassName={status.isShort ? "bg-destructive" : "bg-primary"}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {status.missingCents === 0
+                        ? `Vollständig · fällig am ${formatDateCH(status.nextDueDate)}`
+                        : status.monthsRemaining > 0
+                          ? `${formatMoney(status.monthlyRateCents, {
+                              withCurrency: true,
+                            })} pro Monat bis ${formatDateCH(status.nextDueDate)}`
+                          : `Jetzt fällig — es fehlen ${formatMoney(status.missingCents, {
+                              withCurrency: true,
+                            })}`}
+                    </p>
+                  </div>
+                ))}
+
+                {goalStatuses.slice(0, 2).map((status) => (
+                  <div key={`goal-${status.id}`}>
+                    <div className="flex items-center justify-between gap-2 text-sm mb-1">
+                      <span className="truncate flex items-center gap-2">
+                        <span
+                          className="size-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: status.color ?? "#6366f1" }}
+                          aria-hidden
+                        />
+                        {status.name}
+                        {status.isReached && (
+                          <Badge className="bg-emerald-500 text-white border-transparent">
+                            Erreicht
+                          </Badge>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-muted-foreground tabular-nums">
+                        <Money cents={status.savedCents} /> / <Money cents={status.targetAmountCents} />
+                      </span>
+                    </div>
+                    <Progress
+                      value={status.progress}
+                      label={status.name}
+                      indicatorClassName={status.isReached ? "bg-emerald-500" : "bg-primary"}
+                    />
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 

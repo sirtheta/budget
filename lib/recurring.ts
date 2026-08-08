@@ -2,7 +2,7 @@ import cron from "node-cron";
 import type { PrismaClient, RecurringTransaction } from "@prisma/client";
 import logger from "@/lib/logger";
 import { config } from "@/lib/config";
-import { addMonths, todayInZone } from "@/lib/date";
+import { addDays, addMonths, todayInZone } from "@/lib/date";
 import { createTransfer } from "@/lib/transactions";
 
 const log = logger.child({ module: "recurring" });
@@ -53,6 +53,31 @@ export function pendingSuggestions(
       row.nextDate <= today &&
       (row.endDate === null || row.nextDate <= row.endDate)
   );
+}
+
+/**
+ * Entries whose next occurrence falls into the coming `days` days.
+ *
+ * Deliberately excludes anything already due: that has either been posted or
+ * is waiting as a suggestion. What this answers is the other question a
+ * household has mid-month — how much of the balance is already spoken for
+ * before the next salary lands.
+ */
+export function upcomingRecurring(
+  rows: RecurringTransaction[],
+  today: string,
+  days = 30
+): RecurringTransaction[] {
+  const horizon = addDays(today, days);
+  return rows
+    .filter(
+      (row) =>
+        row.isActive &&
+        row.nextDate > today &&
+        row.nextDate <= horizon &&
+        (row.endDate === null || row.nextDate <= row.endDate)
+    )
+    .sort((a, b) => a.nextDate.localeCompare(b.nextDate) || a.name.localeCompare(b.name));
 }
 
 /**

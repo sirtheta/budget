@@ -18,6 +18,7 @@ import { totalMonthlyReserveCents } from "@/lib/reserves";
 import { pendingSuggestions } from "@/lib/recurring";
 import { categoryOptions } from "@/lib/categories";
 import { formatMoney } from "@/lib/money";
+import { colorFor } from "@/lib/colors";
 import { btcChfHistory, btcToCents } from "@/lib/crypto-price";
 import { PageHeader } from "@/components/page-header";
 import { MonthNav } from "@/components/month-nav";
@@ -30,6 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { TransactionFormDialog } from "@/app/(app)/transactions/transaction-form-dialog";
+import { TransactionRowActions } from "@/app/(app)/transactions/transaction-row-actions";
 import { PostSuggestionButton } from "./post-suggestion-button";
 
 export const dynamic = "force-dynamic";
@@ -71,7 +73,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       orderBy: [{ date: "desc" }, { id: "desc" }],
       take: 8,
       include: {
-        account: { select: { name: true } },
+        account: { select: { name: true, color: true } },
         category: { select: { name: true } },
       },
     }),
@@ -348,11 +350,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           ) : (
             <ul className="divide-y">
               {recentTransactions.map((transaction) => (
-                <li key={transaction.id} className="flex items-center gap-3 py-2">
+                <li key={transaction.id} className="group flex items-center gap-3 py-2">
                   <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">
                     {formatDateCH(transaction.date)}
                   </span>
-                  <span className="text-sm truncate flex-1">{transaction.description}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="text-sm block truncate">{transaction.description}</span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <span
+                        className="size-2 rounded-full shrink-0"
+                        style={{ backgroundColor: colorFor(transaction.accountId, transaction.account.color) }}
+                        aria-hidden
+                      />
+                      <span className="truncate">{transaction.account.name}</span>
+                    </span>
+                  </span>
                   {transaction.transferGroupId ? (
                     <Badge variant="secondary" className="shrink-0">
                       Umbuchung
@@ -365,6 +377,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                   <span className="shrink-0 font-medium text-sm w-24 text-right">
                     <Money cents={transaction.amountCents} colored />
                   </span>
+                  {canEdit && (
+                    <TransactionRowActions
+                      transaction={transaction}
+                      accounts={accounts}
+                      categories={categories}
+                      today={today}
+                    />
+                  )}
                 </li>
               ))}
             </ul>

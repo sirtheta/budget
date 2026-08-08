@@ -325,136 +325,335 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3 mb-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Einnahmen und Ausgaben</CardTitle>
-            <CardDescription>Die letzten 12 Monate</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <MonthlyBarChart data={series} />
-          </CardContent>
-        </Card>
+      {/*
+        One flex column so the cards can be ordered per breakpoint. On a phone
+        the charts are three screens of scrolling in front of the bookings and
+        balances the user opened the app for, so there they come last; from lg
+        the original reading order (trend first) is restored.
+      */}
+      <div className="flex flex-col gap-6 mb-6">
+        <div className="grid gap-6 lg:grid-cols-3 order-3 lg:order-1">
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-base">Einnahmen und Ausgaben</CardTitle>
+              <CardDescription>Die letzten 12 Monate</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <MonthlyBarChart data={series} />
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Konten</CardTitle>
-            <CardDescription>
-              {isCurrentMonth ? "" : `Stand ${formatDateCH(monthTo)} · `}
-              Konto anklicken für seine Buchungen
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            {accountGroups.map((group) => (
-              <div key={group.type}>
-                {accountGroups.length > 1 && (
-                  <div className="flex items-baseline justify-between gap-2 mb-1">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {ACCOUNT_TYPE_LABELS[group.type]}
-                    </h3>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      <Money cents={group.totalCents} />
-                    </span>
-                  </div>
-                )}
-                <ul className="flex flex-col">
-                  {group.accounts.map((account) => (
-                    <li key={account.id}>
+          <Card className="order-first lg:order-none">
+            <CardHeader>
+              <CardTitle className="text-base">Konten</CardTitle>
+              <CardDescription>
+                {isCurrentMonth ? "" : `Stand ${formatDateCH(monthTo)} · `}
+                Konto anklicken für seine Buchungen
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              {accountGroups.map((group) => (
+                <div key={group.type}>
+                  {accountGroups.length > 1 && (
+                    <div className="flex items-baseline justify-between gap-2 mb-1">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {ACCOUNT_TYPE_LABELS[group.type]}
+                      </h3>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        <Money cents={group.totalCents} />
+                      </span>
+                    </div>
+                  )}
+                  <ul className="flex flex-col">
+                    {group.accounts.map((account) => (
+                      <li key={account.id}>
+                        <Link
+                          href={`/transactions?accountId=${account.id}&from=${monthFrom}&to=${monthTo}`}
+                          // One link per account, and the booking list is a dynamic
+                          // page: prefetching all of them renders it that many times.
+                          prefetch={false}
+                          className="flex items-center gap-2 rounded-md px-2 py-1.5 -mx-2 text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                        >
+                          <span
+                            className="size-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: account.color }}
+                            aria-hidden
+                          />
+                          <span className="truncate">{account.name}</span>
+                          {account.excludeFromBudget && (
+                            // Otherwise its bookings are missing from every budget
+                            // figure on this page with nothing saying why.
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              ausserhalb Budget
+                            </span>
+                          )}
+                          {!isCurrentMonth && account.type === "Crypto" && (
+                            // Only a live BTC price exists, so this one value is not
+                            // the month-end figure the rest of the card shows.
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              aktueller Kurs
+                            </span>
+                          )}
+                          <span className="ml-auto shrink-0 font-medium">
+                            <Money cents={account.balanceCents} colored />
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2 order-4 lg:order-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Ausgaben nach Kategorie</CardTitle>
+              <CardDescription>
+                {monthName(month)} {year} — Slice anklicken für die Buchungen
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CategoryPieChart slices={breakdown} from={monthFrom} to={monthTo} />
+            </CardContent>
+          </Card>
+
+          <Card className="order-first lg:order-none">
+            <CardHeader className="flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base">Budget im Blick</CardTitle>
+                <CardDescription>
+                  Kategorien nahe an oder über dem Budget — Zeile anklicken für die Buchungen
+                </CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/budget">
+                  Alle <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {overBudget.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Alles im Rahmen.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {overBudget.slice(0, 6).map((line) => (
+                    <li key={line.categoryId}>
                       <Link
-                        href={`/transactions?accountId=${account.id}&from=${monthFrom}&to=${monthTo}`}
-                        // One link per account, and the booking list is a dynamic
-                        // page: prefetching all of them renders it that many times.
+                        href={`/transactions?categoryId=${line.categoryId}&from=${monthFrom}&to=${monthTo}`}
                         prefetch={false}
-                        className="flex items-center gap-2 rounded-md px-2 py-1.5 -mx-2 text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                        className="block rounded-md px-2 py-1 -mx-2 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
                       >
-                        <span
-                          className="size-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: account.color }}
-                          aria-hidden
+                        <div className="flex items-center justify-between gap-2 text-sm mb-1">
+                          <span className="truncate">{line.name}</span>
+                          <span className="shrink-0 text-muted-foreground tabular-nums">
+                            <Money cents={line.actualCents} /> / <Money cents={line.plannedCents} />
+                          </span>
+                        </div>
+                        <Progress
+                          value={line.progress ?? 0}
+                          label={line.name}
+                          indicatorClassName={
+                            line.status === "over" ? "bg-destructive" : "bg-amber-500"
+                          }
                         />
-                        <span className="truncate">{account.name}</span>
-                        {account.excludeFromBudget && (
-                          // Otherwise its bookings are missing from every budget
-                          // figure on this page with nothing saying why.
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            ausserhalb Budget
-                          </span>
-                        )}
-                        {!isCurrentMonth && account.type === "Crypto" && (
-                          // Only a live BTC price exists, so this one value is not
-                          // the month-end figure the rest of the card shows.
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            aktueller Kurs
-                          </span>
-                        )}
-                        <span className="ml-auto shrink-0 font-medium">
-                          <Money cents={account.balanceCents} colored />
-                        </span>
                       </Link>
                     </li>
                   ))}
                 </ul>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
-      <div className="grid gap-6 lg:grid-cols-2 mb-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Ausgaben nach Kategorie</CardTitle>
-            <CardDescription>
-              {monthName(month)} {year} — Slice anklicken für die Buchungen
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CategoryPieChart slices={breakdown} from={monthFrom} to={monthTo} />
-          </CardContent>
-        </Card>
+        {(reserveStatuses.length > 0 || goalStatuses.length > 0 || upcoming.length > 0) && (
+          <div className="grid gap-6 lg:grid-cols-2 order-2 lg:order-3">
+            {upcoming.length > 0 && (
+              <Card>
+                <CardHeader className="flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <CalendarClock className="h-4 w-4" />
+                      Kommende 30 Tage
+                    </CardTitle>
+                    <CardDescription>
+                      Wiederkehrende Buchungen, Saldo{" "}
+                      {formatMoney(upcomingTotalCents, { withCurrency: true, forceSign: true })}
+                    </CardDescription>
+                  </div>
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href="/recurring">
+                      Alle <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <ul className="divide-y">
+                    {upcoming.slice(0, 6).map((row) => (
+                      <li key={row.id} className="flex items-center gap-3 py-2">
+                        <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">
+                          {formatDateCH(row.nextDate)}
+                        </span>
+                        <span className="text-sm truncate flex-1">{row.name}</span>
+                        {!row.autoPost && (
+                          <Badge variant="outline" className="shrink-0">
+                            Bestätigung
+                          </Badge>
+                        )}
+                        <span className="shrink-0 font-medium text-sm">
+                          <Money cents={row.amountCents} colored />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {upcoming.length > 6 && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      und {upcoming.length - 6} weitere
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
-        <Card>
+            {(reserveStatuses.length > 0 || goalStatuses.length > 0) && (
+              <Card>
+                <CardHeader className="flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base">Rückstellungen & Sparziele</CardTitle>
+                    <CardDescription>
+                      Monatlich zurückzulegen: {formatMoney(reserveMonthly, { withCurrency: true })}
+                    </CardDescription>
+                  </div>
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href="/reserves">
+                      Alle <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4">
+                  {reserveStatuses.slice(0, 4).map((status) => (
+                    <div key={`reserve-${status.id}`}>
+                      <div className="flex items-center justify-between gap-2 text-sm mb-1">
+                        <span className="truncate flex items-center gap-2">
+                          {status.name}
+                          {status.isShort ? (
+                            <Badge variant="destructive">Unterdeckt</Badge>
+                          ) : (
+                            status.isDue && <Badge variant="secondary">Fällig</Badge>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-muted-foreground tabular-nums">
+                          <Money cents={status.savedCents} /> / <Money cents={status.targetAmountCents} />
+                        </span>
+                      </div>
+                      <Progress
+                        value={status.progress}
+                        label={status.name}
+                        indicatorClassName={status.isShort ? "bg-destructive" : "bg-primary"}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {status.missingCents === 0
+                          ? `Vollständig · fällig am ${formatDateCH(status.nextDueDate)}`
+                          : status.monthsRemaining > 0
+                            ? `${formatMoney(status.monthlyRateCents, {
+                                withCurrency: true,
+                              })} pro Monat bis ${formatDateCH(status.nextDueDate)}`
+                            : `Jetzt fällig — es fehlen ${formatMoney(status.missingCents, {
+                                withCurrency: true,
+                              })}`}
+                      </p>
+                    </div>
+                  ))}
+
+                  {goalStatuses.slice(0, 2).map((status) => (
+                    <div key={`goal-${status.id}`}>
+                      <div className="flex items-center justify-between gap-2 text-sm mb-1">
+                        <span className="truncate flex items-center gap-2">
+                          <span
+                            className="size-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: status.color ?? "#6366f1" }}
+                            aria-hidden
+                          />
+                          {status.name}
+                          {status.isReached && (
+                            <Badge className="bg-emerald-500 text-white border-transparent">
+                              Erreicht
+                            </Badge>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-muted-foreground tabular-nums">
+                          <Money cents={status.savedCents} /> / <Money cents={status.targetAmountCents} />
+                        </span>
+                      </div>
+                      <Progress
+                        value={status.progress}
+                        label={status.name}
+                        indicatorClassName={status.isReached ? "bg-emerald-500" : "bg-primary"}
+                      />
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+
+        <Card className="order-1 lg:order-4">
           <CardHeader className="flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-base">Budget im Blick</CardTitle>
-              <CardDescription>
-                Kategorien nahe an oder über dem Budget — Zeile anklicken für die Buchungen
-              </CardDescription>
-            </div>
+            <CardTitle className="text-base">Letzte Buchungen</CardTitle>
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/budget">
+              <Link href="/transactions">
                 Alle <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </Button>
           </CardHeader>
           <CardContent>
-            {overBudget.length === 0 ? (
+            {recentTransactions.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                Alles im Rahmen.
+                Noch keine Buchungen erfasst.
               </p>
             ) : (
-              <ul className="flex flex-col gap-3">
-                {overBudget.slice(0, 6).map((line) => (
-                  <li key={line.categoryId}>
-                    <Link
-                      href={`/transactions?categoryId=${line.categoryId}&from=${monthFrom}&to=${monthTo}`}
-                      prefetch={false}
-                      className="block rounded-md px-2 py-1 -mx-2 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-                    >
-                      <div className="flex items-center justify-between gap-2 text-sm mb-1">
-                        <span className="truncate">{line.name}</span>
-                        <span className="shrink-0 text-muted-foreground tabular-nums">
-                          <Money cents={line.actualCents} /> / <Money cents={line.plannedCents} />
-                        </span>
-                      </div>
-                      <Progress
-                        value={line.progress ?? 0}
-                        label={line.name}
-                        indicatorClassName={
-                          line.status === "over" ? "bg-destructive" : "bg-amber-500"
-                        }
+              <ul className="divide-y">
+                {recentTransactions.map((transaction) => (
+                  <li key={transaction.id} className="group flex items-center gap-3 py-2">
+                    <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">
+                      {formatDateCH(transaction.date)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="text-sm block truncate">{transaction.description}</span>
+                      <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <span
+                          className="size-2 rounded-full shrink-0"
+                          style={{ backgroundColor: colorFor(transaction.accountId, transaction.account.color) }}
+                          aria-hidden
+                        />
+                        <span className="truncate">{transaction.account.name}</span>
+                      </span>
+                    </span>
+                    {transaction.transferGroupId ? (
+                      <Badge variant="secondary" className="shrink-0">
+                        Umbuchung
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
+                        {transaction.category?.name ?? "Ohne Kategorie"}
+                      </span>
+                    )}
+                    <span className="shrink-0 font-medium text-sm w-24 text-right">
+                      <Money cents={transaction.amountCents} colored />
+                    </span>
+                    {canEdit && (
+                      <TransactionRowActions
+                        transaction={transaction}
+                        accounts={accounts}
+                        categories={categories}
+                        today={today}
                       />
-                    </Link>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -463,199 +662,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </Card>
       </div>
 
-      {(reserveStatuses.length > 0 || goalStatuses.length > 0 || upcoming.length > 0) && (
-        <div className="grid gap-6 lg:grid-cols-2 mb-6">
-          {upcoming.length > 0 && (
-            <Card>
-              <CardHeader className="flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <CalendarClock className="h-4 w-4" />
-                    Kommende 30 Tage
-                  </CardTitle>
-                  <CardDescription>
-                    Wiederkehrende Buchungen, Saldo{" "}
-                    {formatMoney(upcomingTotalCents, { withCurrency: true, forceSign: true })}
-                  </CardDescription>
-                </div>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link href="/recurring">
-                    Alle <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <ul className="divide-y">
-                  {upcoming.slice(0, 6).map((row) => (
-                    <li key={row.id} className="flex items-center gap-3 py-2">
-                      <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">
-                        {formatDateCH(row.nextDate)}
-                      </span>
-                      <span className="text-sm truncate flex-1">{row.name}</span>
-                      {!row.autoPost && (
-                        <Badge variant="outline" className="shrink-0">
-                          Bestätigung
-                        </Badge>
-                      )}
-                      <span className="shrink-0 font-medium text-sm">
-                        <Money cents={row.amountCents} colored />
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                {upcoming.length > 6 && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    und {upcoming.length - 6} weitere
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {(reserveStatuses.length > 0 || goalStatuses.length > 0) && (
-            <Card>
-              <CardHeader className="flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-base">Rückstellungen & Sparziele</CardTitle>
-                  <CardDescription>
-                    Monatlich zurückzulegen: {formatMoney(reserveMonthly, { withCurrency: true })}
-                  </CardDescription>
-                </div>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link href="/reserves">
-                    Alle <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                </Button>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                {reserveStatuses.slice(0, 4).map((status) => (
-                  <div key={`reserve-${status.id}`}>
-                    <div className="flex items-center justify-between gap-2 text-sm mb-1">
-                      <span className="truncate flex items-center gap-2">
-                        {status.name}
-                        {status.isShort ? (
-                          <Badge variant="destructive">Unterdeckt</Badge>
-                        ) : (
-                          status.isDue && <Badge variant="secondary">Fällig</Badge>
-                        )}
-                      </span>
-                      <span className="shrink-0 text-muted-foreground tabular-nums">
-                        <Money cents={status.savedCents} /> / <Money cents={status.targetAmountCents} />
-                      </span>
-                    </div>
-                    <Progress
-                      value={status.progress}
-                      label={status.name}
-                      indicatorClassName={status.isShort ? "bg-destructive" : "bg-primary"}
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {status.missingCents === 0
-                        ? `Vollständig · fällig am ${formatDateCH(status.nextDueDate)}`
-                        : status.monthsRemaining > 0
-                          ? `${formatMoney(status.monthlyRateCents, {
-                              withCurrency: true,
-                            })} pro Monat bis ${formatDateCH(status.nextDueDate)}`
-                          : `Jetzt fällig — es fehlen ${formatMoney(status.missingCents, {
-                              withCurrency: true,
-                            })}`}
-                    </p>
-                  </div>
-                ))}
-
-                {goalStatuses.slice(0, 2).map((status) => (
-                  <div key={`goal-${status.id}`}>
-                    <div className="flex items-center justify-between gap-2 text-sm mb-1">
-                      <span className="truncate flex items-center gap-2">
-                        <span
-                          className="size-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: status.color ?? "#6366f1" }}
-                          aria-hidden
-                        />
-                        {status.name}
-                        {status.isReached && (
-                          <Badge className="bg-emerald-500 text-white border-transparent">
-                            Erreicht
-                          </Badge>
-                        )}
-                      </span>
-                      <span className="shrink-0 text-muted-foreground tabular-nums">
-                        <Money cents={status.savedCents} /> / <Money cents={status.targetAmountCents} />
-                      </span>
-                    </div>
-                    <Progress
-                      value={status.progress}
-                      label={status.name}
-                      indicatorClassName={status.isReached ? "bg-emerald-500" : "bg-primary"}
-                    />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
-
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base">Letzte Buchungen</CardTitle>
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/transactions">
-              Alle <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {recentTransactions.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Noch keine Buchungen erfasst.
-            </p>
-          ) : (
-            <ul className="divide-y">
-              {recentTransactions.map((transaction) => (
-                <li key={transaction.id} className="group flex items-center gap-3 py-2">
-                  <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">
-                    {formatDateCH(transaction.date)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="text-sm block truncate">{transaction.description}</span>
-                    <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                      <span
-                        className="size-2 rounded-full shrink-0"
-                        style={{ backgroundColor: colorFor(transaction.accountId, transaction.account.color) }}
-                        aria-hidden
-                      />
-                      <span className="truncate">{transaction.account.name}</span>
-                    </span>
-                  </span>
-                  {transaction.transferGroupId ? (
-                    <Badge variant="secondary" className="shrink-0">
-                      Umbuchung
-                    </Badge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
-                      {transaction.category?.name ?? "Ohne Kategorie"}
-                    </span>
-                  )}
-                  <span className="shrink-0 font-medium text-sm w-24 text-right">
-                    <Money cents={transaction.amountCents} colored />
-                  </span>
-                  {canEdit && (
-                    <TransactionRowActions
-                      transaction={transaction}
-                      accounts={accounts}
-                      categories={categories}
-                      today={today}
-                    />
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
       {hasCrypto && btcHistory && (
-        <div className="grid gap-6 lg:grid-cols-3 mt-6">
+        <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle className="text-base">Bitcoin-Kurs</CardTitle>

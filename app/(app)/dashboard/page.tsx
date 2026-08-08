@@ -139,6 +139,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           label="Vermögen"
           cents={netWorthCents(balances)}
           colored
+          href="/accounts"
           hint={
             illiquidNetWorthCents(balances) !== 0
               ? `Flüssig: ${formatMoney(liquidNetWorthCents(balances), {
@@ -149,12 +150,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               : undefined
           }
         />
-        <Tile label="Einnahmen (Monat)" cents={budget.totals.actualIncomeCents} />
-        <Tile label="Ausgaben (Monat)" cents={budget.totals.actualExpenseCents} />
+        <Tile
+          label="Einnahmen (Monat)"
+          cents={budget.totals.actualIncomeCents}
+          href={`/transactions?type=income&from=${monthFrom}&to=${monthTo}`}
+        />
+        <Tile
+          label="Ausgaben (Monat)"
+          cents={budget.totals.actualExpenseCents}
+          href={`/transactions?type=expense&from=${monthFrom}&to=${monthTo}`}
+        />
         <Tile
           label="Saldo (Monat)"
           cents={budget.totals.actualBalanceCents}
           colored
+          href={`/budget?year=${year}&month=${month}`}
           hint={
             reserveMonthly > 0
               ? `Nach Rückstellungen: ${formatMoney(
@@ -381,14 +391,17 @@ function Tile({
   cents,
   colored = false,
   hint,
+  href,
 }: {
   label: string;
   cents: number | null;
   colored?: boolean;
   hint?: string;
+  /** Makes the whole tile a link to the figure's detail view. */
+  href?: string;
 }) {
-  return (
-    <Card>
+  const card = (
+    <Card className={href ? "h-full transition-colors hover:border-primary/60" : undefined}>
       <CardHeader className="pb-2">
         <CardDescription>{label}</CardDescription>
         <CardTitle className="text-2xl">
@@ -405,5 +418,14 @@ function Tile({
         </CardContent>
       )}
     </Card>
+  );
+
+  if (!href) return card;
+  return (
+    // The linked pages are dynamic; prefetching four of them on every dashboard
+    // render costs four extra server renders for a link that may never be used.
+    <Link href={href} prefetch={false} className="rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+      {card}
+    </Link>
   );
 }

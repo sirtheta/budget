@@ -38,10 +38,15 @@ export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
  * Balances are derived rather than stored — a stored running balance would
  * drift the moment a transaction is edited, deleted, or back-dated, and
  * back-dating is the normal case when importing a statement.
+ *
+ * `asOf` cuts the sum off at the end of that day, which is what a view of a
+ * past month needs: showing today's balance next to May's figures invites
+ * reading it as May's. Crypto accounts are the exception — only a live price
+ * exists, so their value stays the current one whatever `asOf` says.
  */
 export async function accountBalances(
   prisma: PrismaClient,
-  options: { includeInactive?: boolean } = {}
+  options: { includeInactive?: boolean; asOf?: string } = {}
 ): Promise<AccountBalance[]> {
   const accounts = await prisma.account.findMany({
     where: options.includeInactive ? {} : { isActive: true },
@@ -50,7 +55,11 @@ export async function accountBalances(
 
   const hasCrypto = accounts.some((account) => account.type === "Crypto");
   const [sums, rate] = await Promise.all([
-    prisma.transaction.groupBy({ by: ["accountId"], _sum: { amountCents: true } }),
+    prisma.transaction.groupBy({
+      by: ["accountId"],
+      _sum: { amountCents: true },
+      ...(options.asOf ? { where: { date: { lte: options.asOf } } } : {}),
+    }),
     hasCrypto ? btcChfRate() : Promise.resolve(null),
   ]);
   const byAccount = new Map(sums.map((row) => [row.accountId, row._sum.amountCents ?? 0]));

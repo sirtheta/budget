@@ -1,9 +1,11 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, CalendarClock } from "lucide-react";
 import prisma from "@/lib/prisma";
 import { hasRole, requireSession } from "@/lib/permissions";
 import { config } from "@/lib/config";
 import {
+  daysBetween,
   formatDateCH,
   monthEnd,
   monthName,
@@ -11,13 +13,22 @@ import {
   todayInZone,
   trailingMonths,
 } from "@/lib/date";
-import { accountBalances, illiquidNetWorthCents, liquidNetWorthCents, netWorthCents } from "@/lib/balances";
-import { loadBudgetMonth } from "@/lib/budget";
-import { categoryBreakdown, monthlySeries } from "@/lib/analytics";
-import { totalMonthlyReserveCents } from "@/lib/reserves";
-import { pendingSuggestions } from "@/lib/recurring";
+import type { AccountType } from "@prisma/client";
+import {
+  ACCOUNT_TYPE_LABELS,
+  type AccountBalance,
+  accountBalances,
+  illiquidNetWorthCents,
+  liquidNetWorthCents,
+  netWorthCents,
+} from "@/lib/balances";
+import { loadBudgetMonth, projectMonthEnd } from "@/lib/budget";
+import { categoryBreakdown, monthlySeries, netWorthSeries } from "@/lib/analytics";
+import { goalStatus, reserveStatus, totalMonthlyReserveCents } from "@/lib/reserves";
+import { pendingSuggestions, upcomingRecurring } from "@/lib/recurring";
 import { categoryOptions } from "@/lib/categories";
 import { formatMoney } from "@/lib/money";
+import { colorFor } from "@/lib/colors";
 import { btcChfHistory, btcToCents } from "@/lib/crypto-price";
 import { PageHeader } from "@/components/page-header";
 import { MonthNav } from "@/components/month-nav";
@@ -25,11 +36,13 @@ import { Money } from "@/components/money";
 import { MonthlyBarChart } from "@/components/charts/monthly-bar-chart";
 import { CategoryPieChart } from "@/components/charts/category-pie-chart";
 import { BtcPriceChart } from "@/components/charts/btc-price-chart";
+import { Sparkline } from "@/components/charts/sparkline";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { TransactionFormDialog } from "@/app/(app)/transactions/transaction-form-dialog";
+import { TransactionRowActions } from "@/app/(app)/transactions/transaction-row-actions";
 import { PostSuggestionButton } from "./post-suggestion-button";
 
 export const dynamic = "force-dynamic";
@@ -51,42 +64,148 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const monthFrom = monthStart(year, month);
   const monthTo = isCurrentMonth ? today : monthEnd(year, month);
 
+  // Two cheap lookups ahead of the main batch, because the batch needs their
+  // answers: whether a wallet exists decides if the three CoinGecko calls run
+  // at all (they have to be *inside* the batch — appended after it, a cold
+  // price history blocked the finished page for up to three seconds), and the
+  // recurring entries decide which categories count as fixed costs below.
+  const [cryptoAccountCount, recurring] = await Promise.all([
+    prisma.account.count({ where: { type: "Crypto", isActive: true } }),
+    prisma.recurringTransaction.findMany({ where: { isActive: true } }),
+  ]);
+  const hasCrypto = cryptoAccountCount > 0;
+
+  // Categories a recurring expense entry books into — rent, health insurance,
+  // travel pass. Their bookings are fixed costs even when they arrived through
+  // a statement import rather than from the schedule, which is the normal case
+  // for a household that imports its bank statements.
+  const fixedCostCategoryIds = [
+    ...new Set(
+      recurring
+        .filter((row) => row.counterAccountId === null && row.amountCents < 0)
+        .map((row) => row.categoryId)
+        .filter((id): id is number => id !== null)
+    ),
+  ];
+
   const [
     balances,
     budget,
     series,
+    netWorth,
     breakdown,
     recentTransactions,
     reserves,
-    recurring,
+    goals,
     accounts,
+    bookedFixedExpense,
     categories,
+    btcHistory,
   ] = await Promise.all([
-    accountBalances(prisma),
+    // A past month shows the balances as they stood at its end; today's
+    // balance next to May's income and expenses would read as May's.
+    accountBalances(prisma, isCurrentMonth ? {} : { asOf: monthTo }),
     loadBudgetMonth(prisma, year, month),
     monthlySeries(prisma, trailingMonths(year, month, 12)),
+    netWorthSeries(prisma, trailingMonths(year, month, 12)),
     categoryBreakdown(prisma, monthFrom, monthTo, "Expense"),
     prisma.transaction.findMany({
       where: { date: { gte: monthFrom, lte: monthTo } },
       orderBy: [{ date: "desc" }, { id: "desc" }],
       take: 8,
       include: {
-        account: { select: { name: true } },
+        account: { select: { name: true, color: true } },
         category: { select: { name: true } },
       },
     }),
-    prisma.reserve.findMany({ where: { isActive: true } }),
-    prisma.recurringTransaction.findMany({ where: { isActive: true } }),
+    prisma.reserve.findMany({
+      where: { isActive: true },
+      orderBy: [{ nextDueDate: "asc" }, { name: "asc" }],
+    }),
+    prisma.savingsGoal.findMany({ orderBy: [{ targetDate: "asc" }, { name: "asc" }] }),
     prisma.account.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, name: true },
     }),
+    // The share of this month's expenses that is fixed cost — the part the
+    // projection must not spread over the remaining days.
+    prisma.transaction.aggregate({
+      where: {
+        date: { gte: monthFrom, lte: monthTo },
+        amountCents: { lt: 0 },
+        transferGroupId: null,
+        account: { excludeFromBudget: false },
+        OR: [
+          { recurringId: { not: null } },
+          ...(fixedCostCategoryIds.length > 0
+            ? [{ categoryId: { in: fixedCostCategoryIds } }]
+            : []),
+        ],
+      },
+      _sum: { amountCents: true },
+    }),
     categoryOptions(prisma),
+    hasCrypto
+      ? Promise.all([btcChfHistory(7), btcChfHistory(30), btcChfHistory(365)])
+      : Promise.resolve(null),
   ]);
 
   const suggestions = isCurrentMonth ? pendingSuggestions(recurring, today) : [];
+  const upcoming = isCurrentMonth ? upcomingRecurring(recurring, today, 30) : [];
+  // Only what still falls due inside this month, and only entries that are
+  // really income or expense — a transfer leg moves money between the
+  // household's own accounts and belongs in no budget figure.
+  const dueThisMonth = isCurrentMonth
+    ? upcomingRecurring(recurring, today, daysBetween(today, monthEnd(year, month))).filter(
+        (row) => row.counterAccountId === null
+      )
+    : [];
+  const projection = isCurrentMonth
+    ? projectMonthEnd(
+        {
+          actualIncomeCents: budget.totals.actualIncomeCents,
+          actualExpenseCents: budget.totals.actualExpenseCents,
+          bookedFixedExpenseCents: Math.abs(bookedFixedExpense._sum.amountCents ?? 0),
+          dueRecurringExpenseCents: dueThisMonth
+            .filter((row) => row.amountCents < 0)
+            .reduce((sum, row) => sum - row.amountCents, 0),
+          dueRecurringIncomeCents: dueThisMonth
+            .filter((row) => row.amountCents > 0)
+            .reduce((sum, row) => sum + row.amountCents, 0),
+        },
+        today
+      )
+    : null;
+  // `series` ends with the displayed month, so everything before it is the
+  // history this month is compared against.
+  const previousMonth = series.at(-2) ?? null;
+  const historyMonths = series.slice(0, -1);
+  const averageIncomeCents = averageOf(historyMonths.map((m) => m.incomeCents));
+  const averageExpenseCents = averageOf(historyMonths.map((m) => m.expenseCents));
+  const budgetLeftCents = budget.totals.plannedExpenseCents - budget.totals.actualExpenseCents;
+  // Transfer legs move money between the household's own accounts, so they
+  // neither add to nor take from what the month has available.
+  const upcomingTotalCents = upcoming
+    .filter((row) => row.counterAccountId === null)
+    .reduce((sum, row) => sum + row.amountCents, 0);
   const reserveMonthly = totalMonthlyReserveCents(reserves, today);
+
+  // Underfunded first, then whatever falls due next: a reserve that is already
+  // short is the one item on this card that needs a decision today.
+  const reserveStatuses = reserves
+    .map((reserve) => reserveStatus(reserve, today))
+    .sort((a, b) =>
+      a.isShort === b.isShort
+        ? a.nextDueDate.localeCompare(b.nextDueDate)
+        : a.isShort
+          ? -1
+          : 1
+    );
+  const goalStatuses = goals
+    .map((goal) => goalStatus(goal, today))
+    .sort((a, b) => Number(a.isReached) - Number(b.isReached));
+  const accountGroups = groupByAccountType(balances);
   const overBudget = budget.groups
     .flatMap((group) => group.lines)
     .filter((line) => line.status === "over" || line.status === "warning")
@@ -117,18 +236,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     );
   }
 
-  const hasCrypto = balances.some((account) => account.type === "Crypto");
   // Reuse the rate accountBalances() already resolved instead of a second,
   // rate-limited CoinGecko hit for the "current price" tile (see accounts/page.tsx).
   const currentBtcRateChf = balances.find((account) => account.btcRateChf !== null)?.btcRateChf ?? null;
-  const btcHistory = hasCrypto
-    ? await Promise.all([btcChfHistory(7), btcChfHistory(30), btcChfHistory(365)])
-    : null;
 
   return (
     <>
       <PageHeader title="Dashboard" description={`${monthName(month)} ${year}`}>
-        <MonthNav year={year} month={month} basePath="/dashboard" />
+        <MonthNav year={year} month={month} basePath="/dashboard" today={today} />
         {canEdit && (
           <TransactionFormDialog accounts={accounts} categories={categories} today={today} />
         )}
@@ -136,9 +251,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <Tile
-          label="Vermögen"
+          label={isCurrentMonth ? "Vermögen" : `Vermögen per ${formatDateCH(monthTo)}`}
           cents={netWorthCents(balances)}
           colored
+          href="/accounts"
+          chart={
+            // Crypto holdings are missing from the historical series (no stored
+            // price history, see netWorthSeries) — the curve is the trend of
+            // everything else, which is what a 40 px sparkline can say anyway.
+            <Sparkline
+              values={netWorth.map((point) => point.netWorthCents)}
+              label={`Vermögensentwicklung ${netWorth[0]?.label} bis ${netWorth.at(-1)?.label}`}
+            />
+          }
           hint={
             illiquidNetWorthCents(balances) !== 0
               ? `Flüssig: ${formatMoney(liquidNetWorthCents(balances), {
@@ -149,20 +274,74 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               : undefined
           }
         />
-        <Tile label="Einnahmen (Monat)" cents={budget.totals.actualIncomeCents} />
-        <Tile label="Ausgaben (Monat)" cents={budget.totals.actualExpenseCents} />
+        <Tile
+          label="Einnahmen (Monat)"
+          cents={budget.totals.actualIncomeCents}
+          href={`/transactions?type=income&from=${monthFrom}&to=${monthTo}`}
+          hint={joinHints([
+            previousMonth &&
+              comparisonHint(
+                "Vormonat",
+                budget.totals.actualIncomeCents,
+                previousMonth.incomeCents,
+                !isCurrentMonth
+              ),
+            comparisonHint(
+              "Ø 11 Monate",
+              budget.totals.actualIncomeCents,
+              averageIncomeCents,
+              !isCurrentMonth
+            ),
+          ])}
+        />
+        <Tile
+          label="Ausgaben (Monat)"
+          cents={budget.totals.actualExpenseCents}
+          href={`/transactions?type=expense&from=${monthFrom}&to=${monthTo}`}
+          hint={joinHints([
+            previousMonth &&
+              comparisonHint(
+                "Vormonat",
+                budget.totals.actualExpenseCents,
+                previousMonth.expenseCents,
+                !isCurrentMonth
+              ),
+            // The projection line below already carries the running month's
+            // trend; both at once makes four lines out of a summary tile.
+            !projection &&
+              comparisonHint(
+                "Ø 11 Monate",
+                budget.totals.actualExpenseCents,
+                averageExpenseCents,
+                !isCurrentMonth
+              ),
+            projection &&
+              `Ø ${formatMoney(projection.dailyVariableExpenseCents, {
+                withCurrency: true,
+              })}/Tag variabel · hochgerechnet ${formatMoney(projection.projectedExpenseCents, {
+                withCurrency: true,
+              })}`,
+            budget.totals.plannedExpenseCents > 0 &&
+              `Budget-Rest: ${formatMoney(budgetLeftCents, { withCurrency: true })}`,
+          ])}
+        />
         <Tile
           label="Saldo (Monat)"
           cents={budget.totals.actualBalanceCents}
           colored
-          hint={
-            reserveMonthly > 0
-              ? `Nach Rückstellungen: ${formatMoney(
-                  budget.totals.actualBalanceCents - reserveMonthly,
-                  { withCurrency: true }
-                )}`
-              : undefined
-          }
+          href={`/budget?year=${year}&month=${month}`}
+          hint={joinHints([
+            reserveMonthly > 0 &&
+              `Nach Rückstellungen: ${formatMoney(
+                budget.totals.actualBalanceCents - reserveMonthly,
+                { withCurrency: true }
+              )}`,
+            projection &&
+              `Hochgerechnet auf den Monat: ${formatMoney(projection.projectedBalanceCents, {
+                withCurrency: true,
+                forceSign: true,
+              })}`,
+          ])}
         />
       </div>
 
@@ -214,88 +393,351 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3 mb-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Einnahmen und Ausgaben</CardTitle>
-            <CardDescription>Die letzten 12 Monate</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <MonthlyBarChart data={series} />
-          </CardContent>
-        </Card>
+      {/*
+        One flex column so the cards can be ordered per breakpoint. On a phone
+        the charts are three screens of scrolling in front of the bookings and
+        balances the user opened the app for, so there they come last; from lg
+        the original reading order (trend first) is restored.
+      */}
+      <div className="flex flex-col gap-6 mb-6">
+        <div className="grid gap-6 lg:grid-cols-3 order-3 lg:order-1">
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-base">Einnahmen und Ausgaben</CardTitle>
+              <CardDescription>Die letzten 12 Monate</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <MonthlyBarChart data={series} />
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Konten</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="flex flex-col gap-2">
-              {balances.map((account) => (
-                <li key={account.id} className="flex items-center gap-2 text-sm">
-                  <span
-                    className="size-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: account.color }}
-                    aria-hidden
-                  />
-                  <span className="truncate">{account.name}</span>
-                  <span className="ml-auto shrink-0 font-medium">
-                    <Money cents={account.balanceCents} colored />
-                  </span>
-                </li>
+          <Card className="order-first lg:order-none">
+            <CardHeader>
+              <CardTitle className="text-base">Konten</CardTitle>
+              <CardDescription>
+                {isCurrentMonth ? "" : `Stand ${formatDateCH(monthTo)} · `}
+                Konto anklicken für seine Buchungen
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              {accountGroups.map((group) => (
+                <div key={group.type}>
+                  {accountGroups.length > 1 && (
+                    <div className="flex items-baseline justify-between gap-2 mb-1">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {ACCOUNT_TYPE_LABELS[group.type]}
+                      </h3>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        <Money cents={group.totalCents} />
+                      </span>
+                    </div>
+                  )}
+                  <ul className="flex flex-col">
+                    {group.accounts.map((account) => (
+                      <li key={account.id}>
+                        <Link
+                          href={`/transactions?accountId=${account.id}&from=${monthFrom}&to=${monthTo}`}
+                          // One link per account, and the booking list is a dynamic
+                          // page: prefetching all of them renders it that many times.
+                          prefetch={false}
+                          className="flex items-center gap-2 rounded-md px-2 py-1.5 -mx-2 text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                        >
+                          <span
+                            className="size-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: account.color }}
+                            aria-hidden
+                          />
+                          <span className="truncate">{account.name}</span>
+                          {account.excludeFromBudget && (
+                            // Otherwise its bookings are missing from every budget
+                            // figure on this page with nothing saying why.
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              ausserhalb Budget
+                            </span>
+                          )}
+                          {!isCurrentMonth && account.type === "Crypto" && (
+                            // Only a live BTC price exists, so this one value is not
+                            // the month-end figure the rest of the card shows.
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              aktueller Kurs
+                            </span>
+                          )}
+                          <span className="ml-auto shrink-0 font-medium">
+                            <Money cents={account.balanceCents} colored />
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+        </div>
 
-      <div className="grid gap-6 lg:grid-cols-2 mb-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Ausgaben nach Kategorie</CardTitle>
-            <CardDescription>
-              {monthName(month)} {year} — Slice anklicken für die Buchungen
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CategoryPieChart slices={breakdown} from={monthFrom} to={monthTo} />
-          </CardContent>
-        </Card>
+        <div className="grid gap-6 lg:grid-cols-2 order-4 lg:order-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Ausgaben nach Kategorie</CardTitle>
+              <CardDescription>
+                {monthName(month)} {year} — Slice anklicken für die Buchungen
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CategoryPieChart slices={breakdown} from={monthFrom} to={monthTo} />
+            </CardContent>
+          </Card>
 
-        <Card>
+          <Card className="order-first lg:order-none">
+            <CardHeader className="flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base">Budget im Blick</CardTitle>
+                <CardDescription>
+                  Kategorien nahe an oder über dem Budget — Zeile anklicken für die Buchungen
+                </CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/budget">
+                  Alle <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {overBudget.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Alles im Rahmen.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {overBudget.slice(0, 6).map((line) => (
+                    <li key={line.categoryId}>
+                      <Link
+                        href={`/transactions?categoryId=${line.categoryId}&from=${monthFrom}&to=${monthTo}`}
+                        prefetch={false}
+                        className="block rounded-md px-2 py-1 -mx-2 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                      >
+                        <div className="flex items-center justify-between gap-2 text-sm mb-1">
+                          <span className="truncate">{line.name}</span>
+                          <span className="shrink-0 text-muted-foreground tabular-nums">
+                            <Money cents={line.actualCents} /> / <Money cents={line.plannedCents} />
+                          </span>
+                        </div>
+                        <Progress
+                          value={line.progress ?? 0}
+                          label={line.name}
+                          indicatorClassName={
+                            line.status === "over" ? "bg-destructive" : "bg-amber-500"
+                          }
+                        />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {(reserveStatuses.length > 0 || goalStatuses.length > 0 || upcoming.length > 0) && (
+          <div className="grid gap-6 lg:grid-cols-2 order-2 lg:order-3">
+            {upcoming.length > 0 && (
+              <Card>
+                <CardHeader className="flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <CalendarClock className="h-4 w-4" />
+                      Kommende 30 Tage
+                    </CardTitle>
+                    <CardDescription>
+                      Wiederkehrende Buchungen, Saldo{" "}
+                      {formatMoney(upcomingTotalCents, { withCurrency: true, forceSign: true })}
+                    </CardDescription>
+                  </div>
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href="/recurring">
+                      Alle <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <ul className="divide-y">
+                    {upcoming.slice(0, 6).map((row) => (
+                      <li key={row.id} className="flex items-center gap-3 py-2">
+                        <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">
+                          {formatDateCH(row.nextDate)}
+                        </span>
+                        <span className="text-sm truncate flex-1">{row.name}</span>
+                        {row.counterAccountId !== null && (
+                          <Badge variant="secondary" className="shrink-0">
+                            Umbuchung
+                          </Badge>
+                        )}
+                        {!row.autoPost && (
+                          <Badge variant="outline" className="shrink-0">
+                            Bestätigung
+                          </Badge>
+                        )}
+                        <span className="shrink-0 font-medium text-sm">
+                          {/* A transfer has no direction for the budget — colouring
+                              its leg green would read as income arriving. */}
+                          <Money
+                            cents={row.amountCents}
+                            colored={row.counterAccountId === null}
+                          />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {upcoming.length > 6 && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      und {upcoming.length - 6} weitere
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {(reserveStatuses.length > 0 || goalStatuses.length > 0) && (
+              <Card>
+                <CardHeader className="flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base">Rückstellungen & Sparziele</CardTitle>
+                    <CardDescription>
+                      Monatlich zurückzulegen: {formatMoney(reserveMonthly, { withCurrency: true })}
+                    </CardDescription>
+                  </div>
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href="/reserves">
+                      Alle <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4">
+                  {reserveStatuses.slice(0, 4).map((status) => (
+                    <div key={`reserve-${status.id}`}>
+                      <div className="flex items-center justify-between gap-2 text-sm mb-1">
+                        <span className="truncate flex items-center gap-2">
+                          {status.name}
+                          {status.isShort ? (
+                            <Badge variant="destructive">Unterdeckt</Badge>
+                          ) : (
+                            status.isDue && <Badge variant="secondary">Fällig</Badge>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-muted-foreground tabular-nums">
+                          <Money cents={status.savedCents} /> / <Money cents={status.targetAmountCents} />
+                        </span>
+                      </div>
+                      <Progress
+                        value={status.progress}
+                        label={status.name}
+                        indicatorClassName={status.isShort ? "bg-destructive" : "bg-primary"}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {status.missingCents === 0
+                          ? `Vollständig · fällig am ${formatDateCH(status.nextDueDate)}`
+                          : status.monthsRemaining > 0
+                            ? `${formatMoney(status.monthlyRateCents, {
+                                withCurrency: true,
+                              })} pro Monat bis ${formatDateCH(status.nextDueDate)}`
+                            : `Jetzt fällig — es fehlen ${formatMoney(status.missingCents, {
+                                withCurrency: true,
+                              })}`}
+                      </p>
+                    </div>
+                  ))}
+
+                  {goalStatuses.slice(0, 2).map((status) => (
+                    <div key={`goal-${status.id}`}>
+                      <div className="flex items-center justify-between gap-2 text-sm mb-1">
+                        <span className="truncate flex items-center gap-2">
+                          <span
+                            className="size-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: status.color ?? "#6366f1" }}
+                            aria-hidden
+                          />
+                          {status.name}
+                          {status.isReached && (
+                            <Badge className="bg-emerald-500 text-white border-transparent">
+                              Erreicht
+                            </Badge>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-muted-foreground tabular-nums">
+                          <Money cents={status.savedCents} /> / <Money cents={status.targetAmountCents} />
+                        </span>
+                      </div>
+                      <Progress
+                        value={status.progress}
+                        label={status.name}
+                        indicatorClassName={status.isReached ? "bg-emerald-500" : "bg-primary"}
+                      />
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+
+        <Card className="order-1 lg:order-4">
           <CardHeader className="flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-base">Budget im Blick</CardTitle>
-              <CardDescription>Kategorien nahe an oder über dem Budget</CardDescription>
-            </div>
+            <CardTitle className="text-base">Letzte Buchungen</CardTitle>
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/budget">
+              <Link href="/transactions">
                 Alle <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </Button>
           </CardHeader>
           <CardContent>
-            {overBudget.length === 0 ? (
+            {recentTransactions.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                Alles im Rahmen.
+                Noch keine Buchungen erfasst.
               </p>
             ) : (
-              <ul className="flex flex-col gap-3">
-                {overBudget.slice(0, 6).map((line) => (
-                  <li key={line.categoryId}>
-                    <div className="flex items-center justify-between gap-2 text-sm mb-1">
-                      <span className="truncate">{line.name}</span>
-                      <span className="shrink-0 text-muted-foreground tabular-nums">
-                        <Money cents={line.actualCents} /> / <Money cents={line.plannedCents} />
+              <ul className="divide-y">
+                {recentTransactions.map((transaction) => (
+                  <li key={transaction.id} className="group flex items-center gap-3 py-2">
+                    {/* On a phone the date joins the account line underneath: as
+                        its own column it squeezed the description down to two
+                        characters. */}
+                    <span className="hidden sm:block text-xs text-muted-foreground tabular-nums w-20 shrink-0">
+                      {formatDateCH(transaction.date)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="text-sm block truncate">{transaction.description}</span>
+                      <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <span
+                          className="size-2 rounded-full shrink-0"
+                          style={{ backgroundColor: colorFor(transaction.accountId, transaction.account.color) }}
+                          aria-hidden
+                        />
+                        <span className="truncate">
+                          <span className="sm:hidden">{formatDateCH(transaction.date)} · </span>
+                          {transaction.account.name}
+                        </span>
                       </span>
-                    </div>
-                    <Progress
-                      value={line.progress ?? 0}
-                      label={line.name}
-                      indicatorClassName={
-                        line.status === "over" ? "bg-destructive" : "bg-amber-500"
-                      }
-                    />
+                    </span>
+                    {transaction.transferGroupId ? (
+                      <Badge variant="secondary" className="shrink-0">
+                        Umbuchung
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
+                        {transaction.category?.name ?? "Ohne Kategorie"}
+                      </span>
+                    )}
+                    <span className="shrink-0 font-medium text-sm w-24 text-right">
+                      <Money cents={transaction.amountCents} colored />
+                    </span>
+                    {canEdit && (
+                      <TransactionRowActions
+                        transaction={transaction}
+                        accounts={accounts}
+                        categories={categories}
+                        today={today}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
@@ -304,49 +746,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base">Letzte Buchungen</CardTitle>
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/transactions">
-              Alle <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {recentTransactions.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Noch keine Buchungen erfasst.
-            </p>
-          ) : (
-            <ul className="divide-y">
-              {recentTransactions.map((transaction) => (
-                <li key={transaction.id} className="flex items-center gap-3 py-2">
-                  <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">
-                    {formatDateCH(transaction.date)}
-                  </span>
-                  <span className="text-sm truncate flex-1">{transaction.description}</span>
-                  {transaction.transferGroupId ? (
-                    <Badge variant="secondary" className="shrink-0">
-                      Umbuchung
-                    </Badge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
-                      {transaction.category?.name ?? "Ohne Kategorie"}
-                    </span>
-                  )}
-                  <span className="shrink-0 font-medium text-sm w-24 text-right">
-                    <Money cents={transaction.amountCents} colored />
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
       {hasCrypto && btcHistory && (
-        <div className="grid gap-6 lg:grid-cols-3 mt-6">
+        <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle className="text-base">Bitcoin-Kurs</CardTitle>
@@ -367,19 +768,86 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   );
 }
 
+/**
+ * Groups the account list by type, in the order the types first appear — which
+ * is the user's own sort order, not an order invented here. A flat list of a
+ * dozen accounts stops being readable; per-type subtotals answer "how much is
+ * in savings" without adding anything up by hand.
+ */
+function groupByAccountType(
+  balances: AccountBalance[]
+): { type: AccountType; accounts: AccountBalance[]; totalCents: number }[] {
+  const groups = new Map<AccountType, { type: AccountType; accounts: AccountBalance[]; totalCents: number }>();
+  for (const account of balances) {
+    let group = groups.get(account.type);
+    if (!group) {
+      group = { type: account.type, accounts: [], totalCents: 0 };
+      groups.set(account.type, group);
+    }
+    group.accounts.push(account);
+    group.totalCents += account.balanceCents;
+  }
+  return [...groups.values()];
+}
+
+function averageOf(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+}
+
+/**
+ * `Vormonat: 4'250.00 (+12 %)` — the comparison a bare monthly total is
+ * missing.
+ *
+ * The percentage needs two comparable periods, so it is left off while the
+ * displayed month is still running: half a month against a whole one always
+ * looks like a drop. The reference figure itself stays, which is the half of
+ * the comparison that is still true.
+ */
+function comparisonHint(
+  label: string,
+  cents: number,
+  referenceCents: number | null,
+  withPercent: boolean
+): string | null {
+  if (referenceCents === null) return null;
+  const amount = formatMoney(referenceCents, { withCurrency: true });
+  if (!withPercent || referenceCents === 0) return `${label}: ${amount}`;
+  const percent = Math.round(((cents - referenceCents) / Math.abs(referenceCents)) * 100);
+  const sign = percent < 0 ? "−" : "+";
+  return `${label}: ${amount} (${sign}${Math.abs(percent)} %)`;
+}
+
+/**
+ * Collects the hint lines a tile has something to say about. Written as
+ * `condition && text` at the call sites, so a missing figure drops its line
+ * instead of leaving an empty one behind.
+ */
+function joinHints(parts: (string | false | null | undefined)[]): string[] | undefined {
+  const lines = parts.filter((part): part is string => typeof part === "string");
+  return lines.length > 0 ? lines : undefined;
+}
+
 function Tile({
   label,
   cents,
   colored = false,
   hint,
+  href,
+  chart,
 }: {
   label: string;
   cents: number | null;
   colored?: boolean;
-  hint?: string;
+  hint?: string | string[];
+  /** Makes the whole tile a link to the figure's detail view. */
+  href?: string;
+  /** Trend visual below the figure, e.g. a `Sparkline`. */
+  chart?: ReactNode;
 }) {
-  return (
-    <Card>
+  const hints = hint === undefined ? [] : Array.isArray(hint) ? hint : [hint];
+  const card = (
+    <Card className={href ? "h-full transition-colors hover:border-primary/60" : undefined}>
       <CardHeader className="pb-2">
         <CardDescription>{label}</CardDescription>
         <CardTitle className="text-2xl">
@@ -390,11 +858,25 @@ function Tile({
           )}
         </CardTitle>
       </CardHeader>
-      {hint && (
+      {(hints.length > 0 || chart) && (
         <CardContent className="pt-0">
-          <p className="text-xs text-muted-foreground">{hint}</p>
+          {chart}
+          {hints.map((line) => (
+            <p key={line} className="text-xs text-muted-foreground">
+              {line}
+            </p>
+          ))}
         </CardContent>
       )}
     </Card>
+  );
+
+  if (!href) return card;
+  return (
+    // The linked pages are dynamic; prefetching four of them on every dashboard
+    // render costs four extra server renders for a link that may never be used.
+    <Link href={href} prefetch={false} className="rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+      {card}
+    </Link>
   );
 }

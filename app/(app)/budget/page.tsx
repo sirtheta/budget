@@ -54,7 +54,7 @@ export default async function BudgetPage({ searchParams }: { searchParams: Searc
         title="Budget"
         description="Soll gegen Ist pro Kategorie. Umbuchungen zwischen eigenen Konten zählen nicht mit."
       >
-        <MonthNav year={year} month={month} basePath="/budget" />
+        <MonthNav year={year} month={month} basePath="/budget" today={today} />
         {canEdit && <CopyPreviousButton year={year} month={month} />}
       </PageHeader>
 

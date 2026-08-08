@@ -154,6 +154,19 @@ export function trailingMonths(
   return result;
 }
 
+/**
+ * Whole days between two `YYYY-MM-DD` dates (negative when `to` is earlier).
+ * Counted on the calendar dates themselves, so a DST switch between them does
+ * not turn a day into 23 or 25 hours and lose or add one.
+ */
+export function daysBetween(from: string, to: string): number {
+  const a = parseDate(from);
+  const b = parseDate(to);
+  if (!a || !b) return 0;
+  return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) -
+    Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86_400_000);
+}
+
 /** Whole months between two `YYYY-MM-DD` dates (negative when `to` is earlier). */
 export function monthsBetween(from: string, to: string): number {
   const a = parseDate(from);

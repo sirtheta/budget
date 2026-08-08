@@ -29,7 +29,7 @@
  * password Demo1234! (see scripts/seed-manual-demo.ts for the full roster).
  */
 import { chromium, type Page } from "playwright";
-import { mkdirSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import path from "path";
 
 const BASE_URL = process.env.MANUAL_BASE_URL ?? "http://localhost:3222";
@@ -37,12 +37,27 @@ const OUT_DIR = path.join(__dirname, ".manual-shots");
 const FIXTURE_CSV = path.join(__dirname, "fixtures", "manual-import-demo.csv");
 const ADMIN = { email: "admin@demo.local", password: "Demo1234!" };
 
+// Same fallback as playwright.config.ts: some sandboxed environments ship a
+// system-wide Chromium and block the per-version download.
+const systemChromium = "/opt/pw-browsers/chromium";
+const launchOptions = existsSync(systemChromium) ? { executablePath: systemChromium } : undefined;
+
 async function login(page: Page, creds: { email: string; password: string }) {
   await page.goto(`${BASE_URL}/login`);
   await page.fill("#email", creds.email);
   await page.fill("#password", creds.password);
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/dashboard/);
+}
+
+/**
+ * Recharts animates its bars, lines and slices in on mount. Screenshotting the
+ * moment the page settles catches half-grown bars and a pie without its ring,
+ * so chart pages wait for the SVG and then for the animation to finish.
+ */
+async function settleCharts(page: Page) {
+  await page.waitForSelector(".recharts-surface");
+  await page.waitForTimeout(1500);
 }
 
 type Shot = { name: string; run: (page: Page) => Promise<void> };
@@ -62,6 +77,7 @@ const shots: Shot[] = [
       await login(page, ADMIN);
       await page.goto(`${BASE_URL}/dashboard`);
       await page.waitForSelector("text=Dashboard");
+      await settleCharts(page);
       await page.screenshot({ path: path.join(OUT_DIR, "dashboard.png"), fullPage: true });
     },
   },
@@ -121,6 +137,7 @@ const shots: Shot[] = [
       await login(page, ADMIN);
       await page.goto(`${BASE_URL}/analytics`);
       await page.waitForSelector("text=Auswertungen");
+      await settleCharts(page);
       await page.screenshot({ path: path.join(OUT_DIR, "analytics.png"), fullPage: true });
     },
   },
@@ -210,7 +227,7 @@ async function main() {
   }
 
   mkdirSync(OUT_DIR, { recursive: true });
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(launchOptions);
 
   for (const shot of selected) {
     // Fresh context per shot so each login starts logged out — /login

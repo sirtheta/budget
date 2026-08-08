@@ -58,6 +58,19 @@ describe("account balances", () => {
   it("returns null for an unknown account rather than 0", async () => {
     expect(await accountBalance(prisma, 99_999)).toBeNull();
   });
+
+  it("cuts every balance off at asOf, inclusive of that day", async () => {
+    const balances = await accountBalances(prisma, { asOf: "2026-01-10" });
+    expect(balances.find((a) => a.id === fixtures.account.id)?.balanceCents).toBe(100000 - 8240);
+
+    const onBookingDay = await accountBalances(prisma, { asOf: "2026-01-05" });
+    expect(onBookingDay.find((a) => a.id === fixtures.account.id)?.balanceCents).toBe(
+      100000 - 8240
+    );
+
+    const beforeAnything = await accountBalances(prisma, { asOf: "2026-01-01" });
+    expect(beforeAnything.find((a) => a.id === fixtures.account.id)?.balanceCents).toBe(100000);
+  });
 });
 
 describe("transfers", () => {

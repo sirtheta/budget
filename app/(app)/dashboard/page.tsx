@@ -63,6 +63,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const monthFrom = monthStart(year, month);
   const monthTo = isCurrentMonth ? today : monthEnd(year, month);
 
+  // Asked separately and first because the answer decides whether the three
+  // CoinGecko calls below run at all — and they have to be part of the batch,
+  // not appended after it: a cold price history blocked the finished page for
+  // up to three seconds while the database work was long done.
+  const hasCrypto = (await prisma.account.count({ where: { type: "Crypto", isActive: true } })) > 0;
+
   const [
     balances,
     budget,
@@ -75,6 +81,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     recurring,
     accounts,
     categories,
+    btcHistory,
   ] = await Promise.all([
     // A past month shows the balances as they stood at its end; today's
     // balance next to May's income and expenses would read as May's.
@@ -104,6 +111,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       select: { id: true, name: true },
     }),
     categoryOptions(prisma),
+    hasCrypto
+      ? Promise.all([btcChfHistory(7), btcChfHistory(30), btcChfHistory(365)])
+      : Promise.resolve(null),
   ]);
 
   const suggestions = isCurrentMonth ? pendingSuggestions(recurring, today) : [];
@@ -164,13 +174,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     );
   }
 
-  const hasCrypto = balances.some((account) => account.type === "Crypto");
   // Reuse the rate accountBalances() already resolved instead of a second,
   // rate-limited CoinGecko hit for the "current price" tile (see accounts/page.tsx).
   const currentBtcRateChf = balances.find((account) => account.btcRateChf !== null)?.btcRateChf ?? null;
-  const btcHistory = hasCrypto
-    ? await Promise.all([btcChfHistory(7), btcChfHistory(30), btcChfHistory(365)])
-    : null;
 
   return (
     <>

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, CalendarClock } from "lucide-react";
 import prisma from "@/lib/prisma";
@@ -13,7 +14,7 @@ import {
 } from "@/lib/date";
 import { accountBalances, illiquidNetWorthCents, liquidNetWorthCents, netWorthCents } from "@/lib/balances";
 import { loadBudgetMonth, projectMonthEnd } from "@/lib/budget";
-import { categoryBreakdown, monthlySeries } from "@/lib/analytics";
+import { categoryBreakdown, monthlySeries, netWorthSeries } from "@/lib/analytics";
 import { goalStatus, reserveStatus, totalMonthlyReserveCents } from "@/lib/reserves";
 import { pendingSuggestions, upcomingRecurring } from "@/lib/recurring";
 import { categoryOptions } from "@/lib/categories";
@@ -26,6 +27,7 @@ import { Money } from "@/components/money";
 import { MonthlyBarChart } from "@/components/charts/monthly-bar-chart";
 import { CategoryPieChart } from "@/components/charts/category-pie-chart";
 import { BtcPriceChart } from "@/components/charts/btc-price-chart";
+import { Sparkline } from "@/components/charts/sparkline";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -57,6 +59,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     balances,
     budget,
     series,
+    netWorth,
     breakdown,
     recentTransactions,
     reserves,
@@ -70,6 +73,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     accountBalances(prisma, isCurrentMonth ? {} : { asOf: monthTo }),
     loadBudgetMonth(prisma, year, month),
     monthlySeries(prisma, trailingMonths(year, month, 12)),
+    netWorthSeries(prisma, trailingMonths(year, month, 12)),
     categoryBreakdown(prisma, monthFrom, monthTo, "Expense"),
     prisma.transaction.findMany({
       where: { date: { gte: monthFrom, lte: monthTo } },
@@ -174,6 +178,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           cents={netWorthCents(balances)}
           colored
           href="/accounts"
+          chart={
+            // Crypto holdings are missing from the historical series (no stored
+            // price history, see netWorthSeries) — the curve is the trend of
+            // everything else, which is what a 40 px sparkline can say anyway.
+            <Sparkline
+              values={netWorth.map((point) => point.netWorthCents)}
+              label={`Vermögensentwicklung ${netWorth[0]?.label} bis ${netWorth.at(-1)?.label}`}
+            />
+          }
           hint={
             illiquidNetWorthCents(balances) !== 0
               ? `Flüssig: ${formatMoney(liquidNetWorthCents(balances), {
@@ -675,6 +688,7 @@ function Tile({
   colored = false,
   hint,
   href,
+  chart,
 }: {
   label: string;
   cents: number | null;
@@ -682,6 +696,8 @@ function Tile({
   hint?: string | string[];
   /** Makes the whole tile a link to the figure's detail view. */
   href?: string;
+  /** Trend visual below the figure, e.g. a `Sparkline`. */
+  chart?: ReactNode;
 }) {
   const hints = hint === undefined ? [] : Array.isArray(hint) ? hint : [hint];
   const card = (
@@ -696,8 +712,9 @@ function Tile({
           )}
         </CardTitle>
       </CardHeader>
-      {hints.length > 0 && (
+      {(hints.length > 0 || chart) && (
         <CardContent className="pt-0">
+          {chart}
           {hints.map((line) => (
             <p key={line} className="text-xs text-muted-foreground">
               {line}

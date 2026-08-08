@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.1.19](https://github.com/sirtheta/budget/compare/budget-v0.1.18...budget-v0.1.19) (2026-08-08)
+
+
+### Features
+
+* **dashboard:** add a net-worth sparkline to the wealth tile ([0ae9c87](https://github.com/sirtheta/budget/commit/0ae9c8776c13115882d52404fda51725e845d66c))
+* **dashboard:** compare the month's totals against history ([05496a1](https://github.com/sirtheta/budget/commit/05496a1fa3888911e621ef1ca834657a7524baf0))
+* **dashboard:** drill down from the budget watchlist ([6278054](https://github.com/sirtheta/budget/commit/62780541cfe27e50efa3291b3a19b20bbd8b0187))
+* **dashboard:** drill-downs, forecast, reserves and mobile ordering ([00a60d0](https://github.com/sirtheta/budget/commit/00a60d0688fff61ef9f4be8419cb264c4f249059))
+* **dashboard:** group the account card by type with subtotals ([a7ece7a](https://github.com/sirtheta/budget/commit/a7ece7a7cb25d29c925afd4d0462bc934b684344))
+* **dashboard:** jump back to the current month from the month nav ([9b62bf1](https://github.com/sirtheta/budget/commit/9b62bf1e25d15e9d6fe57733b42d35a98aae93a7))
+* **dashboard:** link account rows to their bookings ([dd02a3e](https://github.com/sirtheta/budget/commit/dd02a3ede320fd71136eafcc48a2f9d9a8626a54))
+* **dashboard:** make the summary tiles link to their detail view ([851784b](https://github.com/sirtheta/budget/commit/851784b3ac8d33cb1b6c36ab1d8f50894403b1ce))
+* **dashboard:** preview the recurring bookings of the next 30 days ([6fb82e1](https://github.com/sirtheta/budget/commit/6fb82e187de669850fdab19177301c1025a12b6b))
+* **dashboard:** project the running month from the daily spend rate ([28c53f4](https://github.com/sirtheta/budget/commit/28c53f4d627634af2363cb9780b8a1b96d4770af))
+* **dashboard:** put bookings and balances before charts on phones ([c32f902](https://github.com/sirtheta/budget/commit/c32f9025f416e13e3b32eb2fcd87a01f35e1b737))
+* **dashboard:** show balances as of the displayed month's end ([8e8993c](https://github.com/sirtheta/budget/commit/8e8993cfa895126e5708410b9f1a61068edfeb7d))
+* **dashboard:** show the account and edit actions on recent bookings ([9ecddd0](https://github.com/sirtheta/budget/commit/9ecddd036045a45377cbb87aae7756cf91028966))
+* **dashboard:** surface reserves and savings goals ([21212ef](https://github.com/sirtheta/budget/commit/21212ef12081cc5bb0c98cb47e89c6828c61d252))
+
+
+### Bug Fixes
+
+* **dashboard:** keep fixed costs out of the daily spend rate ([e84696a](https://github.com/sirtheta/budget/commit/e84696a2c17e08c59e9f9ff14f06c2d26de20808))
+
+
+### Performance Improvements
+
+* **dashboard:** fetch the BTC history alongside the database work ([215b89b](https://github.com/sirtheta/budget/commit/215b89b319afccc48649de03f3922b9325d4c173))
+
 ## [0.1.18](https://github.com/sirtheta/budget/compare/budget-v0.1.17...budget-v0.1.18) (2026-08-07)
 
 

@@ -12,7 +12,7 @@ import {
   trailingMonths,
 } from "@/lib/date";
 import { accountBalances, illiquidNetWorthCents, liquidNetWorthCents, netWorthCents } from "@/lib/balances";
-import { loadBudgetMonth } from "@/lib/budget";
+import { loadBudgetMonth, projectMonthEnd } from "@/lib/budget";
 import { categoryBreakdown, monthlySeries } from "@/lib/analytics";
 import { goalStatus, reserveStatus, totalMonthlyReserveCents } from "@/lib/reserves";
 import { pendingSuggestions, upcomingRecurring } from "@/lib/recurring";
@@ -96,6 +96,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   const suggestions = isCurrentMonth ? pendingSuggestions(recurring, today) : [];
   const upcoming = isCurrentMonth ? upcomingRecurring(recurring, today, 30) : [];
+  const projection = isCurrentMonth ? projectMonthEnd(budget.totals, today) : null;
+  const budgetLeftCents = budget.totals.plannedExpenseCents - budget.totals.actualExpenseCents;
   const upcomingTotalCents = upcoming.reduce((sum, row) => sum + row.amountCents, 0);
   const reserveMonthly = totalMonthlyReserveCents(reserves, today);
 
@@ -185,20 +187,34 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           label="Ausgaben (Monat)"
           cents={budget.totals.actualExpenseCents}
           href={`/transactions?type=expense&from=${monthFrom}&to=${monthTo}`}
+          hint={joinHints([
+            projection &&
+              `Ø ${formatMoney(projection.dailyExpenseCents, {
+                withCurrency: true,
+              })}/Tag · hochgerechnet ${formatMoney(projection.projectedExpenseCents, {
+                withCurrency: true,
+              })}`,
+            budget.totals.plannedExpenseCents > 0 &&
+              `Budget-Rest: ${formatMoney(budgetLeftCents, { withCurrency: true })}`,
+          ])}
         />
         <Tile
           label="Saldo (Monat)"
           cents={budget.totals.actualBalanceCents}
           colored
           href={`/budget?year=${year}&month=${month}`}
-          hint={
-            reserveMonthly > 0
-              ? `Nach Rückstellungen: ${formatMoney(
-                  budget.totals.actualBalanceCents - reserveMonthly,
-                  { withCurrency: true }
-                )}`
-              : undefined
-          }
+          hint={joinHints([
+            reserveMonthly > 0 &&
+              `Nach Rückstellungen: ${formatMoney(
+                budget.totals.actualBalanceCents - reserveMonthly,
+                { withCurrency: true }
+              )}`,
+            projection &&
+              `Hochgerechnet auf den Monat: ${formatMoney(projection.projectedBalanceCents, {
+                withCurrency: true,
+                forceSign: true,
+              })}`,
+          ])}
         />
       </div>
 
@@ -578,6 +594,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   );
 }
 
+/**
+ * Collects the hint lines a tile has something to say about. Written as
+ * `condition && text` at the call sites, so a missing figure drops its line
+ * instead of leaving an empty one behind.
+ */
+function joinHints(parts: (string | false | null | undefined)[]): string[] | undefined {
+  const lines = parts.filter((part): part is string => typeof part === "string");
+  return lines.length > 0 ? lines : undefined;
+}
+
 function Tile({
   label,
   cents,
@@ -588,10 +614,11 @@ function Tile({
   label: string;
   cents: number | null;
   colored?: boolean;
-  hint?: string;
+  hint?: string | string[];
   /** Makes the whole tile a link to the figure's detail view. */
   href?: string;
 }) {
+  const hints = hint === undefined ? [] : Array.isArray(hint) ? hint : [hint];
   const card = (
     <Card className={href ? "h-full transition-colors hover:border-primary/60" : undefined}>
       <CardHeader className="pb-2">
@@ -604,9 +631,13 @@ function Tile({
           )}
         </CardTitle>
       </CardHeader>
-      {hint && (
+      {hints.length > 0 && (
         <CardContent className="pt-0">
-          <p className="text-xs text-muted-foreground">{hint}</p>
+          {hints.map((line) => (
+            <p key={line} className="text-xs text-muted-foreground">
+              {line}
+            </p>
+          ))}
         </CardContent>
       )}
     </Card>

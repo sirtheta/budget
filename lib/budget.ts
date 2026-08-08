@@ -1,5 +1,5 @@
 import type { CategoryKind, PrismaClient } from "@prisma/client";
-import { monthRange } from "@/lib/date";
+import { daysInMonth, monthRange } from "@/lib/date";
 import { colorFor } from "@/lib/colors";
 
 /**
@@ -221,6 +221,52 @@ function groupLines(
     if (a.kind !== b.kind) return a.kind === "Income" ? -1 : 1;
     return a.parentName.localeCompare(b.parentName, "de-CH");
   });
+}
+
+export interface MonthProjection {
+  /** Days of the month already booked, including today. */
+  elapsedDays: number;
+  daysInMonth: number;
+  /** Average expense per elapsed day, as a positive magnitude. */
+  dailyExpenseCents: number;
+  /** Expenses extrapolated to the full month, as a positive magnitude. */
+  projectedExpenseCents: number;
+  /** Booked income minus projected expenses. */
+  projectedBalanceCents: number;
+}
+
+/** Below this an extrapolation says more about one big booking than about the month. */
+const MIN_DAYS_FOR_PROJECTION = 5;
+
+/**
+ * Extrapolates the running month's expenses to its end from the daily average
+ * so far — the "at this rate you end the month at X" figure.
+ *
+ * Only expenses are extrapolated. Income arrives in one or two lumps on fixed
+ * days, so projecting it from a daily average would either double a salary
+ * already booked or invent one that has not arrived yet.
+ *
+ * Returns null for a month that is too young to extrapolate from, and for any
+ * month other than the running one — a closed month has its real total.
+ */
+export function projectMonthEnd(
+  totals: Pick<BudgetMonth["totals"], "actualIncomeCents" | "actualExpenseCents">,
+  today: string
+): MonthProjection | null {
+  const [year, month, day] = today.split("-").map(Number);
+  const elapsedDays = day;
+  const days = daysInMonth(year, month);
+  if (elapsedDays < MIN_DAYS_FOR_PROJECTION || elapsedDays >= days) return null;
+
+  const dailyExpenseCents = Math.round(totals.actualExpenseCents / elapsedDays);
+  const projectedExpenseCents = dailyExpenseCents * days;
+  return {
+    elapsedDays,
+    daysInMonth: days,
+    dailyExpenseCents,
+    projectedExpenseCents,
+    projectedBalanceCents: totals.actualIncomeCents - projectedExpenseCents,
+  };
 }
 
 /**

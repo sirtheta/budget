@@ -12,7 +12,15 @@ import {
   todayInZone,
   trailingMonths,
 } from "@/lib/date";
-import { accountBalances, illiquidNetWorthCents, liquidNetWorthCents, netWorthCents } from "@/lib/balances";
+import type { AccountType } from "@prisma/client";
+import {
+  ACCOUNT_TYPE_LABELS,
+  type AccountBalance,
+  accountBalances,
+  illiquidNetWorthCents,
+  liquidNetWorthCents,
+  netWorthCents,
+} from "@/lib/balances";
 import { loadBudgetMonth, projectMonthEnd } from "@/lib/budget";
 import { categoryBreakdown, monthlySeries, netWorthSeries } from "@/lib/analytics";
 import { goalStatus, reserveStatus, totalMonthlyReserveCents } from "@/lib/reserves";
@@ -125,6 +133,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const goalStatuses = goals
     .map((goal) => goalStatus(goal, today))
     .sort((a, b) => Number(a.isReached) - Number(b.isReached));
+  const accountGroups = groupByAccountType(balances);
   const overBudget = budget.groups
     .flatMap((group) => group.lines)
     .filter((line) => line.status === "over" || line.status === "warning")
@@ -335,35 +344,58 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               Konto anklicken für seine Buchungen
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <ul className="flex flex-col">
-              {balances.map((account) => (
-                <li key={account.id}>
-                  <Link
-                    href={`/transactions?accountId=${account.id}&from=${monthFrom}&to=${monthTo}`}
-                    // One link per account, and the booking list is a dynamic
-                    // page: prefetching all of them renders it that many times.
-                    prefetch={false}
-                    className="flex items-center gap-2 rounded-md px-2 py-1.5 -mx-2 text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-                  >
-                    <span
-                      className="size-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: account.color }}
-                      aria-hidden
-                    />
-                    <span className="truncate">{account.name}</span>
-                    {!isCurrentMonth && account.type === "Crypto" && (
-                      // Only a live BTC price exists, so this one value is not
-                      // the month-end figure the rest of the card shows.
-                      <span className="text-xs text-muted-foreground shrink-0">aktueller Kurs</span>
-                    )}
-                    <span className="ml-auto shrink-0 font-medium">
-                      <Money cents={account.balanceCents} colored />
+          <CardContent className="flex flex-col gap-4">
+            {accountGroups.map((group) => (
+              <div key={group.type}>
+                {accountGroups.length > 1 && (
+                  <div className="flex items-baseline justify-between gap-2 mb-1">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {ACCOUNT_TYPE_LABELS[group.type]}
+                    </h3>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      <Money cents={group.totalCents} />
                     </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+                  </div>
+                )}
+                <ul className="flex flex-col">
+                  {group.accounts.map((account) => (
+                    <li key={account.id}>
+                      <Link
+                        href={`/transactions?accountId=${account.id}&from=${monthFrom}&to=${monthTo}`}
+                        // One link per account, and the booking list is a dynamic
+                        // page: prefetching all of them renders it that many times.
+                        prefetch={false}
+                        className="flex items-center gap-2 rounded-md px-2 py-1.5 -mx-2 text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                      >
+                        <span
+                          className="size-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: account.color }}
+                          aria-hidden
+                        />
+                        <span className="truncate">{account.name}</span>
+                        {account.excludeFromBudget && (
+                          // Otherwise its bookings are missing from every budget
+                          // figure on this page with nothing saying why.
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            ausserhalb Budget
+                          </span>
+                        )}
+                        {!isCurrentMonth && account.type === "Crypto" && (
+                          // Only a live BTC price exists, so this one value is not
+                          // the month-end figure the rest of the card shows.
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            aktueller Kurs
+                          </span>
+                        )}
+                        <span className="ml-auto shrink-0 font-medium">
+                          <Money cents={account.balanceCents} colored />
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>
@@ -642,6 +674,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       )}
     </>
   );
+}
+
+/**
+ * Groups the account list by type, in the order the types first appear — which
+ * is the user's own sort order, not an order invented here. A flat list of a
+ * dozen accounts stops being readable; per-type subtotals answer "how much is
+ * in savings" without adding anything up by hand.
+ */
+function groupByAccountType(
+  balances: AccountBalance[]
+): { type: AccountType; accounts: AccountBalance[]; totalCents: number }[] {
+  const groups = new Map<AccountType, { type: AccountType; accounts: AccountBalance[]; totalCents: number }>();
+  for (const account of balances) {
+    let group = groups.get(account.type);
+    if (!group) {
+      group = { type: account.type, accounts: [], totalCents: 0 };
+      groups.set(account.type, group);
+    }
+    group.accounts.push(account);
+    group.totalCents += account.balanceCents;
+  }
+  return [...groups.values()];
 }
 
 function averageOf(values: number[]): number | null {

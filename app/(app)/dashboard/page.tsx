@@ -228,20 +228,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Konten</CardTitle>
+            <CardDescription>Konto anklicken für seine Buchungen</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="flex flex-col gap-2">
+            <ul className="flex flex-col">
               {balances.map((account) => (
-                <li key={account.id} className="flex items-center gap-2 text-sm">
-                  <span
-                    className="size-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: account.color }}
-                    aria-hidden
-                  />
-                  <span className="truncate">{account.name}</span>
-                  <span className="ml-auto shrink-0 font-medium">
-                    <Money cents={account.balanceCents} colored />
-                  </span>
+                <li key={account.id}>
+                  <Link
+                    href={`/transactions?accountId=${account.id}&from=${monthFrom}&to=${monthTo}`}
+                    // One link per account, and the booking list is a dynamic
+                    // page: prefetching all of them renders it that many times.
+                    prefetch={false}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 -mx-2 text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                  >
+                    <span
+                      className="size-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: account.color }}
+                      aria-hidden
+                    />
+                    <span className="truncate">{account.name}</span>
+                    <span className="ml-auto shrink-0 font-medium">
+                      <Money cents={account.balanceCents} colored />
+                    </span>
+                  </Link>
                 </li>
               ))}
             </ul>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addDays,
   addMonths,
+  daysBetween,
   daysInMonth,
   formatDateCH,
   isValidDateString,
@@ -67,6 +68,20 @@ describe("monthRange / yearRange", () => {
     expect(monthRange(2026, 2)).toEqual({ from: "2026-02-01", to: "2026-02-28" });
     expect(monthRange(2026, 12)).toEqual({ from: "2026-12-01", to: "2026-12-31" });
     expect(yearRange(2026)).toEqual({ from: "2026-01-01", to: "2026-12-31" });
+  });
+});
+
+describe("daysBetween", () => {
+  it("counts whole days, signed, across month and year boundaries", () => {
+    expect(daysBetween("2026-01-08", "2026-01-31")).toBe(23);
+    expect(daysBetween("2026-01-31", "2026-02-01")).toBe(1);
+    expect(daysBetween("2026-01-01", "2025-12-31")).toBe(-1);
+    expect(daysBetween("2026-03-15", "2026-03-15")).toBe(0);
+  });
+
+  it("counts calendar days across a DST switch, not 24-hour blocks", () => {
+    // Europe/Zurich springs forward on 29.03.2026 — 23 hours, still one day.
+    expect(daysBetween("2026-03-28", "2026-03-30")).toBe(2);
   });
 });
 

@@ -227,30 +227,56 @@ export interface MonthProjection {
   /** Days of the month already booked, including today. */
   elapsedDays: number;
   daysInMonth: number;
-  /** Average expense per elapsed day, as a positive magnitude. */
-  dailyExpenseCents: number;
+  /** Average day-to-day expense per elapsed day, excluding fixed costs. */
+  dailyVariableExpenseCents: number;
   /** Expenses extrapolated to the full month, as a positive magnitude. */
   projectedExpenseCents: number;
-  /** Booked income minus projected expenses. */
+  /** Booked income plus the fixed income still to come. */
+  projectedIncomeCents: number;
+  /** projectedIncome − projectedExpense. */
   projectedBalanceCents: number;
 }
 
 /** Below this an extrapolation says more about one big booking than about the month. */
 const MIN_DAYS_FOR_PROJECTION = 5;
 
+export interface MonthProjectionInput {
+  actualIncomeCents: number;
+  /** Positive magnitude, as in BudgetMonth["totals"]. */
+  actualExpenseCents: number;
+  /**
+   * Of the booked expenses, the fixed-cost part (magnitude): bookings a
+   * recurring entry posted, plus bookings in the categories those entries use
+   * — an imported rent debit is a fixed cost too, even though nothing linked
+   * it to the schedule.
+   */
+  bookedFixedExpenseCents: number;
+  /** Recurring expenses still to be posted before month end (magnitude). */
+  dueRecurringExpenseCents: number;
+  /** Recurring income still to be posted before month end. */
+  dueRecurringIncomeCents: number;
+}
+
 /**
- * Extrapolates the running month's expenses to its end from the daily average
- * so far — the "at this rate you end the month at X" figure.
+ * Extrapolates the running month to its end — the "at this rate you end the
+ * month at X" figure.
  *
- * Only expenses are extrapolated. Income arrives in one or two lumps on fixed
- * days, so projecting it from a daily average would either double a salary
- * already booked or invent one that has not arrived yet.
+ * Fixed costs are handled separately from day-to-day spending, and that split
+ * is the whole point: rent, health insurance and the like are booked in the
+ * first days of the month, so a plain daily average taken on the 8th projects
+ * a household paying its rent every single day. Only what is left after the
+ * recurring entries is spread over the remaining days; the fixed costs still
+ * ahead are added at their actual amounts, from the schedule that already
+ * knows them.
  *
- * Returns null for a month that is too young to extrapolate from, and for any
- * month other than the running one — a closed month has its real total.
+ * Income is never spread for the same reason — a salary lands once. Recurring
+ * income still due this month is added at its scheduled amount.
+ *
+ * Returns null for a month that is too young to extrapolate from, and on its
+ * last day, where the booked total is the answer.
  */
 export function projectMonthEnd(
-  totals: Pick<BudgetMonth["totals"], "actualIncomeCents" | "actualExpenseCents">,
+  input: MonthProjectionInput,
   today: string
 ): MonthProjection | null {
   const [year, month, day] = today.split("-").map(Number);
@@ -258,14 +284,24 @@ export function projectMonthEnd(
   const days = daysInMonth(year, month);
   if (elapsedDays < MIN_DAYS_FOR_PROJECTION || elapsedDays >= days) return null;
 
-  const dailyExpenseCents = Math.round(totals.actualExpenseCents / elapsedDays);
-  const projectedExpenseCents = dailyExpenseCents * days;
+  const variableSoFar = Math.max(
+    0,
+    input.actualExpenseCents - input.bookedFixedExpenseCents
+  );
+  const dailyVariableExpenseCents = Math.round(variableSoFar / elapsedDays);
+  const projectedExpenseCents =
+    input.actualExpenseCents +
+    dailyVariableExpenseCents * (days - elapsedDays) +
+    input.dueRecurringExpenseCents;
+  const projectedIncomeCents = input.actualIncomeCents + input.dueRecurringIncomeCents;
+
   return {
     elapsedDays,
     daysInMonth: days,
-    dailyExpenseCents,
+    dailyVariableExpenseCents,
     projectedExpenseCents,
-    projectedBalanceCents: totals.actualIncomeCents - projectedExpenseCents,
+    projectedIncomeCents,
+    projectedBalanceCents: projectedIncomeCents - projectedExpenseCents,
   };
 }
 

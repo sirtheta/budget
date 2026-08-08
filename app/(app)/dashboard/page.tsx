@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { hasRole, requireSession } from "@/lib/permissions";
 import { config } from "@/lib/config";
 import {
+  daysBetween,
   formatDateCH,
   monthEnd,
   monthName,
@@ -63,11 +64,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const monthFrom = monthStart(year, month);
   const monthTo = isCurrentMonth ? today : monthEnd(year, month);
 
-  // Asked separately and first because the answer decides whether the three
-  // CoinGecko calls below run at all — and they have to be part of the batch,
-  // not appended after it: a cold price history blocked the finished page for
-  // up to three seconds while the database work was long done.
-  const hasCrypto = (await prisma.account.count({ where: { type: "Crypto", isActive: true } })) > 0;
+  // Two cheap lookups ahead of the main batch, because the batch needs their
+  // answers: whether a wallet exists decides if the three CoinGecko calls run
+  // at all (they have to be *inside* the batch — appended after it, a cold
+  // price history blocked the finished page for up to three seconds), and the
+  // recurring entries decide which categories count as fixed costs below.
+  const [cryptoAccountCount, recurring] = await Promise.all([
+    prisma.account.count({ where: { type: "Crypto", isActive: true } }),
+    prisma.recurringTransaction.findMany({ where: { isActive: true } }),
+  ]);
+  const hasCrypto = cryptoAccountCount > 0;
+
+  // Categories a recurring expense entry books into — rent, health insurance,
+  // travel pass. Their bookings are fixed costs even when they arrived through
+  // a statement import rather than from the schedule, which is the normal case
+  // for a household that imports its bank statements.
+  const fixedCostCategoryIds = [
+    ...new Set(
+      recurring
+        .filter((row) => row.counterAccountId === null && row.amountCents < 0)
+        .map((row) => row.categoryId)
+        .filter((id): id is number => id !== null)
+    ),
+  ];
 
   const [
     balances,
@@ -78,8 +97,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     recentTransactions,
     reserves,
     goals,
-    recurring,
     accounts,
+    bookedFixedExpense,
     categories,
     btcHistory,
   ] = await Promise.all([
@@ -104,11 +123,27 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       orderBy: [{ nextDueDate: "asc" }, { name: "asc" }],
     }),
     prisma.savingsGoal.findMany({ orderBy: [{ targetDate: "asc" }, { name: "asc" }] }),
-    prisma.recurringTransaction.findMany({ where: { isActive: true } }),
     prisma.account.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, name: true },
+    }),
+    // The share of this month's expenses that is fixed cost — the part the
+    // projection must not spread over the remaining days.
+    prisma.transaction.aggregate({
+      where: {
+        date: { gte: monthFrom, lte: monthTo },
+        amountCents: { lt: 0 },
+        transferGroupId: null,
+        account: { excludeFromBudget: false },
+        OR: [
+          { recurringId: { not: null } },
+          ...(fixedCostCategoryIds.length > 0
+            ? [{ categoryId: { in: fixedCostCategoryIds } }]
+            : []),
+        ],
+      },
+      _sum: { amountCents: true },
     }),
     categoryOptions(prisma),
     hasCrypto
@@ -118,7 +153,30 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   const suggestions = isCurrentMonth ? pendingSuggestions(recurring, today) : [];
   const upcoming = isCurrentMonth ? upcomingRecurring(recurring, today, 30) : [];
-  const projection = isCurrentMonth ? projectMonthEnd(budget.totals, today) : null;
+  // Only what still falls due inside this month, and only entries that are
+  // really income or expense — a transfer leg moves money between the
+  // household's own accounts and belongs in no budget figure.
+  const dueThisMonth = isCurrentMonth
+    ? upcomingRecurring(recurring, today, daysBetween(today, monthEnd(year, month))).filter(
+        (row) => row.counterAccountId === null
+      )
+    : [];
+  const projection = isCurrentMonth
+    ? projectMonthEnd(
+        {
+          actualIncomeCents: budget.totals.actualIncomeCents,
+          actualExpenseCents: budget.totals.actualExpenseCents,
+          bookedFixedExpenseCents: Math.abs(bookedFixedExpense._sum.amountCents ?? 0),
+          dueRecurringExpenseCents: dueThisMonth
+            .filter((row) => row.amountCents < 0)
+            .reduce((sum, row) => sum - row.amountCents, 0),
+          dueRecurringIncomeCents: dueThisMonth
+            .filter((row) => row.amountCents > 0)
+            .reduce((sum, row) => sum + row.amountCents, 0),
+        },
+        today
+      )
+    : null;
   // `series` ends with the displayed month, so everything before it is the
   // history this month is compared against.
   const previousMonth = series.at(-2) ?? null;
@@ -126,7 +184,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const averageIncomeCents = averageOf(historyMonths.map((m) => m.incomeCents));
   const averageExpenseCents = averageOf(historyMonths.map((m) => m.expenseCents));
   const budgetLeftCents = budget.totals.plannedExpenseCents - budget.totals.actualExpenseCents;
-  const upcomingTotalCents = upcoming.reduce((sum, row) => sum + row.amountCents, 0);
+  // Transfer legs move money between the household's own accounts, so they
+  // neither add to nor take from what the month has available.
+  const upcomingTotalCents = upcoming
+    .filter((row) => row.counterAccountId === null)
+    .reduce((sum, row) => sum + row.amountCents, 0);
   const reserveMonthly = totalMonthlyReserveCents(reserves, today);
 
   // Underfunded first, then whatever falls due next: a reserve that is already
@@ -254,9 +316,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                 !isCurrentMonth
               ),
             projection &&
-              `Ø ${formatMoney(projection.dailyExpenseCents, {
+              `Ø ${formatMoney(projection.dailyVariableExpenseCents, {
                 withCurrency: true,
-              })}/Tag · hochgerechnet ${formatMoney(projection.projectedExpenseCents, {
+              })}/Tag variabel · hochgerechnet ${formatMoney(projection.projectedExpenseCents, {
                 withCurrency: true,
               })}`,
             budget.totals.plannedExpenseCents > 0 &&
@@ -505,13 +567,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                           {formatDateCH(row.nextDate)}
                         </span>
                         <span className="text-sm truncate flex-1">{row.name}</span>
+                        {row.counterAccountId !== null && (
+                          <Badge variant="secondary" className="shrink-0">
+                            Umbuchung
+                          </Badge>
+                        )}
                         {!row.autoPost && (
                           <Badge variant="outline" className="shrink-0">
                             Bestätigung
                           </Badge>
                         )}
                         <span className="shrink-0 font-medium text-sm">
-                          <Money cents={row.amountCents} colored />
+                          {/* A transfer has no direction for the budget — colouring
+                              its leg green would read as income arriving. */}
+                          <Money
+                            cents={row.amountCents}
+                            colored={row.counterAccountId === null}
+                          />
                         </span>
                       </li>
                     ))}
@@ -626,7 +698,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               <ul className="divide-y">
                 {recentTransactions.map((transaction) => (
                   <li key={transaction.id} className="group flex items-center gap-3 py-2">
-                    <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">
+                    {/* On a phone the date joins the account line underneath: as
+                        its own column it squeezed the description down to two
+                        characters. */}
+                    <span className="hidden sm:block text-xs text-muted-foreground tabular-nums w-20 shrink-0">
                       {formatDateCH(transaction.date)}
                     </span>
                     <span className="min-w-0 flex-1">
@@ -637,7 +712,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                           style={{ backgroundColor: colorFor(transaction.accountId, transaction.account.color) }}
                           aria-hidden
                         />
-                        <span className="truncate">{transaction.account.name}</span>
+                        <span className="truncate">
+                          <span className="sm:hidden">{formatDateCH(transaction.date)} · </span>
+                          {transaction.account.name}
+                        </span>
                       </span>
                     </span>
                     {transaction.transferGroupId ? (

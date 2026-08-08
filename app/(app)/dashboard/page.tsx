@@ -64,7 +64,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     accounts,
     categories,
   ] = await Promise.all([
-    accountBalances(prisma),
+    // A past month shows the balances as they stood at its end; today's
+    // balance next to May's income and expenses would read as May's.
+    accountBalances(prisma, isCurrentMonth ? {} : { asOf: monthTo }),
     loadBudgetMonth(prisma, year, month),
     monthlySeries(prisma, trailingMonths(year, month, 12)),
     categoryBreakdown(prisma, monthFrom, monthTo, "Expense"),
@@ -138,7 +140,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <Tile
-          label="Vermögen"
+          label={isCurrentMonth ? "Vermögen" : `Vermögen per ${formatDateCH(monthTo)}`}
           cents={netWorthCents(balances)}
           colored
           href="/accounts"
@@ -240,7 +242,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Konten</CardTitle>
-            <CardDescription>Konto anklicken für seine Buchungen</CardDescription>
+            <CardDescription>
+              {isCurrentMonth ? "" : `Stand ${formatDateCH(monthTo)} · `}
+              Konto anklicken für seine Buchungen
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="flex flex-col">
@@ -259,6 +264,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                       aria-hidden
                     />
                     <span className="truncate">{account.name}</span>
+                    {!isCurrentMonth && account.type === "Crypto" && (
+                      // Only a live BTC price exists, so this one value is not
+                      // the month-end figure the rest of the card shows.
+                      <span className="text-xs text-muted-foreground shrink-0">aktueller Kurs</span>
+                    )}
                     <span className="ml-auto shrink-0 font-medium">
                       <Money cents={account.balanceCents} colored />
                     </span>

@@ -97,6 +97,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const suggestions = isCurrentMonth ? pendingSuggestions(recurring, today) : [];
   const upcoming = isCurrentMonth ? upcomingRecurring(recurring, today, 30) : [];
   const projection = isCurrentMonth ? projectMonthEnd(budget.totals, today) : null;
+  // `series` ends with the displayed month, so everything before it is the
+  // history this month is compared against.
+  const previousMonth = series.at(-2) ?? null;
+  const historyMonths = series.slice(0, -1);
+  const averageIncomeCents = averageOf(historyMonths.map((m) => m.incomeCents));
+  const averageExpenseCents = averageOf(historyMonths.map((m) => m.expenseCents));
   const budgetLeftCents = budget.totals.plannedExpenseCents - budget.totals.actualExpenseCents;
   const upcomingTotalCents = upcoming.reduce((sum, row) => sum + row.amountCents, 0);
   const reserveMonthly = totalMonthlyReserveCents(reserves, today);
@@ -182,12 +188,43 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           label="Einnahmen (Monat)"
           cents={budget.totals.actualIncomeCents}
           href={`/transactions?type=income&from=${monthFrom}&to=${monthTo}`}
+          hint={joinHints([
+            previousMonth &&
+              comparisonHint(
+                "Vormonat",
+                budget.totals.actualIncomeCents,
+                previousMonth.incomeCents,
+                !isCurrentMonth
+              ),
+            comparisonHint(
+              "Ø 11 Monate",
+              budget.totals.actualIncomeCents,
+              averageIncomeCents,
+              !isCurrentMonth
+            ),
+          ])}
         />
         <Tile
           label="Ausgaben (Monat)"
           cents={budget.totals.actualExpenseCents}
           href={`/transactions?type=expense&from=${monthFrom}&to=${monthTo}`}
           hint={joinHints([
+            previousMonth &&
+              comparisonHint(
+                "Vormonat",
+                budget.totals.actualExpenseCents,
+                previousMonth.expenseCents,
+                !isCurrentMonth
+              ),
+            // The projection line below already carries the running month's
+            // trend; both at once makes four lines out of a summary tile.
+            !projection &&
+              comparisonHint(
+                "Ø 11 Monate",
+                budget.totals.actualExpenseCents,
+                averageExpenseCents,
+                !isCurrentMonth
+              ),
             projection &&
               `Ø ${formatMoney(projection.dailyExpenseCents, {
                 withCurrency: true,
@@ -592,6 +629,34 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       )}
     </>
   );
+}
+
+function averageOf(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return Math.round(values.reduce((total, value) => total + value, 0) / values.length);
+}
+
+/**
+ * `Vormonat: 4'250.00 (+12 %)` — the comparison a bare monthly total is
+ * missing.
+ *
+ * The percentage needs two comparable periods, so it is left off while the
+ * displayed month is still running: half a month against a whole one always
+ * looks like a drop. The reference figure itself stays, which is the half of
+ * the comparison that is still true.
+ */
+function comparisonHint(
+  label: string,
+  cents: number,
+  referenceCents: number | null,
+  withPercent: boolean
+): string | null {
+  if (referenceCents === null) return null;
+  const amount = formatMoney(referenceCents, { withCurrency: true });
+  if (!withPercent || referenceCents === 0) return `${label}: ${amount}`;
+  const percent = Math.round(((cents - referenceCents) / Math.abs(referenceCents)) * 100);
+  const sign = percent < 0 ? "−" : "+";
+  return `${label}: ${amount} (${sign}${Math.abs(percent)} %)`;
 }
 
 /**

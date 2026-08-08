@@ -285,7 +285,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           <CardHeader className="flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base">Budget im Blick</CardTitle>
-              <CardDescription>Kategorien nahe an oder über dem Budget</CardDescription>
+              <CardDescription>
+                Kategorien nahe an oder über dem Budget — Zeile anklicken für die Buchungen
+              </CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/budget">
@@ -302,19 +304,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               <ul className="flex flex-col gap-3">
                 {overBudget.slice(0, 6).map((line) => (
                   <li key={line.categoryId}>
-                    <div className="flex items-center justify-between gap-2 text-sm mb-1">
-                      <span className="truncate">{line.name}</span>
-                      <span className="shrink-0 text-muted-foreground tabular-nums">
-                        <Money cents={line.actualCents} /> / <Money cents={line.plannedCents} />
-                      </span>
-                    </div>
-                    <Progress
-                      value={line.progress ?? 0}
-                      label={line.name}
-                      indicatorClassName={
-                        line.status === "over" ? "bg-destructive" : "bg-amber-500"
-                      }
-                    />
+                    <Link
+                      href={`/transactions?categoryId=${line.categoryId}&from=${monthFrom}&to=${monthTo}`}
+                      prefetch={false}
+                      className="block rounded-md px-2 py-1 -mx-2 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-sm mb-1">
+                        <span className="truncate">{line.name}</span>
+                        <span className="shrink-0 text-muted-foreground tabular-nums">
+                          <Money cents={line.actualCents} /> / <Money cents={line.plannedCents} />
+                        </span>
+                      </div>
+                      <Progress
+                        value={line.progress ?? 0}
+                        label={line.name}
+                        indicatorClassName={
+                          line.status === "over" ? "bg-destructive" : "bg-amber-500"
+                        }
+                      />
+                    </Link>
                   </li>
                 ))}
               </ul>

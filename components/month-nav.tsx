@@ -13,16 +13,27 @@ export function MonthNav({
   year,
   month,
   basePath,
+  today,
 }: {
   year: number;
   month: number;
   /** Route the arrows link to, e.g. `/budget`. */
   basePath: string;
+  /**
+   * Today in the app timezone (`YYYY-MM-DD`). Given it, the nav offers a jump
+   * back to the current month — without it, returning from a month five back
+   * means clicking the arrow five times.
+   */
+  today?: string;
 }) {
   const previous = shiftMonth(year, month, -1);
   const next = shiftMonth(year, month, 1);
   const href = (target: { year: number; month: number }) =>
     `${basePath}?year=${target.year}&month=${target.month}`;
+
+  const [currentYear, currentMonth] = today ? today.split("-").map(Number) : [];
+  const showToday =
+    currentYear !== undefined && (currentYear !== year || currentMonth !== month);
 
   return (
     <div className="flex items-center gap-1">
@@ -39,6 +50,11 @@ export function MonthNav({
           <ChevronRight className="h-4 w-4" />
         </Link>
       </Button>
+      {showToday && (
+        <Button variant="ghost" size="sm" asChild>
+          <Link href={href({ year: currentYear!, month: currentMonth! })}>Heute</Link>
+        </Button>
+      )}
     </div>
   );
 }

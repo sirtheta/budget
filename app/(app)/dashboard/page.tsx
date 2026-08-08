@@ -130,7 +130,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   return (
     <>
       <PageHeader title="Dashboard" description={`${monthName(month)} ${year}`}>
-        <MonthNav year={year} month={month} basePath="/dashboard" />
+        <MonthNav year={year} month={month} basePath="/dashboard" today={today} />
         {canEdit && (
           <TransactionFormDialog accounts={accounts} categories={categories} today={today} />
         )}

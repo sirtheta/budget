@@ -18,6 +18,7 @@ export const LINKS: { href: string; label: string; roles: UserRole[] }[] = [
   { href: "/users", label: "Benutzer", roles: ["Admin"] },
   { href: "/settings", label: "Einstellungen", roles: ["Admin"] },
   { href: "/audit", label: "Audit-Log", roles: ["Admin"] },
+  { href: "/logs", label: "Logs", roles: ["Admin"] },
 ];
 
 export function NavLinks({

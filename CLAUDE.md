@@ -110,6 +110,8 @@ Nothing is written until the user has reviewed the preview. Duplicates start unc
 
 **Backups** (`lib/backup.ts`): nightly `VACUUM INTO` snapshot to `backups/` next to the database file, inside the data volume.
 
+**Logs** (`lib/logs.ts`): `startLogCapture()` tees `process.stdout`/`process.stderr` to `logs/app.log` in the data volume, so a file ends up with everything `docker logs` would show — not just what happens to go through the shared pino logger — without `lib/logger.ts` itself importing `fs` (that module is reachable from the client bundle via `lib/crypto-price.ts`, and pino's browser build has no filesystem to give it). A nightly job copy-truncates `app.log` to `app-<date>.log` (rename would leave the already-open write stream writing into the renamed file) and prunes files older than `LOG_MAX_KEEP_DAYS`. Admins download files from `/logs` in the UI (`GET /api/logs/[filename]`, filename validated against the exact `app.log` / `app-YYYY-MM-DD.log` shape before touching the filesystem).
+
 **Production startup** (`scripts/startup.js`): applies pending migrations directly via `better-sqlite3` (no Prisma CLI in the image), generates `AUTH_SECRET`/`ENCRYPTION_KEY` if unset, and seeds the first admin.
 
 ### Client/server module boundary
@@ -131,10 +133,11 @@ Dialog forms use `useDialogFormAction` (`components/use-dialog-form.ts`) rather 
 | `APP_TIMEZONE` | No | IANA timezone deciding which calendar day is "today", defaults to `Europe/Zurich` |
 | `RECURRING_CRON_SCHEDULE` | No | Cron expression for posting due recurring entries, defaults to `5 * * * *` |
 | `BACKUP_CRON_SCHEDULE` / `BACKUP_MAX_KEEP_DAYS` | No | Nightly backup schedule (`30 2 * * *`) and retention (`14`, `0` = keep all) |
+| `LOG_ROTATE_CRON_SCHEDULE` / `LOG_MAX_KEEP_DAYS` | No | Nightly log rotation schedule (`35 2 * * *`) and retention (`14`, `0` = keep all) |
 | `AUDIT_RETENTION_DAYS` | No | Days to keep audit rows (`0` = forever), default `365` |
 | `IMPORT_MAX_FILE_SIZE_BYTES` | No | Upload guard for statement files, default 10 MB |
 | `KEEP_ALIVE_TIMEOUT` | Behind reverse proxy | Node HTTP keep-alive timeout in ms, default 5000; must exceed the proxy's own upstream keep-alive timeout or requests occasionally hang silently (see [`docs/01-app/03-api-reference/06-cli/next.md`](node_modules/next/dist/docs/01-app/03-api-reference/06-cli/next.md)) |
-| `DISABLE_EMAIL` / `DISABLE_BACKUP` / `DISABLE_RECURRING` | No | Dev/staging switches |
+| `DISABLE_EMAIL` / `DISABLE_BACKUP` / `DISABLE_RECURRING` / `DISABLE_LOG_ROTATION` | No | Dev/staging switches |
 
 See `.env.example` for the full list.
 

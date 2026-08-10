@@ -34,6 +34,13 @@ export const config = {
     // Days to keep backup files; 0 disables pruning (keep all).
     maxKeepDays: envInt(process.env.BACKUP_MAX_KEEP_DAYS, 14),
   },
+  logs: {
+    // Nightly log rotation (<data>/logs/app.log -> app-<date>.log). 5 minutes
+    // after the backup, so the two nightly jobs don't contend for disk I/O.
+    rotateCronSchedule: process.env.LOG_ROTATE_CRON_SCHEDULE || "35 2 * * *",
+    // Days to keep rotated log files; 0 disables pruning (keep all).
+    maxKeepDays: envInt(process.env.LOG_MAX_KEEP_DAYS, 14),
+  },
   import: {
     // Upload guard for CAMT.053/CSV files, in bytes.
     maxFileSizeBytes: envInt(process.env.IMPORT_MAX_FILE_SIZE_BYTES, 10 * 1024 * 1024),

@@ -12,6 +12,10 @@ export async function register() {
     const { startBackupScheduler } = await import("@/lib/backup");
     startBackupScheduler();
 
+    const { startLogCapture, startLogRotationScheduler } = await import("@/lib/logs");
+    startLogCapture();
+    startLogRotationScheduler();
+
     // Checkpoint WAL on shutdown so SQLite WAL changes flush to main .db file.
     // NEXT_MANUAL_SIG_HANDLE=true (set in the Dockerfile) disables Next's own
     // SIGTERM/SIGINT handler so this is the only thing exiting the process.

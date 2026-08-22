@@ -19,3 +19,7 @@ updates:
           - "@typescript-eslint/*"
         update-types:
           - "major"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-patch"

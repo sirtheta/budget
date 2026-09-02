@@ -237,6 +237,7 @@ function SortableRow({
           </Link>
           {!account.isActive && <Badge variant="outline">Inaktiv</Badge>}
           {account.excludeFromBudget && <Badge variant="secondary">Ausserhalb Budget</Badge>}
+          {account.excludeFromNetWorth && <Badge variant="secondary">Ausserhalb Vermögen</Badge>}
         </div>
         {account.notes && <p className="text-xs text-muted-foreground mt-0.5">{account.notes}</p>}
       </TableCell>
@@ -343,6 +344,7 @@ function SortableListItem({
               </Link>
               {!account.isActive && <Badge variant="outline">Inaktiv</Badge>}
               {account.excludeFromBudget && <Badge variant="secondary">Ausserhalb Budget</Badge>}
+              {account.excludeFromNetWorth && <Badge variant="secondary">Ausserhalb Vermögen</Badge>}
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
               {ACCOUNT_TYPE_LABELS[account.type]}

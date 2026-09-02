@@ -75,6 +75,7 @@ describe("saveAccountAction", () => {
         openingBalance: "1000",
         btcAmount: "0",
         btcCostBasis: "",
+        excludeFromNetWorth: "on",
       })
     );
     expect(result).toEqual({ success: true });
@@ -83,6 +84,7 @@ describe("saveAccountAction", () => {
     const row = await prisma.account.findFirstOrThrow({ where: { name: "Neues Konto" } });
     expect(row.iban).toBe("CH9300762011623852957");
     expect(row.openingBalanceCents).toBe(100000);
+    expect(row.excludeFromNetWorth).toBe(true);
   });
 
   it("rejects a duplicate IBAN", async () => {

@@ -21,6 +21,9 @@ describe("netWorthSeries", () => {
     const depot = await prisma.account.create({
       data: { name: "3a", type: "Investment", openingBalanceCents: 200000 },
     });
+    await prisma.account.create({
+      data: { name: "Durchlaufkonto", type: "Checking", openingBalanceCents: 900000, excludeFromNetWorth: true },
+    });
 
     await prisma.transaction.createMany({
       data: [

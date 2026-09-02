@@ -1,0 +1,1 @@
+ALTER TABLE "Account" ADD COLUMN "excludeFromNetWorth" BOOLEAN NOT NULL DEFAULT false;

@@ -159,8 +159,9 @@ export interface NetWorthPoint {
  * Net worth at the end of each month, split into liquid and illiquid.
  *
  * Unlike the income/expense series this deliberately includes transfers and
- * excluded accounts: the point is total wealth, and money moved into a
- * portfolio has not left the household.
+ * budget-excluded accounts: the point is total wealth, and money moved into a
+ * portfolio has not left the household. Accounts explicitly excluded from net
+ * worth are omitted.
  *
  * Crypto accounts contribute nothing here — they have no opening balance or
  * transactions, only a live-priced current value (see lib/balances.ts) — so
@@ -174,7 +175,10 @@ export async function netWorthSeries(
   const from = monthRange(months[0].year, months[0].month).from;
 
   const [accounts, priorRows, rows] = await Promise.all([
-    prisma.account.findMany({ select: { id: true, type: true, openingBalanceCents: true } }),
+    prisma.account.findMany({
+      where: { excludeFromNetWorth: false },
+      select: { id: true, type: true, openingBalanceCents: true },
+    }),
     prisma.transaction.findMany({
       where: { date: { lt: from } },
       select: { accountId: true, amountCents: true },

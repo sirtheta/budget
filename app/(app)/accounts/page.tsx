@@ -61,7 +61,7 @@ export default async function AccountsPage() {
 
       <Card className="mb-6">
         <CardHeader>
-          <CardDescription>Vermögen über alle aktiven Konten</CardDescription>
+          <CardDescription>Vermögen über alle berücksichtigten aktiven Konten</CardDescription>
           <CardTitle className="text-3xl">
             <Money cents={activeNetWorth} withCurrency colored />
           </CardTitle>

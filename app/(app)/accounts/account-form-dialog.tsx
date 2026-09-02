@@ -190,6 +190,22 @@ export function AccountFormDialog({ account }: { account?: Account }) {
             </span>
           </label>
 
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="excludeFromNetWorth"
+              defaultChecked={account?.excludeFromNetWorth}
+              className="mt-1 size-4 accent-primary"
+            />
+            <span>
+              Nicht ins Vermögen einrechnen
+              <span className="block text-xs text-muted-foreground">
+                Das Konto bleibt für Buchungen und Salden verfügbar, wird aber aus der
+                Vermögensrechnung und Vermögensentwicklung ausgeschlossen.
+              </span>
+            </span>
+          </label>
+
           <div className="flex flex-col gap-2">
             <Label htmlFor="notes">Notiz (optional)</Label>
             <Textarea id="notes" name="notes" defaultValue={account?.notes ?? ""} rows={2} />

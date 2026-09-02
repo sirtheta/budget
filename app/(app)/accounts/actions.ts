@@ -31,6 +31,7 @@ const accountSchema = z.object({
   btcCostBasis: z.string(),
   color: z.string().trim().max(20).optional(),
   excludeFromBudget: z.boolean(),
+  excludeFromNetWorth: z.boolean(),
   notes: z.string().trim().max(500).optional(),
 });
 
@@ -44,6 +45,7 @@ function readForm(formData: FormData) {
     btcCostBasis: String(formData.get("btcCostBasis") ?? ""),
     color: formData.get("color") ?? undefined,
     excludeFromBudget: formData.get("excludeFromBudget") === "on",
+    excludeFromNetWorth: formData.get("excludeFromNetWorth") === "on",
     notes: formData.get("notes") ?? undefined,
   });
 }
@@ -95,6 +97,7 @@ export async function saveAccountAction(
     btcCostBasisCents,
     color: parsed.data.color || null,
     excludeFromBudget: parsed.data.excludeFromBudget,
+    excludeFromNetWorth: parsed.data.excludeFromNetWorth,
     notes: parsed.data.notes || null,
   };
 

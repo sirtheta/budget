@@ -8,6 +8,7 @@ export interface AccountBalance {
   type: AccountType;
   color: string;
   excludeFromBudget: boolean;
+  excludeFromNetWorth: boolean;
   /** Opening balance plus every booked transaction, in Rappen. Crypto accounts: btcAmount × live rate. */
   balanceCents: number;
   openingBalanceCents: number;
@@ -75,6 +76,7 @@ export async function accountBalances(
         type: account.type,
         color: colorFor(account.id, account.color),
         excludeFromBudget: account.excludeFromBudget,
+        excludeFromNetWorth: account.excludeFromNetWorth,
         openingBalanceCents: 0,
         balanceCents,
         btcAmount,
@@ -90,6 +92,7 @@ export async function accountBalances(
       type: account.type,
       color: colorFor(account.id, account.color),
       excludeFromBudget: account.excludeFromBudget,
+      excludeFromNetWorth: account.excludeFromNetWorth,
       openingBalanceCents: account.openingBalanceCents,
       balanceCents: account.openingBalanceCents + (byAccount.get(account.id) ?? 0),
       btcAmount: null,
@@ -119,7 +122,9 @@ export async function accountBalance(
 
 /** Sum of all account balances — the household's net worth, in Rappen. */
 export function netWorthCents(balances: AccountBalance[]): number {
-  return balances.reduce((total, account) => total + account.balanceCents, 0);
+  return balances
+    .filter((account) => !account.excludeFromNetWorth)
+    .reduce((total, account) => total + account.balanceCents, 0);
 }
 
 /** Depots and crypto move with the market and take days to turn into cash; everything else doesn't. */
@@ -132,14 +137,14 @@ export function isLiquidAccountType(type: AccountType): boolean {
 /** Sum of balances that can be spent within days (checking, savings, cash, credit card). */
 export function liquidNetWorthCents(balances: AccountBalance[]): number {
   return balances
-    .filter((account) => isLiquidAccountType(account.type))
+    .filter((account) => !account.excludeFromNetWorth && isLiquidAccountType(account.type))
     .reduce((total, account) => total + account.balanceCents, 0);
 }
 
 /** Sum of balances tied up in investments (3a, depots, crypto). */
 export function illiquidNetWorthCents(balances: AccountBalance[]): number {
   return balances
-    .filter((account) => !isLiquidAccountType(account.type))
+    .filter((account) => !account.excludeFromNetWorth && !isLiquidAccountType(account.type))
     .reduce((total, account) => total + account.balanceCents, 0);
 }
 

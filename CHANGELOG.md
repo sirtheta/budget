@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.20](https://github.com/sirtheta/budget/compare/budget-v0.1.19...budget-v0.1.20) (2026-09-02)
+
+
+### Features
+
+* **accounts:** exclude accounts from net worth ([062d2be](https://github.com/sirtheta/budget/commit/062d2be159570492b3f1ae302bfe168516ec34f6))
+* **logs:** admin log export from the UI ([#73](https://github.com/sirtheta/budget/issues/73)) ([0e1f50f](https://github.com/sirtheta/budget/commit/0e1f50f564f7cddd150701cfc43b9a8be3f00ce9))
+
+
+### Bug Fixes
+
+* **logs:** capture pino output instead of silently dropping it ([#75](https://github.com/sirtheta/budget/issues/75)) ([f7d0a11](https://github.com/sirtheta/budget/commit/f7d0a11c2e04b0b3b963737810b47315707d8bb2))
+
 ## [0.1.19](https://github.com/sirtheta/budget/compare/budget-v0.1.18...budget-v0.1.19) (2026-08-08)
 
 

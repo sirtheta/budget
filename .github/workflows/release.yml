@@ -130,5 +130,10 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          # Next.js only allows [a-zA-Z0-9_-] in deploymentId (rejects it at
+          # server startup otherwise) — release tags contain dots
+          # (budget-v0.1.20), so use the commit SHA instead.
+          build-args: |
+            DEPLOYMENT_ID=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

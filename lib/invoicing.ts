@@ -33,6 +33,11 @@ export async function matchInvoicePayment(
     });
     if (!res.ok) throw new Error(`CustomerManagement responded ${res.status}`);
 
+    const contentType = res.headers?.get("content-type");
+    if (contentType && !contentType.toLowerCase().includes("application/json")) {
+      throw new Error(`CustomerManagement returned non-JSON response (${res.status}, ${contentType})`);
+    }
+
     const result = (await res.json()) as { matched: boolean; documentNumber?: string };
     if (result.matched) {
       await logAudit(session, "UPDATE", "Transaction", params.transactionId, {

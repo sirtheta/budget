@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.21](https://github.com/sirtheta/budget/compare/budget-v0.1.20...budget-v0.1.21) (2026-09-04)
+
+
+### Bug Fixes
+
+* **build:** wire deploymentId through the actual Docker build, and guard invoicing against non-JSON responses ([#96](https://github.com/sirtheta/budget/issues/96)) ([7589c94](https://github.com/sirtheta/budget/commit/7589c94185b4f4b1632b1c96453dd8ae3a18d927))
+
 ## [0.1.20](https://github.com/sirtheta/budget/compare/budget-v0.1.19...budget-v0.1.20) (2026-09-02)
 
 

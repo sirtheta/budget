@@ -29,6 +29,11 @@ COPY prisma ./prisma
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Baked into next.config.ts's `deploymentId` at build time (frozen into
+# .next/standalone/server.js) — not something a running container can
+# change via `environment:`. See release.yml for how CI supplies it.
+ARG DEPLOYMENT_ID
+ENV DEPLOYMENT_ID=$DEPLOYMENT_ID
 RUN npx prisma generate
 RUN npm run build
 

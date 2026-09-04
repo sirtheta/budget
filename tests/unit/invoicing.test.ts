@@ -79,6 +79,21 @@ describe("matchInvoicePayment", () => {
     expect(logAudit).not.toHaveBeenCalled();
   });
 
+  it("does not parse an HTML error page as JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "text/html" }),
+        json: () => Promise.reject(new SyntaxError("Unexpected token '<'")),
+      })
+    );
+
+    await expect(matchInvoicePayment(session, params)).resolves.toBeUndefined();
+    expect(logAudit).not.toHaveBeenCalled();
+  });
+
   it("never throws when the request fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
 

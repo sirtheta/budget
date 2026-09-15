@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.22](https://github.com/sirtheta/budget/compare/budget-v0.1.21...budget-v0.1.22) (2026-09-15)
+
+
+### Bug Fixes
+
+* **recurring:** exclude Bitcoin wallets from recurring bookings and transfers ([c8d3f8d](https://github.com/sirtheta/budget/commit/c8d3f8d15d04c866740dc75ce89bea187836c7c7))
+
 ## [0.1.21](https://github.com/sirtheta/budget/compare/budget-v0.1.20...budget-v0.1.21) (2026-09-04)
 
 

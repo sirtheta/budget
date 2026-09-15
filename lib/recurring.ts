@@ -22,6 +22,8 @@ export interface PostResult {
   postedCount: number;
   /** Entries that hit MAX_CATCHUP_POSTINGS and still have a past `nextDate`. */
   cappedIds: number[];
+  /** Entries whose posting threw (e.g. a transfer leg an account no longer accepts) and were left for the next run instead of aborting the whole batch. */
+  failedIds: number[];
 }
 
 /** Entries whose next posting is due on or before `today`. */
@@ -142,6 +144,7 @@ export async function postDueRecurring(
 
   let postedCount = 0;
   const cappedIds: number[] = [];
+  const failedIds: number[] = [];
 
   for (const row of due) {
     let nextDate = row.nextDate;
@@ -156,7 +159,21 @@ export async function postDueRecurring(
         );
         break;
       }
-      await postOnce(prisma, { ...row, nextDate });
+      try {
+        await postOnce(prisma, { ...row, nextDate });
+      } catch (err) {
+        // A single entry rejecting its posting (e.g. a transfer leg an
+        // account no longer accepts) must not stop every other due entry
+        // from being posted this run. nextDate is left where it is, so the
+        // same occurrence is retried — and keeps surfacing this error — on
+        // every future run until someone fixes or deactivates the entry.
+        failedIds.push(row.id);
+        log.error(
+          { err, recurringId: row.id, name: row.name, nextDate },
+          "Posting a recurring entry failed — left for the next run"
+        );
+        break;
+      }
       postings++;
       postedCount++;
       nextDate = addMonths(nextDate, row.intervalMonths);
@@ -176,7 +193,7 @@ export async function postDueRecurring(
   if (postedCount > 0) {
     log.info({ postedCount, today }, "Posted due recurring transactions");
   }
-  return { postedCount, cappedIds };
+  return { postedCount, cappedIds, failedIds };
 }
 
 /** Starts the hourly cron job that posts due recurring entries. */

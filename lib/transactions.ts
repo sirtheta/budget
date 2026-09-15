@@ -64,6 +64,18 @@ export async function createTransfer(
   const amount = Math.abs(input.amountCents);
   if (amount === 0) throw new Error("Der Betrag einer Umbuchung darf nicht 0 sein.");
 
+  // Crypto accounts carry no transaction ledger of their own — their balance
+  // is btcAmount times the live rate (see lib/balances.ts), so a transfer leg
+  // posted here would move CHF off the source and then vanish. BTC only
+  // enters via recordBtcPurchase below.
+  const involvedAccounts = await prisma.account.findMany({
+    where: { id: { in: [input.fromAccountId, input.toAccountId] } },
+    select: { type: true },
+  });
+  if (involvedAccounts.some((account) => account.type === "Crypto")) {
+    throw new Error("Bitcoin-Wallets können nicht Teil einer Umbuchung sein.");
+  }
+
   const transferGroupId = randomUUID();
   const shared = {
     date: input.date,
@@ -96,6 +108,13 @@ export async function updateTransfer(
 ): Promise<void> {
   if (input.fromAccountId === input.toAccountId) {
     throw new Error("Quell- und Zielkonto müssen unterschiedlich sein.");
+  }
+  const involvedAccounts = await prisma.account.findMany({
+    where: { id: { in: [input.fromAccountId, input.toAccountId] } },
+    select: { type: true },
+  });
+  if (involvedAccounts.some((account) => account.type === "Crypto")) {
+    throw new Error("Bitcoin-Wallets können nicht Teil einer Umbuchung sein.");
   }
   const amount = Math.abs(input.amountCents);
   const legs = await prisma.transaction.findMany({

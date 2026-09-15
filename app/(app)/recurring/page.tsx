@@ -36,7 +36,11 @@ export default async function RecurringPage() {
       },
     }),
     prisma.account.findMany({
-      where: { isActive: true },
+      // Crypto accounts carry no transaction ledger of their own (see
+      // lib/balances.ts) — a recurring booking or transfer leg posted to one
+      // would never show up in its balance. BTC only enters via the dedicated
+      // purchase flow (see recordBtcPurchase in lib/transactions.ts).
+      where: { isActive: true, type: { not: "Crypto" } },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, name: true },
     }),

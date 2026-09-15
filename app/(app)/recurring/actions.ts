@@ -62,6 +62,17 @@ export async function saveRecurringAction(
     }
   }
 
+  // Crypto accounts carry no transaction ledger (see lib/balances.ts) — a
+  // booking or transfer leg posted to one would never affect its balance.
+  // BTC only enters via the dedicated purchase flow (recordBtcPurchase).
+  const involvedAccountIds = [accountId, ...(counterAccountId !== null ? [counterAccountId] : [])];
+  const cryptoAccountCount = await prisma.account.count({
+    where: { id: { in: involvedAccountIds }, type: "Crypto" },
+  });
+  if (cryptoAccountCount > 0) {
+    return { error: "Bitcoin-Wallets können keinem Dauerauftrag zugeordnet werden." };
+  }
+
   const categoryRaw = formData.get("categoryId");
   const categoryId =
     !isTransfer && categoryRaw && categoryRaw !== "none"

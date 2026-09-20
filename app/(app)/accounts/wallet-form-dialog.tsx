@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Pencil, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { deleteCryptoWalletAction, saveCryptoWalletAction } from "./actions";
 import { useDialogFormAction } from "@/components/use-dialog-form";
+import { useConfirm } from "@/components/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +35,26 @@ export function WalletFormDialog({
     onSuccess: () => setOpen(false),
     successMessage: "Wallet gespeichert.",
   });
+  const confirm = useConfirm();
+  const [deletePending, startDeleteTransition] = useTransition();
+
+  const remove = async () => {
+    if (!wallet) return;
+    if (
+      !(await confirm({
+        description: `Wallet "${wallet.name}" wirklich löschen? Die Anteils-Konten und ihre Bestände bleiben erhalten.`,
+      }))
+    )
+      return;
+    startDeleteTransition(async () => {
+      const result = await deleteCryptoWalletAction(wallet.id);
+      if (result.error) toast.error(result.error);
+      else {
+        toast.success("Wallet gelöscht.");
+        setOpen(false);
+      }
+    });
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -73,18 +94,7 @@ export function WalletFormDialog({
 
           <DialogFooter>
             {wallet && (
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={async () => {
-                  const result = await deleteCryptoWalletAction(wallet.id);
-                  if (result.error) toast.error(result.error);
-                  else {
-                    toast.success("Wallet gelöscht.");
-                    setOpen(false);
-                  }
-                }}
-              >
+              <Button type="button" variant="destructive" onClick={remove} disabled={deletePending}>
                 Löschen
               </Button>
             )}

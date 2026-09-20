@@ -99,6 +99,14 @@ describe("saveCryptoWalletAction", () => {
     expect(after.name).toBe("Neu");
     expect(after.notes).toBe("Hardware");
   });
+
+  it("returns a clean error when renaming a wallet that no longer exists", async () => {
+    const result = await saveCryptoWalletAction(
+      undefined,
+      form({ id: "999999", name: "Geist", notes: "" })
+    );
+    expect(result.error).toBe("Wallet nicht gefunden.");
+  });
 });
 
 describe("deleteCryptoWalletAction", () => {

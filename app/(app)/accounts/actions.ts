@@ -301,6 +301,9 @@ export async function saveCryptoWalletAction(
   const data = { name: parsed.data.name, notes: parsed.data.notes || null };
 
   if (id) {
+    const existing = await prisma.cryptoWallet.findUnique({ where: { id } });
+    if (!existing) return { error: "Wallet nicht gefunden." };
+
     await prisma.cryptoWallet.update({ where: { id }, data });
     await logAudit(session, "UPDATE", "CryptoWallet", id, { name: data.name });
   } else {

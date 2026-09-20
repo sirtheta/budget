@@ -10,21 +10,25 @@ import { categoryOptions } from "@/lib/categories";
 import { todayInZone } from "@/lib/date";
 import { config } from "@/lib/config";
 import { formatMoney } from "@/lib/money";
+import { walletViews } from "@/lib/crypto-wallets";
 import { PageHeader } from "@/components/page-header";
 import { Money } from "@/components/money";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AccountFormDialog } from "./account-form-dialog";
 import { AccountsList } from "./accounts-list";
+import { WalletCard } from "./wallet-card";
+import { WalletFormDialog } from "./wallet-form-dialog";
 
 export const dynamic = "force-dynamic";
 
 export default async function AccountsPage() {
   await requireEditor();
 
-  const [accounts, balances, categories] = await Promise.all([
+  const [accounts, balances, categories, wallets] = await Promise.all([
     prisma.account.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     accountBalances(prisma, { includeInactive: true }),
     categoryOptions(prisma),
+    walletViews(prisma),
   ]);
   const balanceById = Object.fromEntries(balances.map((b) => [b.id, b.balanceCents]));
   const btcById = Object.fromEntries(
@@ -56,7 +60,8 @@ export default async function AccountsPage() {
         title="Konten"
         description="Alle Konten des Haushalts. Der Saldo ergibt sich aus dem Startsaldo plus allen Buchungen."
       >
-        <AccountFormDialog />
+        <WalletFormDialog />
+        <AccountFormDialog wallets={wallets.map((w) => ({ id: w.id, name: w.name }))} />
       </PageHeader>
 
       <Card className="mb-6">
@@ -76,6 +81,10 @@ export default async function AccountsPage() {
         )}
       </Card>
 
+      {wallets.map((wallet) => (
+        <WalletCard key={wallet.id} wallet={wallet} />
+      ))}
+
       <Card>
         <CardContent className="p-0">
           {accounts.length === 0 ? (
@@ -91,6 +100,7 @@ export default async function AccountsPage() {
               categories={categories}
               currentRateChf={currentRateChf}
               today={today}
+              wallets={wallets.map((w) => ({ id: w.id, name: w.name }))}
             />
           )}
         </CardContent>

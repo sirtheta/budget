@@ -85,6 +85,13 @@ export async function saveAccountAction(
     openingBalanceCents = cents;
   }
 
+  // Only Crypto accounts can be a stake in a wallet — a link left behind on an
+  // account whose type changed would hide it inside a grouping it no longer
+  // belongs to.
+  const walletRaw = formData.get("cryptoWalletId");
+  const cryptoWalletId =
+    isCrypto && walletRaw && String(walletRaw) !== "" ? parseInt(String(walletRaw), 10) : null;
+
   const idRaw = formData.get("id");
   const id = idRaw ? parseInt(String(idRaw), 10) : null;
 
@@ -95,6 +102,7 @@ export async function saveAccountAction(
     openingBalanceCents,
     btcAmount,
     btcCostBasisCents,
+    cryptoWalletId,
     color: parsed.data.color || null,
     excludeFromBudget: parsed.data.excludeFromBudget,
     excludeFromNetWorth: parsed.data.excludeFromNetWorth,
@@ -264,5 +272,157 @@ export async function deleteAccountAction(id: number): Promise<ActionState> {
   await logAudit(session, "DELETE", "Account", id, { name: account.name });
   revalidatePath("/accounts");
   revalidatePath("/dashboard");
+  return { success: true };
+}
+
+const cryptoWalletSchema = z.object({
+  name: z.string().trim().min(1, "Name darf nicht leer sein.").max(80),
+  notes: z.string().trim().max(500).optional(),
+});
+
+/**
+ * Creates or renames a physical wallet. The wallet holds no balance of its
+ * own — it only groups the Crypto accounts that stand for each owner's stake.
+ */
+export async function saveCryptoWalletAction(
+  _prevState: ActionState | undefined,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const parsed = cryptoWalletSchema.safeParse({
+    name: formData.get("name") ?? "",
+    notes: formData.get("notes") ?? undefined,
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };
+
+  const idRaw = formData.get("id");
+  const id = idRaw ? parseInt(String(idRaw), 10) : null;
+  const data = { name: parsed.data.name, notes: parsed.data.notes || null };
+
+  if (id) {
+    const existing = await prisma.cryptoWallet.findUnique({ where: { id } });
+    if (!existing) return { error: "Wallet nicht gefunden." };
+
+    await prisma.cryptoWallet.update({ where: { id }, data });
+    await logAudit(session, "UPDATE", "CryptoWallet", id, { name: data.name });
+  } else {
+    const last = await prisma.cryptoWallet.findFirst({ orderBy: { sortOrder: "desc" } });
+    const created = await prisma.cryptoWallet.create({
+      data: { ...data, sortOrder: (last?.sortOrder ?? -1) + 1 },
+    });
+    await logAudit(session, "CREATE", "CryptoWallet", created.id, { name: data.name });
+  }
+
+  revalidatePath("/accounts");
+  return { success: true };
+}
+
+/**
+ * Deletes a wallet grouping. The stake accounts survive with
+ * `cryptoWalletId = null` (onDelete: SetNull) — losing the grouping must never
+ * lose the balances.
+ */
+export async function deleteCryptoWalletAction(id: number): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const wallet = await prisma.cryptoWallet.findUnique({ where: { id } });
+  if (!wallet) return { error: "Wallet nicht gefunden." };
+
+  await prisma.cryptoWallet.delete({ where: { id } });
+  await logAudit(session, "DELETE", "CryptoWallet", id, { name: wallet.name });
+
+  revalidatePath("/accounts");
+  return { success: true };
+}
+
+/**
+ * Books a top-up for every stake of one physical wallet in a single submit:
+ * the user types what each person gained (or lost), not a recomputed total.
+ * Deltas are applied with the same NULL-safe raw increment as
+ * recordBtcPurchase, so two concurrent submits can't overwrite each other the
+ * way a read-then-write would. No CHF booking happens here — this only moves
+ * the wallet's own bookkeeping (see the BTC purchase dialog for a purchase
+ * with a money flow).
+ */
+export async function updateWalletStakesAction(
+  _prevState: ActionState | undefined,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const walletId = parseInt(String(formData.get("walletId") ?? ""), 10);
+  if (!Number.isInteger(walletId)) return { error: "Wallet nicht gefunden." };
+
+  const wallet = await prisma.cryptoWallet.findUnique({
+    where: { id: walletId },
+    include: { accounts: { select: { id: true, name: true } } },
+  });
+  if (!wallet) return { error: "Wallet nicht gefunden." };
+
+  const rows: { accountId: number; btcDelta: number; costDeltaCents: number }[] = [];
+  for (const account of wallet.accounts) {
+    const btcRaw = String(formData.get(`btcDelta-${account.id}`) ?? "").trim().replace(",", ".");
+    const costRaw = String(formData.get(`costDelta-${account.id}`) ?? "").trim();
+
+    let btcDelta = 0;
+    if (btcRaw !== "") {
+      btcDelta = Number(btcRaw);
+      if (!Number.isFinite(btcDelta)) {
+        return { error: `BTC-Menge bei «${account.name}» ist keine gültige Zahl.` };
+      }
+    }
+
+    let costDeltaCents = 0;
+    if (costRaw !== "") {
+      const cents = parseMoney(costRaw);
+      if (cents === null) {
+        return { error: `Einstandswert bei «${account.name}» ist keine gültige Zahl.` };
+      }
+      costDeltaCents = cents;
+    }
+
+    if (btcDelta !== 0 || costDeltaCents !== 0) {
+      rows.push({ accountId: account.id, btcDelta, costDeltaCents });
+    }
+  }
+
+  if (rows.length === 0) return { error: "Keine Änderung erfasst." };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        // COALESCE, because btcAmount/btcCostBasisCents are nullable and a
+        // stake that has never held BTC starts as NULL, not 0. ROUND(…, 8)
+        // keeps repeated float additions from accumulating into values like
+        // 0.30000000000000004 — 8 decimals is one satoshi.
+        await tx.$executeRaw`UPDATE "Account" SET "btcAmount" = ROUND(COALESCE("btcAmount", 0) + ${row.btcDelta}, 8), "btcCostBasisCents" = COALESCE("btcCostBasisCents", 0) + ${row.costDeltaCents} WHERE "id" = ${row.accountId}`;
+      }
+
+      const after = await tx.account.findMany({
+        where: { id: { in: rows.map((row) => row.accountId) } },
+        select: { name: true, btcAmount: true, btcCostBasisCents: true },
+      });
+      const broken = after.find(
+        (account) => (account.btcAmount ?? 0) < 0 || (account.btcCostBasisCents ?? 0) < 0
+      );
+      if (broken) {
+        // Throwing rolls back every row, not just this one: a half-applied
+        // batch would be worse than a rejected one.
+        throw new Error(
+          `Bestand oder Einstandswert von «${broken.name}» würde negativ. Nichts gespeichert.`
+        );
+      }
+    });
+  } catch (err) {
+    log.error({ err, walletId }, "Wallet stake update failed");
+    return { error: err instanceof Error ? err.message : "Erfassung fehlgeschlagen." };
+  }
+
+  await logAudit(session, "UPDATE", "CryptoWallet", walletId, { stakes: rows });
+
+  revalidatePath("/accounts");
+  revalidatePath("/dashboard");
+  revalidatePath("/analytics");
   return { success: true };
 }

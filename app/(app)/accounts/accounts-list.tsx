@@ -53,6 +53,7 @@ export function AccountsList({
   categories,
   currentRateChf,
   today,
+  wallets = [],
 }: {
   accounts: Account[];
   balanceById: Record<number, number>;
@@ -61,6 +62,7 @@ export function AccountsList({
   categories: CategoryOption[];
   currentRateChf: number | null;
   today: string;
+  wallets?: { id: number; name: string }[];
 }) {
   const [order, setOrder] = useState(() => accounts.map((a) => a.id));
 
@@ -146,6 +148,7 @@ export function AccountsList({
                     categories={categories}
                     currentRateChf={currentRateChf}
                     today={today}
+                    wallets={wallets}
                   />
                 ))}
               </TableBody>
@@ -172,6 +175,7 @@ export function AccountsList({
                 categories={categories}
                 currentRateChf={currentRateChf}
                 today={today}
+                wallets={wallets}
               />
             ))}
           </ul>
@@ -189,6 +193,7 @@ function SortableRow({
   categories,
   currentRateChf,
   today,
+  wallets,
 }: {
   account: Account;
   balanceCents: number;
@@ -197,6 +202,7 @@ function SortableRow({
   categories: CategoryOption[];
   currentRateChf: number | null;
   today: string;
+  wallets: { id: number; name: string }[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: account.id,
@@ -277,7 +283,7 @@ function SortableRow({
               today={today}
             />
           )}
-          <AccountRowActions account={account} />
+          <AccountRowActions account={account} wallets={wallets} />
         </div>
       </TableCell>
     </TableRow>
@@ -292,6 +298,7 @@ function SortableListItem({
   categories,
   currentRateChf,
   today,
+  wallets,
 }: {
   account: Account;
   balanceCents: number;
@@ -300,6 +307,7 @@ function SortableListItem({
   categories: CategoryOption[];
   currentRateChf: number | null;
   today: string;
+  wallets: { id: number; name: string }[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: account.id,
@@ -382,7 +390,7 @@ function SortableListItem({
             today={today}
           />
         )}
-        <AccountRowActions account={account} />
+        <AccountRowActions account={account} wallets={wallets} />
       </div>
     </li>
   );

@@ -28,13 +28,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export function AccountFormDialog({ account }: { account?: Account }) {
+const NO_WALLET = "none";
+
+export function AccountFormDialog({
+  account,
+  wallets = [],
+}: {
+  account?: Account;
+  wallets?: { id: number; name: string }[];
+}) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useDialogFormAction(saveAccountAction, {
     onSuccess: () => setOpen(false),
     successMessage: account ? "Konto gespeichert." : "Konto angelegt.",
   });
   const [type, setType] = useState<AccountType>(account?.type ?? "Checking");
+  const [walletId, setWalletId] = useState(
+    account?.cryptoWalletId ? String(account.cryptoWalletId) : NO_WALLET
+  );
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -131,6 +142,33 @@ export function AccountFormDialog({ account }: { account?: Account }) {
                   Bitcoin-Kauf-Dialog erfasst wurde. Wird durch spätere Käufe automatisch erhöht.
                 </p>
               </div>
+              <input
+                type="hidden"
+                name="cryptoWalletId"
+                value={walletId === NO_WALLET ? "" : walletId}
+              />
+              {wallets.length > 0 && (
+                <div className="col-span-2 flex flex-col gap-2">
+                  <Label htmlFor="wallet-trigger">Gehört zu Wallet (optional)</Label>
+                  <Select value={walletId} onValueChange={setWalletId}>
+                    <SelectTrigger id="wallet-trigger">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_WALLET}>Eigenständig</SelectItem>
+                      {wallets.map((wallet) => (
+                        <SelectItem key={wallet.id} value={String(wallet.id)}>
+                          {wallet.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Mehrere Konten in derselben Wallet bilden je einen Anteil am selben
+                    physischen Wallet ab.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">

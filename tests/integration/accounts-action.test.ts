@@ -147,6 +147,66 @@ describe("saveAccountAction", () => {
     const updated = await prisma.account.findUniqueOrThrow({ where: { id: account.id } });
     expect(updated.name).toBe("Umbenanntes Konto");
   });
+
+  it("assigns a crypto account to a wallet and clears it again", async () => {
+    const wallet = await prisma.cryptoWallet.create({ data: { name: "Ledger" } });
+
+    const created = await saveAccountAction(
+      undefined,
+      form({
+        name: "Anteil Kind A",
+        type: "Crypto",
+        iban: "",
+        openingBalance: "0",
+        btcAmount: "0.1",
+        btcCostBasis: "",
+        cryptoWalletId: String(wallet.id),
+      })
+    );
+    expect(created.success).toBe(true);
+
+    const account = await prisma.account.findFirstOrThrow({ where: { name: "Anteil Kind A" } });
+    expect(account.cryptoWalletId).toBe(wallet.id);
+
+    await saveAccountAction(
+      undefined,
+      form({
+        id: String(account.id),
+        name: "Anteil Kind A",
+        type: "Crypto",
+        iban: "",
+        openingBalance: "0",
+        btcAmount: "0.1",
+        btcCostBasis: "",
+        cryptoWalletId: "",
+      })
+    );
+
+    const detached = await prisma.account.findUniqueOrThrow({ where: { id: account.id } });
+    expect(detached.cryptoWalletId).toBeNull();
+  });
+
+  it("never keeps a wallet link on a non-crypto account", async () => {
+    const wallet = await prisma.cryptoWallet.create({ data: { name: "Ledger 2" } });
+
+    await saveAccountAction(
+      undefined,
+      form({
+        name: "Sparkonto Wallet-Versuch",
+        type: "Savings",
+        iban: "",
+        openingBalance: "0",
+        btcAmount: "0",
+        btcCostBasis: "",
+        cryptoWalletId: String(wallet.id),
+      })
+    );
+
+    const account = await prisma.account.findFirstOrThrow({
+      where: { name: "Sparkonto Wallet-Versuch" },
+    });
+    expect(account.cryptoWalletId).toBeNull();
+  });
 });
 
 describe("recordBtcPurchaseAction", () => {

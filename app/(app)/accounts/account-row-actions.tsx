@@ -15,7 +15,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-export function AccountRowActions({ account }: { account: Account }) {
+export function AccountRowActions({
+  account,
+  wallets = [],
+}: {
+  account: Account;
+  wallets?: { id: number; name: string }[];
+}) {
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
 
@@ -38,7 +44,7 @@ export function AccountRowActions({ account }: { account: Account }) {
 
   return (
     <div className="flex justify-end">
-      <AccountFormDialog account={account} />
+      <AccountFormDialog account={account} wallets={wallets} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" aria-label="Weitere Aktionen" disabled={pending}>

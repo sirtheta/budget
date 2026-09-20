@@ -85,6 +85,13 @@ export async function saveAccountAction(
     openingBalanceCents = cents;
   }
 
+  // Only Crypto accounts can be a stake in a wallet — a link left behind on an
+  // account whose type changed would hide it inside a grouping it no longer
+  // belongs to.
+  const walletRaw = formData.get("cryptoWalletId");
+  const cryptoWalletId =
+    isCrypto && walletRaw && String(walletRaw) !== "" ? parseInt(String(walletRaw), 10) : null;
+
   const idRaw = formData.get("id");
   const id = idRaw ? parseInt(String(idRaw), 10) : null;
 
@@ -95,6 +102,7 @@ export async function saveAccountAction(
     openingBalanceCents,
     btcAmount,
     btcCostBasisCents,
+    cryptoWalletId,
     color: parsed.data.color || null,
     excludeFromBudget: parsed.data.excludeFromBudget,
     excludeFromNetWorth: parsed.data.excludeFromNetWorth,

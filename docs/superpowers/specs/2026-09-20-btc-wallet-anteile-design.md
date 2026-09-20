@@ -112,11 +112,18 @@ Einmal speichern. Absenden über `useDialogFormAction`
 (`components/use-dialog-form.ts`), nicht über einen Effect, der den Dialog
 schliesst.
 
-**`app/(app)/accounts/accounts-list.tsx`**: Crypto-Konten mit gesetztem
-`cryptoWalletId` erscheinen unter einer Gruppenzeile
-„<Wallet-Name> · <Total BTC> · <Total CHF>", dort sitzt der Knopf
-„Bestände erfassen". Crypto-Konten ohne Wallet werden exakt wie heute
-gerendert.
+**`app/(app)/accounts/wallet-card.tsx`** (neu): je Wallet eine Karte über der
+Kontoliste mit „<Wallet-Name> · <Total BTC> · <Total CHF>", darunter eine Zeile
+pro Anteil (Person, BTC, Anteil in Prozent, Wert, Gewinn/Verlust), und dort der
+Knopf „Bestände erfassen".
+
+Bewusst eine eigene Karte statt einer Gruppenzeile innerhalb der Kontoliste:
+diese Liste ist eine Drag-&-Drop-Sortierliste mit zwei getrennten
+DnD-Kontexten (Tabelle und Mobile-Liste sind beide im DOM). Eine Gruppenkopfzeile
+darin müsste die Sortier-Reihenfolge pro Wallet aufteilen und bricht genau die
+Invarianten, die in `accounts-list.tsx` kommentiert sind. Die Kontoliste bleibt
+deshalb flach und unverändert — die Anteile erscheinen dort weiterhin als
+eigene Zeilen.
 
 **`app/(app)/accounts/account-form-dialog.tsx`**: zusätzliches Feld
 „Gehört zu Wallet" (Auswahl, nur bei Typ `Crypto` sichtbar, leer erlaubt).

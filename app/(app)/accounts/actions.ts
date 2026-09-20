@@ -324,3 +324,94 @@ export async function deleteCryptoWalletAction(id: number): Promise<ActionState>
   revalidatePath("/accounts");
   return { success: true };
 }
+
+/**
+ * Books a top-up for every stake of one physical wallet in a single submit:
+ * the user types what each person gained (or lost), not a recomputed total.
+ * Deltas are applied with the same NULL-safe raw increment as
+ * recordBtcPurchase, so two concurrent submits can't overwrite each other the
+ * way a read-then-write would. No CHF booking happens here — this only moves
+ * the wallet's own bookkeeping (see the BTC purchase dialog for a purchase
+ * with a money flow).
+ */
+export async function updateWalletStakesAction(
+  _prevState: ActionState | undefined,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const walletId = parseInt(String(formData.get("walletId") ?? ""), 10);
+  if (!Number.isInteger(walletId)) return { error: "Wallet nicht gefunden." };
+
+  const wallet = await prisma.cryptoWallet.findUnique({
+    where: { id: walletId },
+    include: { accounts: { select: { id: true, name: true } } },
+  });
+  if (!wallet) return { error: "Wallet nicht gefunden." };
+
+  const rows: { accountId: number; btcDelta: number; costDeltaCents: number }[] = [];
+  for (const account of wallet.accounts) {
+    const btcRaw = String(formData.get(`btcDelta-${account.id}`) ?? "").trim().replace(",", ".");
+    const costRaw = String(formData.get(`costDelta-${account.id}`) ?? "").trim();
+
+    let btcDelta = 0;
+    if (btcRaw !== "") {
+      btcDelta = Number(btcRaw);
+      if (!Number.isFinite(btcDelta)) {
+        return { error: `BTC-Menge bei «${account.name}» ist keine gültige Zahl.` };
+      }
+    }
+
+    let costDeltaCents = 0;
+    if (costRaw !== "") {
+      const cents = parseMoney(costRaw);
+      if (cents === null) {
+        return { error: `Einstandswert bei «${account.name}» ist keine gültige Zahl.` };
+      }
+      costDeltaCents = cents;
+    }
+
+    if (btcDelta !== 0 || costDeltaCents !== 0) {
+      rows.push({ accountId: account.id, btcDelta, costDeltaCents });
+    }
+  }
+
+  if (rows.length === 0) return { error: "Keine Änderung erfasst." };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        // COALESCE, because btcAmount/btcCostBasisCents are nullable and a
+        // stake that has never held BTC starts as NULL, not 0. ROUND(…, 8)
+        // keeps repeated float additions from accumulating into values like
+        // 0.30000000000000004 — 8 decimals is one satoshi.
+        await tx.$executeRaw`UPDATE "Account" SET "btcAmount" = ROUND(COALESCE("btcAmount", 0) + ${row.btcDelta}, 8), "btcCostBasisCents" = COALESCE("btcCostBasisCents", 0) + ${row.costDeltaCents} WHERE "id" = ${row.accountId}`;
+      }
+
+      const after = await tx.account.findMany({
+        where: { id: { in: rows.map((row) => row.accountId) } },
+        select: { name: true, btcAmount: true, btcCostBasisCents: true },
+      });
+      const broken = after.find(
+        (account) => (account.btcAmount ?? 0) < 0 || (account.btcCostBasisCents ?? 0) < 0
+      );
+      if (broken) {
+        // Throwing rolls back every row, not just this one: a half-applied
+        // batch would be worse than a rejected one.
+        throw new Error(
+          `Bestand oder Einstandswert von «${broken.name}» würde negativ. Nichts gespeichert.`
+        );
+      }
+    });
+  } catch (err) {
+    log.error({ err, walletId }, "Wallet stake update failed");
+    return { error: err instanceof Error ? err.message : "Erfassung fehlgeschlagen." };
+  }
+
+  await logAudit(session, "UPDATE", "CryptoWallet", walletId, { stakes: rows });
+
+  revalidatePath("/accounts");
+  revalidatePath("/dashboard");
+  revalidatePath("/analytics");
+  return { success: true };
+}

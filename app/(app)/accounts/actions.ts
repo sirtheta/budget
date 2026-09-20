@@ -266,3 +266,61 @@ export async function deleteAccountAction(id: number): Promise<ActionState> {
   revalidatePath("/dashboard");
   return { success: true };
 }
+
+const cryptoWalletSchema = z.object({
+  name: z.string().trim().min(1, "Name darf nicht leer sein.").max(80),
+  notes: z.string().trim().max(500).optional(),
+});
+
+/**
+ * Creates or renames a physical wallet. The wallet holds no balance of its
+ * own — it only groups the Crypto accounts that stand for each owner's stake.
+ */
+export async function saveCryptoWalletAction(
+  _prevState: ActionState | undefined,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const parsed = cryptoWalletSchema.safeParse({
+    name: formData.get("name") ?? "",
+    notes: formData.get("notes") ?? undefined,
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };
+
+  const idRaw = formData.get("id");
+  const id = idRaw ? parseInt(String(idRaw), 10) : null;
+  const data = { name: parsed.data.name, notes: parsed.data.notes || null };
+
+  if (id) {
+    await prisma.cryptoWallet.update({ where: { id }, data });
+    await logAudit(session, "UPDATE", "CryptoWallet", id, { name: data.name });
+  } else {
+    const last = await prisma.cryptoWallet.findFirst({ orderBy: { sortOrder: "desc" } });
+    const created = await prisma.cryptoWallet.create({
+      data: { ...data, sortOrder: (last?.sortOrder ?? -1) + 1 },
+    });
+    await logAudit(session, "CREATE", "CryptoWallet", created.id, { name: data.name });
+  }
+
+  revalidatePath("/accounts");
+  return { success: true };
+}
+
+/**
+ * Deletes a wallet grouping. The stake accounts survive with
+ * `cryptoWalletId = null` (onDelete: SetNull) — losing the grouping must never
+ * lose the balances.
+ */
+export async function deleteCryptoWalletAction(id: number): Promise<ActionState> {
+  const session = await requireEditor();
+
+  const wallet = await prisma.cryptoWallet.findUnique({ where: { id } });
+  if (!wallet) return { error: "Wallet nicht gefunden." };
+
+  await prisma.cryptoWallet.delete({ where: { id } });
+  await logAudit(session, "DELETE", "CryptoWallet", id, { name: wallet.name });
+
+  revalidatePath("/accounts");
+  return { success: true };
+}

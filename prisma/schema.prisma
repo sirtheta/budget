@@ -93,6 +93,9 @@ model Account {
   // it for a wallet that predates this app — gain/loss stays hidden rather
   // than comparing today's value against an invented cost of zero.
   btcCostBasisCents Int?
+  // Crypto accounts only: which physical wallet this account is a stake in.
+  // Null means a standalone wallet, which behaves exactly as before.
+  cryptoWalletId Int?
   // Hex colour for charts; falls back to the palette in lib/colors.ts.
   color               String?
   sortOrder           Int     @default(0)
@@ -116,6 +119,29 @@ model Account {
   savingsGoals     SavingsGoal[]
   importBatches    ImportBatch[]
   transferRules    ImportRule[]
+  // SetNull, never Cascade: deleting the grouping must not delete the accounts
+  // that carry the actual BTC balances.
+  cryptoWallet CryptoWallet? @relation(fields: [cryptoWalletId], references: [id], onDelete: SetNull)
+
+  @@index([sortOrder])
+  @@index([cryptoWalletId])
+}
+
+// ── Crypto Wallets ────────────────────────────────────────────────────────────
+
+/// A physical wallet whose contents belong to several people. The wallet holds
+/// no balance itself: it only groups Crypto accounts, each standing for one
+/// person's stake in it. Balance, net worth and analytics therefore stay
+/// account-based and need no special case.
+model CryptoWallet {
+  id        Int      @id @default(autoincrement())
+  name      String
+  notes     String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts Account[]
 
   @@index([sortOrder])
 }

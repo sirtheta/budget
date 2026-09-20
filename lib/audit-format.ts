@@ -21,6 +21,7 @@ const ENTITY_LABELS: Record<string, string> = {
   RecurringTransaction: "Wiederkehrende Buchung",
   ImportRule: "Importregel",
   CsvMapping: "CSV-Mapping",
+  CryptoWallet: "Bitcoin-Wallet",
   User: "Benutzer",
   Settings: "Systemeinstellungen",
 };

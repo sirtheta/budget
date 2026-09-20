@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.23](https://github.com/sirtheta/budget/compare/budget-v0.1.22...budget-v0.1.23) (2026-09-20)
+
+
+### Features
+
+* **accounts:** BTC-Wallet mit Anteilen pro Person ([#114](https://github.com/sirtheta/budget/issues/114)) ([5a107eb](https://github.com/sirtheta/budget/commit/5a107eba42dd9c5f78e5f505003b0ad1c0a4a2cb))
+
 ## [0.1.22](https://github.com/sirtheta/budget/compare/budget-v0.1.21...budget-v0.1.22) (2026-09-15)
 
 

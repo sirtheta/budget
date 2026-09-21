@@ -28,6 +28,7 @@ const ALT_MATCH: Record<string, string> = {
   users: "Benutzerübersicht mit Rolle und Status",
   settings: "Einstellungsseite mit Währung und SMTP-Konfiguration",
   audit: "Audit-Log mit Filtern nach Aktion und Benutzer",
+  logs: "Logs-Übersicht mit Liste der Logdateien und Downloads",
 };
 
 function main() {

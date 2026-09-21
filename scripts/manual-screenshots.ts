@@ -216,6 +216,15 @@ const shots: Shot[] = [
       await page.screenshot({ path: path.join(OUT_DIR, "audit.png"), fullPage: true });
     },
   },
+  {
+    name: "logs",
+    run: async (page) => {
+      await login(page, ADMIN);
+      await page.goto(`${BASE_URL}/logs`);
+      await page.waitForSelector("text=Logs");
+      await page.screenshot({ path: path.join(OUT_DIR, "logs.png"), fullPage: true });
+    },
+  },
 ];
 
 async function main() {

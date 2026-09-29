@@ -62,7 +62,7 @@ export function BtcPriceChart({
   updatedAt: number | null;
   height?: number;
 }) {
-  const [days, setDays] = useState<BtcHistoryDays>(7);
+  const [days, setDays] = useState<BtcHistoryDays>(1);
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
 

@@ -14,6 +14,7 @@ import { MoneyTooltip } from "./chart-tooltip";
 const COLOR = CHART_PALETTE[0]; // Indigo — matches the app's primary
 
 const RANGES: { days: BtcHistoryDays; label: string }[] = [
+  { days: 1, label: "1 Tag" },
   { days: 7, label: "7 Tage" },
   { days: 30, label: "30 Tage" },
   { days: 365, label: "1 Jahr" },
@@ -33,12 +34,16 @@ function formatUpdatedAt(timestamp: number): string {
 
 function formatPoint(timestamp: number, days: BtcHistoryDays): string {
   const format: Intl.DateTimeFormatOptions =
-    days === 365 ? { month: "short", year: "2-digit" } : { day: "2-digit", month: "2-digit" };
+    days === 1
+      ? { hour: "2-digit", minute: "2-digit" }
+      : days === 365
+        ? { month: "short", year: "2-digit" }
+        : { day: "2-digit", month: "2-digit" };
   return new Intl.DateTimeFormat("de-CH", format).format(new Date(timestamp));
 }
 
 /**
- * BTC/CHF price history with a range switcher. All three ranges are fetched
+ * BTC/CHF price history with a range switcher. All four ranges are fetched
  * server-side up front (see dashboard/page.tsx) — switching tabs here only
  * changes which already-loaded series is rendered, no client-side fetch.
  *

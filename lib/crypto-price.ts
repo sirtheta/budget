@@ -36,21 +36,52 @@ let cache: { rateChfPerBtc: number; fetchedAt: number } | null = null;
  */
 let inFlight: Promise<number | null> | null = null;
 
+/**
+ * Sent with every request: CoinGecko answers Node's bare default User-Agent
+ * (and some IP ranges) with 403 from its Cloudflare layer.
+ */
+const REQUEST_HEADERS = { "User-Agent": "budget-app/1.0 (self-hosted household budget)", Accept: "application/json" };
+
+/** Live-rate sources, tried in order. Each returns CHF per BTC or throws. */
+const RATE_SOURCES: { name: string; url: string; parse: (body: unknown) => unknown }[] = [
+  {
+    name: "CoinGecko",
+    url: COINGECKO_URL,
+    parse: (body) => (body as { bitcoin?: { chf?: number } }).bitcoin?.chf,
+  },
+  {
+    name: "Kraken",
+    url: "https://api.kraken.com/0/public/Ticker?pair=XBTCHF",
+    parse: (body) => {
+      const first = Object.values((body as { result?: Record<string, { c?: string[] }> }).result ?? {})[0];
+      return Number(first?.c?.[0]);
+    },
+  },
+  {
+    name: "Coinbase",
+    url: "https://api.coinbase.com/v2/prices/BTC-CHF/spot",
+    parse: (body) => Number((body as { data?: { amount?: string } }).data?.amount),
+  },
+];
+
 async function fetchRate(timeoutMs: number): Promise<number | null> {
-  try {
-    const res = await fetch(COINGECKO_URL, { signal: AbortSignal.timeout(timeoutMs) });
-    if (!res.ok) throw new Error(`CoinGecko responded ${res.status}`);
-    const body = (await res.json()) as { bitcoin?: { chf?: number } };
-    const rate = body.bitcoin?.chf;
-    if (typeof rate !== "number") throw new Error("Unexpected CoinGecko response shape");
-    cache = { rateChfPerBtc: rate, fetchedAt: Date.now() };
-    return rate;
-  } catch (err) {
-    logger.warn({ err }, "Failed to fetch BTC/CHF rate");
-    // Stale cache beats no number at all — a five-minute-old rate is still
-    // more useful than blanking the wallet balance out.
-    return cache?.rateChfPerBtc ?? null;
+  for (const source of RATE_SOURCES) {
+    try {
+      const res = await fetch(source.url, { signal: AbortSignal.timeout(timeoutMs), headers: REQUEST_HEADERS });
+      if (!res.ok) throw new Error(`${source.name} responded ${res.status}`);
+      const rate = source.parse(await res.json());
+      if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+        throw new Error(`Unexpected ${source.name} response shape`);
+      }
+      cache = { rateChfPerBtc: rate, fetchedAt: Date.now() };
+      return rate;
+    } catch (err) {
+      logger.warn({ err, source: source.name }, "Failed to fetch BTC/CHF rate");
+    }
   }
+  // Stale cache beats no number at all — a five-minute-old rate is still
+  // more useful than blanking the wallet balance out.
+  return cache?.rateChfPerBtc ?? null;
 }
 
 function refresh(timeoutMs: number): Promise<number | null> {
@@ -116,7 +147,7 @@ const historyInFlight = new Map<BtcHistoryDays, Promise<BtcPricePoint[] | null>>
 
 async function fetchHistory(days: BtcHistoryDays, timeoutMs: number): Promise<BtcPricePoint[] | null> {
   try {
-    const res = await fetch(historyUrl(days), { signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetch(historyUrl(days), { signal: AbortSignal.timeout(timeoutMs), headers: REQUEST_HEADERS });
     if (!res.ok) throw new Error(`CoinGecko responded ${res.status}`);
     const body = (await res.json()) as { prices?: [number, number][] };
     if (!Array.isArray(body.prices)) throw new Error("Unexpected CoinGecko response shape");

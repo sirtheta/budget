@@ -93,16 +93,18 @@ export interface BtcPricePoint {
 }
 
 /**
- * Historical BTC/CHF series, one cache entry per range. A chart doesn't
- * visibly change minute to minute the way the displayed live rate does, and
- * the dashboard reloads on every navigation (`force-dynamic`) — a much
- * longer TTL than the live rate keeps well clear of CoinGecko's free-tier
- * rate limit without the chart ever looking stale to a user.
+ * Historical BTC/CHF series, one cache entry per range. Unlike the live rate
+ * this is not served stale-while-revalidate: the dashboard's chart re-renders
+ * when the user comes back to the app (see `BtcPriceChart`), and a stale-first
+ * answer would show that user the old series again and only correct itself on
+ * the *next* render — the exact "reload twice" symptom the refresh is meant to
+ * cure. An expired entry is therefore awaited, bounded by the cold-fetch
+ * timeout, and falls back to the stale series if CoinGecko is slow or down.
+ * The short TTL keeps three ranges well under the free-tier rate limit.
  */
-const HISTORY_CACHE_TTL_MS = 30 * 60 * 1000;
-/** market_chart payloads are bigger than the single-price call, hence the higher timeouts. */
-const HISTORY_COLD_FETCH_TIMEOUT_MS = 3_000;
-const HISTORY_BACKGROUND_FETCH_TIMEOUT_MS = 15_000;
+const HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
+/** market_chart payloads are bigger than the single-price call, hence the higher timeout. */
+const HISTORY_FETCH_TIMEOUT_MS = 3_000;
 
 function historyUrl(days: BtcHistoryDays): string {
   return `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=chf&days=${days}`;
@@ -144,10 +146,12 @@ export async function btcChfHistory(days: BtcHistoryDays): Promise<BtcPricePoint
   const cached = historyCache.get(days);
   if (cached && Date.now() - cached.fetchedAt < HISTORY_CACHE_TTL_MS) return cached.data;
 
-  if (cached) {
-    void refreshHistory(days, HISTORY_BACKGROUND_FETCH_TIMEOUT_MS);
-    return cached.data;
-  }
+  // `fetchHistory` falls back to the stale series on failure, so awaiting an
+  // expired entry costs at most the timeout and never loses the chart.
+  return refreshHistory(days, HISTORY_FETCH_TIMEOUT_MS);
+}
 
-  return refreshHistory(days, HISTORY_COLD_FETCH_TIMEOUT_MS);
+/** When the cached series for this range was last fetched (ms since epoch), or null if never. */
+export function btcChfHistoryFetchedAt(days: BtcHistoryDays): number | null {
+  return historyCache.get(days)?.fetchedAt ?? null;
 }

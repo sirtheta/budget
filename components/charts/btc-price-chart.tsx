@@ -19,8 +19,8 @@ const RANGES: { days: BtcHistoryDays; label: string }[] = [
   { days: 365, label: "1 Jahr" },
 ];
 
-/** Data older than this is re-fetched when the user returns to the app. */
-const STALE_AFTER_MS = 5 * 60 * 1000;
+/** Data older than this is re-fetched when the user returns to the app (matches the server's 7-day cache TTL). */
+const STALE_AFTER_MS = 15 * 60 * 1000;
 
 function formatUpdatedAt(timestamp: number): string {
   return new Intl.DateTimeFormat("de-CH", {

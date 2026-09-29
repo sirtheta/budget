@@ -217,7 +217,7 @@ describe("btcChfHistory", () => {
     const { btcChfHistory } = await loadModule();
     expect(await btcChfHistory(7)).toEqual([{ timestamp: 1_000, price: 90_000 }]);
 
-    vi.advanceTimersByTime(6 * 60 * 1000);
+    vi.advanceTimersByTime(16 * 60 * 1000);
     fetchMock.mockRejectedValue(new Error("CoinGecko down"));
 
     expect(await btcChfHistory(7)).toEqual([{ timestamp: 1_000, price: 90_000 }]);
@@ -229,11 +229,30 @@ describe("btcChfHistory", () => {
     const { btcChfHistory } = await loadModule();
     await btcChfHistory(7);
 
-    vi.advanceTimersByTime(6 * 60 * 1000);
+    vi.advanceTimersByTime(16 * 60 * 1000);
     fetchMock.mockResolvedValueOnce(historyResponse([[2_000, 91_000]]));
 
     expect(await btcChfHistory(7)).toEqual([{ timestamp: 2_000, price: 91_000 }]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps longer ranges cached longer than the 7-day series", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValue(historyResponse([[1_000, 90_000]]));
+    const { btcChfHistory } = await loadModule();
+    await btcChfHistory(7);
+    await btcChfHistory(365);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(16 * 60 * 1000);
+    await btcChfHistory(365);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // 1-year series still fresh
+    await btcChfHistory(7);
+    expect(fetchMock).toHaveBeenCalledTimes(3); // 7-day series refetched
+
+    vi.advanceTimersByTime(3 * 60 * 60 * 1000);
+    await btcChfHistory(365);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("reports when a range was last fetched", async () => {

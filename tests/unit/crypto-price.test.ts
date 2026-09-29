@@ -139,6 +139,27 @@ describe("btcChfRate", () => {
 
     expect(await btcChfRate()).toBeNull();
   });
+
+  it("falls back to Kraken when CoinGecko answers 403", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 403 } as Response);
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ error: [], result: { XBTCHF: { c: ["71234.5", "0.01"] } } }),
+    } as Response);
+    const { btcChfRate } = await loadModule();
+
+    expect(await btcChfRate()).toBe(71_234.5);
+    expect(fetchMock.mock.calls[1][0]).toContain("kraken.com");
+  });
+
+  it("falls back to Coinbase when CoinGecko and Kraken both fail", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 403 } as Response);
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ data: { amount: "70000.10" } }) } as Response);
+    const { btcChfRate } = await loadModule();
+
+    expect(await btcChfRate()).toBe(70_000.1);
+  });
 });
 
 function historyResponse(prices: [number, number][]) {

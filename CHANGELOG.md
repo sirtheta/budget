@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.26](https://github.com/sirtheta/budget/compare/budget-v0.1.25...budget-v0.1.26) (2026-09-29)
+
+
+### Features
+
+* **dashboard:** add 1-day range to BTC price chart ([#122](https://github.com/sirtheta/budget/issues/122)) ([7681e7e](https://github.com/sirtheta/budget/commit/7681e7edc9d525a4b8a7ef1fc423ef175907da1b))
+
 ## [0.1.25](https://github.com/sirtheta/budget/compare/budget-v0.1.24...budget-v0.1.25) (2026-09-29)
 
 

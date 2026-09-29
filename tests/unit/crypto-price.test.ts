@@ -255,6 +255,22 @@ describe("btcChfHistory", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
+  it("refetches the 1-day series after five minutes", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValue(historyResponse([[1_000, 90_000]]));
+    const { btcChfHistory } = await loadModule();
+    await btcChfHistory(1);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/days=1$/);
+
+    vi.advanceTimersByTime(4 * 60 * 1000);
+    await btcChfHistory(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(2 * 60 * 1000);
+    await btcChfHistory(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("reports when a range was last fetched", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));

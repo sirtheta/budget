@@ -114,7 +114,7 @@ export function btcToCents(btcAmount: number, rateChfPerBtc: number | null): num
   return Math.round(btcAmount * rateChfPerBtc * 100);
 }
 
-export type BtcHistoryDays = 7 | 30 | 365;
+export type BtcHistoryDays = 1 | 7 | 30 | 365;
 
 export interface BtcPricePoint {
   /** Milliseconds since epoch, as returned by CoinGecko. */
@@ -135,9 +135,10 @@ export interface BtcPricePoint {
  * The TTL grows with the range: a one-year chart visibly changes only by its
  * last point, so refetching it every few minutes buys nothing and, three
  * ranges per dashboard render, is what gets a home IP throttled by CoinGecko's
- * unauthenticated endpoint. Only the 7-day series is kept close to live.
+ * unauthenticated endpoint. Only the 1-day and 7-day series are kept close to live.
  */
 const HISTORY_CACHE_TTL_MS: Record<BtcHistoryDays, number> = {
+  1: 5 * 60 * 1000,
   7: 15 * 60 * 1000,
   30: 30 * 60 * 1000,
   365: 3 * 60 * 60 * 1000,

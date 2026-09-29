@@ -147,13 +147,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     }),
     categoryOptions(prisma),
     hasCrypto
-      ? Promise.all([btcChfHistory(7), btcChfHistory(30), btcChfHistory(365)])
+      ? Promise.all([btcChfHistory(1), btcChfHistory(7), btcChfHistory(30), btcChfHistory(365)])
       : Promise.resolve(null),
   ]);
 
-  // The 7-day series has the shortest cache TTL, so its fetch time is the one
+  // The 1-day series has the shortest cache TTL, so its fetch time is the one
   // that says when a chart refresh can actually return newer data.
-  const btcHistoryUpdatedAt = btcChfHistoryFetchedAt(7);
+  const btcHistoryUpdatedAt = btcChfHistoryFetchedAt(1);
 
   const suggestions = isCurrentMonth ? pendingSuggestions(recurring, today) : [];
   const upcoming = isCurrentMonth ? upcomingRecurring(recurring, today, 30) : [];
@@ -759,7 +759,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             </CardHeader>
             <CardContent>
               <BtcPriceChart
-                series={{ 7: btcHistory[0], 30: btcHistory[1], 365: btcHistory[2] }}
+                series={{ 1: btcHistory[0], 7: btcHistory[1], 30: btcHistory[2], 365: btcHistory[3] }}
                 // Oldest of the three ranges, so "Stand" never overstates freshness.
                 updatedAt={btcHistoryUpdatedAt}
               />

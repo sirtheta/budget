@@ -29,7 +29,7 @@ import { pendingSuggestions, upcomingRecurring } from "@/lib/recurring";
 import { categoryOptions } from "@/lib/categories";
 import { formatMoney } from "@/lib/money";
 import { colorFor } from "@/lib/colors";
-import { btcChfHistory, btcToCents } from "@/lib/crypto-price";
+import { btcChfHistory, btcChfHistoryFetchedAt, btcToCents } from "@/lib/crypto-price";
 import { PageHeader } from "@/components/page-header";
 import { MonthNav } from "@/components/month-nav";
 import { Money } from "@/components/money";
@@ -150,6 +150,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       ? Promise.all([btcChfHistory(7), btcChfHistory(30), btcChfHistory(365)])
       : Promise.resolve(null),
   ]);
+
+  const btcFetchTimes = ([7, 30, 365] as const).map(btcChfHistoryFetchedAt);
+  const btcHistoryUpdatedAt = btcFetchTimes.every((t) => t !== null)
+    ? Math.min(...(btcFetchTimes as number[]))
+    : null;
 
   const suggestions = isCurrentMonth ? pendingSuggestions(recurring, today) : [];
   const upcoming = isCurrentMonth ? upcomingRecurring(recurring, today, 30) : [];
@@ -754,7 +759,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
               <CardDescription>BTC/CHF</CardDescription>
             </CardHeader>
             <CardContent>
-              <BtcPriceChart series={{ 7: btcHistory[0], 30: btcHistory[1], 365: btcHistory[2] }} />
+              <BtcPriceChart
+                series={{ 7: btcHistory[0], 30: btcHistory[1], 365: btcHistory[2] }}
+                // Oldest of the three ranges, so "Stand" never overstates freshness.
+                updatedAt={btcHistoryUpdatedAt}
+              />
             </CardContent>
           </Card>
           <Tile

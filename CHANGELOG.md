@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.24](https://github.com/sirtheta/budget/compare/budget-v0.1.23...budget-v0.1.24) (2026-09-29)
+
+
+### Bug Fixes
+
+* **dashboard:** refresh BTC chart when app becomes visible ([#117](https://github.com/sirtheta/budget/issues/117)) ([480a0b4](https://github.com/sirtheta/budget/commit/480a0b439eede5ee0f3e596f4fe7dadab833595c))
+
 ## [0.1.23](https://github.com/sirtheta/budget/compare/budget-v0.1.22...budget-v0.1.23) (2026-09-20)
 
 

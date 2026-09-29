@@ -131,9 +131,17 @@ export interface BtcPricePoint {
  * the *next* render — the exact "reload twice" symptom the refresh is meant to
  * cure. An expired entry is therefore awaited, bounded by the cold-fetch
  * timeout, and falls back to the stale series if CoinGecko is slow or down.
- * The short TTL keeps three ranges well under the free-tier rate limit.
+ *
+ * The TTL grows with the range: a one-year chart visibly changes only by its
+ * last point, so refetching it every few minutes buys nothing and, three
+ * ranges per dashboard render, is what gets a home IP throttled by CoinGecko's
+ * unauthenticated endpoint. Only the 7-day series is kept close to live.
  */
-const HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
+const HISTORY_CACHE_TTL_MS: Record<BtcHistoryDays, number> = {
+  7: 15 * 60 * 1000,
+  30: 30 * 60 * 1000,
+  365: 3 * 60 * 60 * 1000,
+};
 /** market_chart payloads are bigger than the single-price call, hence the higher timeout. */
 const HISTORY_FETCH_TIMEOUT_MS = 3_000;
 
@@ -175,7 +183,7 @@ function refreshHistory(days: BtcHistoryDays, timeoutMs: number): Promise<BtcPri
 /** BTC/CHF price history for the given range, or null if it could not be fetched and no cache exists. */
 export async function btcChfHistory(days: BtcHistoryDays): Promise<BtcPricePoint[] | null> {
   const cached = historyCache.get(days);
-  if (cached && Date.now() - cached.fetchedAt < HISTORY_CACHE_TTL_MS) return cached.data;
+  if (cached && Date.now() - cached.fetchedAt < HISTORY_CACHE_TTL_MS[days]) return cached.data;
 
   // `fetchHistory` falls back to the stale series on failure, so awaiting an
   // expired entry costs at most the timeout and never loses the chart.

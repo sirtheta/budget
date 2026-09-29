@@ -151,10 +151,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       : Promise.resolve(null),
   ]);
 
-  const btcFetchTimes = ([7, 30, 365] as const).map(btcChfHistoryFetchedAt);
-  const btcHistoryUpdatedAt = btcFetchTimes.every((t) => t !== null)
-    ? Math.min(...(btcFetchTimes as number[]))
-    : null;
+  // The 7-day series has the shortest cache TTL, so its fetch time is the one
+  // that says when a chart refresh can actually return newer data.
+  const btcHistoryUpdatedAt = btcChfHistoryFetchedAt(7);
 
   const suggestions = isCurrentMonth ? pendingSuggestions(recurring, today) : [];
   const upcoming = isCurrentMonth ? upcomingRecurring(recurring, today, 30) : [];

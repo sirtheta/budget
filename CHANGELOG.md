@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.25](https://github.com/sirtheta/budget/compare/budget-v0.1.24...budget-v0.1.25) (2026-09-29)
+
+
+### Bug Fixes
+
+* **dashboard:** cache BTC history longer to stay under CoinGecko limits ([#121](https://github.com/sirtheta/budget/issues/121)) ([0fdf9cc](https://github.com/sirtheta/budget/commit/0fdf9cccefc42a357b54b907b69a136bed503b7e))
+* **dashboard:** fall back to Kraken/Coinbase when CoinGecko refuses the BTC rate ([#119](https://github.com/sirtheta/budget/issues/119)) ([d891064](https://github.com/sirtheta/budget/commit/d8910649182785bffc4afec9e5e489ba7b0a9f63))
+
 ## [0.1.24](https://github.com/sirtheta/budget/compare/budget-v0.1.23...budget-v0.1.24) (2026-09-29)
 
 

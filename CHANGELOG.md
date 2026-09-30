@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.27](https://github.com/sirtheta/budget/compare/budget-v0.1.26...budget-v0.1.27) (2026-09-30)
+
+
+### Bug Fixes
+
+* **charts:** show full franc amounts on BTC price axis ([1cafa62](https://github.com/sirtheta/budget/commit/1cafa62930f9ad52701b3cbee93361b375d0ada4))
+
 ## [0.1.26](https://github.com/sirtheta/budget/compare/budget-v0.1.25...budget-v0.1.26) (2026-09-29)
 
 

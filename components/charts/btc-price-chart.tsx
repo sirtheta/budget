@@ -6,7 +6,6 @@ import { RefreshCw } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { BtcHistoryDays, BtcPricePoint } from "@/lib/crypto-price";
 import { CHART_PALETTE } from "@/lib/colors";
-import { formatMoneyCompact } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MoneyTooltip } from "./chart-tooltip";
@@ -30,6 +29,14 @@ function formatUpdatedAt(timestamp: number): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(timestamp));
+}
+
+// The compact "70k" format collapses neighbouring ticks of a narrow range
+// (e.g. the 1-day view) into identical labels, so show the full franc amount.
+const PRICE_TICK_FORMAT = new Intl.NumberFormat("de-CH", { maximumFractionDigits: 0 });
+
+function formatPriceTick(value: number): string {
+  return PRICE_TICK_FORMAT.format(value);
 }
 
 function formatPoint(timestamp: number, days: BtcHistoryDays): string {
@@ -144,10 +151,10 @@ export function BtcPriceChart({
             <YAxis
               tickLine={false}
               axisLine={false}
-              width={56}
+              width={64}
               className="text-xs fill-muted-foreground"
               domain={["auto", "auto"]}
-              tickFormatter={(value: number) => formatMoneyCompact(value * 100)}
+              tickFormatter={formatPriceTick}
             />
             <Tooltip content={<MoneyTooltip />} />
             <Area

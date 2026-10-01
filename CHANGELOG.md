@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.28](https://github.com/sirtheta/budget/compare/budget-v0.1.27...budget-v0.1.28) (2026-10-01)
+
+
+### Features
+
+* **dashboard:** source BTC chart from Kraken with CoinGecko fallback ([#125](https://github.com/sirtheta/budget/issues/125)) ([98d0c2e](https://github.com/sirtheta/budget/commit/98d0c2efbd50029905f4f258d629b879c28c6270))
+
 ## [0.1.27](https://github.com/sirtheta/budget/compare/budget-v0.1.26...budget-v0.1.27) (2026-09-30)
 
 

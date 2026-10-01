@@ -117,7 +117,7 @@ export function btcToCents(btcAmount: number, rateChfPerBtc: number | null): num
 export type BtcHistoryDays = 1 | 7 | 30 | 365;
 
 export interface BtcPricePoint {
-  /** Milliseconds since epoch, as returned by CoinGecko. */
+  /** Milliseconds since epoch. */
   timestamp: number;
   /** CHF, already a plain float — not Rappen. */
   price: number;
@@ -130,7 +130,7 @@ export interface BtcPricePoint {
  * answer would show that user the old series again and only correct itself on
  * the *next* render — the exact "reload twice" symptom the refresh is meant to
  * cure. An expired entry is therefore awaited, bounded by the cold-fetch
- * timeout, and falls back to the stale series if CoinGecko is slow or down.
+ * timeout per source, and falls back to the stale series if every source is slow or down.
  *
  * The TTL grows with the range: a one-year chart visibly changes only by its
  * last point, so refetching it every few minutes buys nothing and, three
@@ -143,31 +143,71 @@ const HISTORY_CACHE_TTL_MS: Record<BtcHistoryDays, number> = {
   30: 30 * 60 * 1000,
   365: 3 * 60 * 60 * 1000,
 };
-/** market_chart payloads are bigger than the single-price call, hence the higher timeout. */
+/** OHLC / market_chart payloads are bigger than the single-price call, hence the higher timeout. */
 const HISTORY_FETCH_TIMEOUT_MS = 3_000;
 
-function historyUrl(days: BtcHistoryDays): string {
-  return `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=chf&days=${days}`;
-}
+/** Kraken candle size in minutes per chart range — all well under its 720-candle cap. */
+const KRAKEN_INTERVAL_MINUTES: Record<BtcHistoryDays, number> = { 1: 5, 7: 60, 30: 240, 365: 1440 };
+
+/**
+ * History sources, tried in order. Kraken comes first because it is also the
+ * live-rate source that works from restrictive IP ranges (CoinGecko answers
+ * some with 403), and because the price tile and the chart's last point then
+ * come from the same exchange. CoinGecko stays as the fallback.
+ */
+const HISTORY_SOURCES: {
+  name: string;
+  url: (days: BtcHistoryDays) => string;
+  parse: (body: unknown) => BtcPricePoint[];
+}[] = [
+  {
+    name: "Kraken",
+    url: (days) => {
+      const since = Math.floor((Date.now() - days * 24 * 60 * 60 * 1000) / 1000);
+      return `https://api.kraken.com/0/public/OHLC?pair=XBTCHF&interval=${KRAKEN_INTERVAL_MINUTES[days]}&since=${since}`;
+    },
+    parse: (body) => {
+      // The result holds one array of candles under the pair's name (which
+      // Kraken may spell XBTCHF or XXBTZCHF) next to a numeric `last` cursor.
+      const result = (body as { result?: Record<string, unknown> }).result ?? {};
+      const candles = Object.entries(result).find(([key]) => key !== "last")?.[1];
+      if (!Array.isArray(candles)) throw new Error("Unexpected Kraken response shape");
+      // Candle: [time (s), open, high, low, close, ...] with prices as strings.
+      return candles.map((candle: unknown[]) => ({ timestamp: Number(candle[0]) * 1000, price: Number(candle[4]) }));
+    },
+  },
+  {
+    name: "CoinGecko",
+    url: (days) => `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=chf&days=${days}`,
+    parse: (body) => {
+      const prices = (body as { prices?: [number, number][] }).prices;
+      if (!Array.isArray(prices)) throw new Error("Unexpected CoinGecko response shape");
+      return prices.map(([timestamp, price]) => ({ timestamp, price }));
+    },
+  },
+];
 
 const historyCache = new Map<BtcHistoryDays, { data: BtcPricePoint[]; fetchedAt: number }>();
 /** One in-flight refresh per range, same dedup rationale as the live-rate `inFlight`. */
 const historyInFlight = new Map<BtcHistoryDays, Promise<BtcPricePoint[] | null>>();
 
 async function fetchHistory(days: BtcHistoryDays, timeoutMs: number): Promise<BtcPricePoint[] | null> {
-  try {
-    const res = await fetch(historyUrl(days), { signal: AbortSignal.timeout(timeoutMs), headers: REQUEST_HEADERS });
-    if (!res.ok) throw new Error(`CoinGecko responded ${res.status}`);
-    const body = (await res.json()) as { prices?: [number, number][] };
-    if (!Array.isArray(body.prices)) throw new Error("Unexpected CoinGecko response shape");
-    const data = body.prices.map(([timestamp, price]) => ({ timestamp, price }));
-    historyCache.set(days, { data, fetchedAt: Date.now() });
-    return data;
-  } catch (err) {
-    logger.warn({ err, days }, "Failed to fetch BTC/CHF price history");
-    // Stale series beats no chart at all, same reasoning as the live rate.
-    return historyCache.get(days)?.data ?? null;
+  for (const source of HISTORY_SOURCES) {
+    try {
+      const res = await fetch(source.url(days), { signal: AbortSignal.timeout(timeoutMs), headers: REQUEST_HEADERS });
+      if (!res.ok) throw new Error(`${source.name} responded ${res.status}`);
+      const data = source.parse(await res.json());
+      if (data.length === 0 || data.some((p) => !Number.isFinite(p.timestamp) || !Number.isFinite(p.price) || p.price <= 0)) {
+        throw new Error(`Unexpected ${source.name} price data`);
+      }
+      historyCache.set(days, { data, fetchedAt: Date.now() });
+      return data;
+    } catch (err) {
+      logger.warn({ err, days, source: source.name }, "Failed to fetch BTC/CHF price history");
+    }
   }
+  // Stale series beats no chart at all, same reasoning as the live rate.
+  return historyCache.get(days)?.data ?? null;
 }
 
 function refreshHistory(days: BtcHistoryDays, timeoutMs: number): Promise<BtcPricePoint[] | null> {

@@ -162,7 +162,13 @@ describe("btcChfRate", () => {
   });
 });
 
+/** Kraken OHLC body; `[ms, price]` pairs become candles (time in seconds, close as a string). */
 function historyResponse(prices: [number, number][]) {
+  const candles = prices.map(([ms, price]) => [ms / 1000, "0", "0", "0", String(price), "0", "0", 1]);
+  return { ok: true, json: async () => ({ error: [], result: { XBTCHF: candles, last: 1 } }) } as Response;
+}
+
+function coingeckoHistoryResponse(prices: [number, number][]) {
   return { ok: true, json: async () => ({ prices }) } as Response;
 }
 
@@ -185,7 +191,39 @@ describe("btcChfHistory", () => {
 
     expect(await btcChfHistory(7)).toEqual([{ timestamp: 1_000, price: 90_000 }]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toContain("days=7");
+    expect(fetchMock.mock.calls[0][0]).toContain("api.kraken.com");
+    expect(fetchMock.mock.calls[0][0]).toMatch(/interval=60&/);
+  });
+
+  it("falls back to CoinGecko when Kraken fails", async () => {
+    fetchMock.mockImplementation((url: string) =>
+      url.includes("kraken")
+        ? Promise.resolve({ ok: false, status: 503 } as Response)
+        : Promise.resolve(coingeckoHistoryResponse([[2_000, 91_000]]))
+    );
+    const { btcChfHistory } = await loadModule();
+
+    expect(await btcChfHistory(7)).toEqual([{ timestamp: 2_000, price: 91_000 }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toContain("coingecko");
+  });
+
+  it("falls back to CoinGecko when Kraken returns no candles", async () => {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(url.includes("kraken") ? historyResponse([]) : coingeckoHistoryResponse([[2_000, 91_000]]))
+    );
+    const { btcChfHistory } = await loadModule();
+
+    expect(await btcChfHistory(7)).toEqual([{ timestamp: 2_000, price: 91_000 }]);
+  });
+
+  it("does not ask CoinGecko when Kraken succeeds", async () => {
+    fetchMock.mockResolvedValue(historyResponse([[1_000, 90_000]]));
+    const { btcChfHistory } = await loadModule();
+
+    await btcChfHistory(30);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/interval=240&/);
   });
 
   it("serves a fresh series from cache without hitting the network again", async () => {
@@ -260,7 +298,7 @@ describe("btcChfHistory", () => {
     fetchMock.mockResolvedValue(historyResponse([[1_000, 90_000]]));
     const { btcChfHistory } = await loadModule();
     await btcChfHistory(1);
-    expect(fetchMock.mock.calls[0][0]).toMatch(/days=1$/);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/interval=5&/);
 
     vi.advanceTimersByTime(4 * 60 * 1000);
     await btcChfHistory(1);
@@ -305,15 +343,15 @@ describe("btcChfHistory", () => {
   it("fetches and caches different ranges independently", async () => {
     fetchMock.mockImplementation((url: string) =>
       Promise.resolve(
-        url.includes("days=7") ? historyResponse([[1, 7]]) : historyResponse([[2, 30]])
+        url.includes("interval=60&") ? historyResponse([[1_000, 7]]) : historyResponse([[2_000, 30]])
       )
     );
     const { btcChfHistory } = await loadModule();
 
     const [sevenDay, thirtyDay] = await Promise.all([btcChfHistory(7), btcChfHistory(30)]);
 
-    expect(sevenDay).toEqual([{ timestamp: 1, price: 7 }]);
-    expect(thirtyDay).toEqual([{ timestamp: 2, price: 30 }]);
+    expect(sevenDay).toEqual([{ timestamp: 1_000, price: 7 }]);
+    expect(thirtyDay).toEqual([{ timestamp: 2_000, price: 30 }]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     // Both ranges now serve from their own cache without a further fetch.

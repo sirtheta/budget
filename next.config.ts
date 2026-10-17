@@ -26,6 +26,12 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  experimental: {
+    // Same ceiling as readUpload() plus 1 MB for the multipart overhead.
+    serverActions: {
+      bodySizeLimit: `${Math.ceil((Number(process.env.IMPORT_MAX_FILE_SIZE_BYTES) || 10 * 1024 * 1024) / 1024 / 1024) + 1}mb`,
+    },
+  },
   serverExternalPackages: [
     "better-sqlite3",
     "@prisma/adapter-better-sqlite3",

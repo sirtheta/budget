@@ -13,7 +13,10 @@ import { parseCamt053 } from "@/lib/import/camt";
 import { detectDelimiter, parseCsvStatement, previewRows, type CsvParseResult } from "@/lib/import/csv";
 import { normalize, verifyImportHash, withHashes } from "@/lib/import/dedupe";
 import { loadHistoryCategorySuggestions } from "@/lib/import/history";
+import { extractPdfLines } from "@/lib/import/pdf";
+import { layoutFromRow, parsePdfStatement } from "@/lib/import/pdf-parse";
 import { matchRule } from "@/lib/import/rules";
+import { createSafeMatcher } from "@/lib/import/safe-regex";
 import {
   TRANSFER_MATCH_TOLERANCE_DAYS,
   adoptTransferLeg,
@@ -68,13 +71,19 @@ export interface ImportPreview {
   balanceDeltaCents: number | null;
 }
 
-async function readUpload(formData: FormData): Promise<{ file: File; text: string } | string> {
+async function readUpload(
+  formData: FormData,
+  binary = false
+): Promise<{ file: File; text: string; bytes: Uint8Array } | string> {
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return "Bitte eine Datei auswählen.";
   if (file.size > config.import.maxFileSizeBytes) {
     return `Die Datei ist grösser als ${Math.round(config.import.maxFileSizeBytes / 1024 / 1024)} MB.`;
   }
-  return { file, text: await file.text() };
+  // pdf.js takes ownership of the buffer, so each caller gets its own copy.
+  return binary
+    ? { file, text: "", bytes: new Uint8Array(await file.arrayBuffer()) }
+    : { file, text: await file.text(), bytes: new Uint8Array() };
 }
 
 /**
@@ -91,11 +100,17 @@ export async function previewImportAction(
 ): Promise<{ error?: string; preview?: ImportPreview }> {
   await requireEditor();
 
-  const upload = await readUpload(formData);
-  if (typeof upload === "string") return { error: upload };
-  const { file, text } = upload;
+  const formatValue = formData.get("format");
+  const format =
+    formatValue === "Csv"
+      ? ImportFormat.Csv
+      : formatValue === "Pdf"
+        ? ImportFormat.Pdf
+        : ImportFormat.Camt053;
 
-  const format = formData.get("format") === "Csv" ? ImportFormat.Csv : ImportFormat.Camt053;
+  const upload = await readUpload(formData, format === ImportFormat.Pdf);
+  if (typeof upload === "string") return { error: upload };
+  const { file, text, bytes } = upload;
 
   let statement: ParsedStatement;
   let rejectedRows: CsvParseResult["rejectedRows"] = [];
@@ -108,6 +123,19 @@ export async function previewImportAction(
       const csvResult = parseCsvStatement(text, mapping);
       statement = csvResult;
       rejectedRows = csvResult.rejectedRows;
+    } else if (format === ImportFormat.Pdf) {
+      const layoutId = parseInt(String(formData.get("layoutId") ?? ""), 10);
+      if (!Number.isInteger(layoutId)) return { error: "Bitte ein PDF-Layout auswählen." };
+      const layout = await prisma.pdfLayout.findUnique({ where: { id: layoutId } });
+      if (!layout) return { error: "PDF-Layout nicht gefunden." };
+      // Layout regexes are user input: run them with hard timeouts (lib/import/safe-regex.ts).
+      const pdfResult = parsePdfStatement(
+        await extractPdfLines(bytes),
+        layoutFromRow(layout),
+        createSafeMatcher()
+      );
+      statement = pdfResult;
+      rejectedRows = pdfResult.rejectedRows;
     } else {
       statement = parseCamt053(text);
     }
@@ -530,4 +558,23 @@ export async function inspectCsvAction(
 
   const delimiter = String(formData.get("delimiter") || "") || detectDelimiter(upload.text);
   return { rows: previewRows(upload.text, delimiter), delimiter };
+}
+
+const MAX_INSPECT_LINES = 2000;
+
+/** Text lines of a sample PDF, for building a layout interactively. Nothing is stored. */
+export async function inspectPdfAction(
+  formData: FormData
+): Promise<{ error?: string; lines?: string[] }> {
+  await requireEditor();
+
+  const upload = await readUpload(formData, true);
+  if (typeof upload === "string") return { error: upload };
+
+  try {
+    return { lines: (await extractPdfLines(upload.bytes)).slice(0, MAX_INSPECT_LINES) };
+  } catch (err) {
+    log.warn({ err }, "PDF inspection failed");
+    return { error: err instanceof Error ? err.message : "Das PDF konnte nicht gelesen werden." };
+  }
 }

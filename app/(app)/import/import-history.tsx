@@ -6,6 +6,7 @@ import { Trash2 } from "lucide-react";
 import {
   deleteCsvMappingAction,
 } from "./mapping-actions";
+import { deletePdfLayoutAction } from "./pdf-layout-actions";
 import { deleteImportBatchAction, loadMoreImportBatchesAction, type ImportBatchRow } from "./actions";
 import { deleteImportRuleAction, toggleImportRuleAction } from "./rule-actions";
 import { formatDateCH } from "@/lib/date";
@@ -21,6 +22,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useConfirm } from "@/components/confirm-dialog";
+
+const FORMAT_LABEL = { Camt053: "CAMT.053", Csv: "CSV", Pdf: "PDF" } as const;
 
 export function DeleteBatchButton({
   id,
@@ -83,6 +86,31 @@ export function DeleteMappingButton({ id, name }: { id: number; name: string }) 
           const result = await deleteCsvMappingAction(id);
           if (result.error) toast.error(result.error);
           else toast.success("Mapping gelöscht.");
+        });
+      }}
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+    </Button>
+  );
+}
+
+export function DeletePdfLayoutButton({ id, name }: { id: number; name: string }) {
+  const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="size-8 text-destructive"
+      aria-label="Layout löschen"
+      disabled={pending}
+      onClick={async () => {
+        if (!(await confirm({ description: `Layout "${name}" wirklich löschen?` }))) return;
+        startTransition(async () => {
+          const result = await deletePdfLayoutAction(id);
+          if (result.error) toast.error(result.error);
+          else toast.success("Layout gelöscht.");
         });
       }}
     >
@@ -192,7 +220,7 @@ export function ImportHistoryList({
                   <TableCell>
                     <span className="font-medium">{batch.filename}</span>
                     <Badge variant="outline" className="ml-2">
-                      {batch.format === "Camt053" ? "CAMT.053" : "CSV"}
+                      {FORMAT_LABEL[batch.format]}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
@@ -230,7 +258,7 @@ export function ImportHistoryList({
                 <p className="font-medium truncate">
                   {batch.filename}
                   <Badge variant="outline" className="ml-2">
-                    {batch.format === "Camt053" ? "CAMT.053" : "CSV"}
+                    {FORMAT_LABEL[batch.format]}
                   </Badge>
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">

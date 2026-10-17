@@ -26,6 +26,15 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  experimental: {
+    // Same ceiling as readUpload() (CAMT.053-/CSV-/PDF-Datei) plus 1 MB for the
+    // multipart overhead. Derived from IMPORT_MAX_FILE_SIZE_BYTES at build time:
+    // the standalone output freezes this config, so in the Docker image a value
+    // above 10 MB only takes effect after a rebuild.
+    serverActions: {
+      bodySizeLimit: `${Math.ceil((Number(process.env.IMPORT_MAX_FILE_SIZE_BYTES) || 10 * 1024 * 1024) / 1024 / 1024) + 1}mb`,
+    },
+  },
   serverExternalPackages: [
     "better-sqlite3",
     "@prisma/adapter-better-sqlite3",

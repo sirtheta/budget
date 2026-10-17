@@ -14,7 +14,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Plus, Upload } from "lucide-react";
-import type { CategoryKind, CsvMapping } from "@prisma/client";
+import type { CategoryKind, CsvMapping, PdfLayout } from "@prisma/client";
 import { commitImportAction, previewImportAction, type PreviewRow } from "./actions";
 import {
   NO_CATEGORY,
@@ -70,7 +70,7 @@ function useIsDesktop() {
 
 const AUTO_ACCOUNT = "auto";
 
-type Format = "Camt053" | "Csv";
+type Format = "Camt053" | "Csv" | "Pdf";
 
 /** Top-level category, i.e. a group a new leaf category can be filed under. */
 export interface CategoryGroupOption {
@@ -84,11 +84,13 @@ export function ImportWizard({
   categories,
   parents,
   mappings,
+  pdfLayouts,
 }: {
   accounts: AccountOption[];
   categories: CategoryOption[];
   parents: CategoryGroupOption[];
   mappings: CsvMapping[];
+  pdfLayouts: PdfLayout[];
 }) {
   // Mutable copy of the server-loaded categories: a category created inline
   // while categorising this preview (see QuickCreateCategory below) is
@@ -99,6 +101,12 @@ export function ImportWizard({
   const [format, setFormat] = useState<Format>("Camt053");
   const [accountId, setAccountId] = useState(AUTO_ACCOUNT);
   const [mappingId, setMappingId] = useState(String(mappings[0]?.id ?? ""));
+  const [layoutId, setLayoutId] = useState("");
+  // Derived rather than initialised from props: layouts created while the wizard
+  // is mounted (the starter button on the Mappings tab) arrive as new props.
+  const activeLayoutId = pdfLayouts.some((layout) => String(layout.id) === layoutId)
+    ? layoutId
+    : String(pdfLayouts[0]?.id ?? "");
   const [state, formAction, pending] = useActionState(previewImportAction, undefined);
   // Client-side only: narrows which rows are shown/selectable so e.g. only
   // one year of a multi-year statement gets imported, without touching the
@@ -279,7 +287,9 @@ export function ImportWizard({
           <CardDescription>
             CAMT.053 ist der Kontoauszug deiner Bank im ISO-20022-Format und enthält Anfangs- und
             Schlusssaldo — damit lässt sich prüfen, ob der Import vollständig war. CSV ist der
-            Rückfallweg, wenn deine Bank kein CAMT anbietet.
+            Rückfallweg, wenn deine Bank kein CAMT anbietet. PDF ist für Abrechnungen gedacht, die es
+            nur als PDF gibt (z. B. Kreditkarte); es braucht ein Layout, das beschreibt, wie die
+            Buchungszeilen aussehen.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -294,6 +304,7 @@ export function ImportWizard({
               data.set("format", format);
               data.set("accountId", accountId === AUTO_ACCOUNT ? "" : accountId);
               if (format === "Csv") data.set("mappingId", mappingId);
+              if (format === "Pdf") data.set("layoutId", activeLayoutId);
               startTransition(() => formAction(data));
             }}
             className="flex flex-col gap-4"
@@ -303,6 +314,7 @@ export function ImportWizard({
                 [
                   ["Camt053", "CAMT.053 (XML)"],
                   ["Csv", "CSV"],
+                  ["Pdf", "PDF"],
                 ] as const
               ).map(([value, label]) => (
                 <button
@@ -328,7 +340,13 @@ export function ImportWizard({
                   id="file"
                   name="file"
                   type="file"
-                  accept={format === "Csv" ? ".csv,.txt,text/csv" : ".xml,text/xml,application/xml"}
+                  accept={
+                    format === "Csv"
+                      ? ".csv,.txt,text/csv"
+                      : format === "Pdf"
+                        ? ".pdf,application/pdf"
+                        : ".xml,text/xml,application/xml"
+                  }
                   required
                   className="cursor-pointer"
                 />
@@ -392,12 +410,42 @@ export function ImportWizard({
               </div>
             )}
 
+            {format === "Pdf" && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="import-layout">PDF-Layout</Label>
+                {pdfLayouts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Noch kein Layout angelegt. Unter «Mappings» gibt es eine fertige Vorlage für die
+                    Migros-Kreditkarte; für andere Abrechnungen legst du ein eigenes Layout an.
+                    Das Zielkonto musst du wählen — PDF-Abrechnungen enthalten keine IBAN.
+                  </p>
+                ) : (
+                  <Select value={activeLayoutId} onValueChange={setLayoutId}>
+                    <SelectTrigger id="import-layout" className="sm:w-1/2">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pdfLayouts.map((layout) => (
+                        <SelectItem key={layout.id} value={String(layout.id)}>
+                          {layout.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
             {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
 
             <div>
               <Button
                 type="submit"
-                disabled={pending || (format === "Csv" && mappings.length === 0)}
+                disabled={
+                  pending ||
+                  (format === "Csv" && mappings.length === 0) ||
+                  (format === "Pdf" && pdfLayouts.length === 0)
+                }
               >
                 <Upload className="h-4 w-4" />
                 {pending ? "Lesen…" : "Datei einlesen"}
@@ -482,7 +530,7 @@ export function ImportWizard({
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                   {warning}
                 </p>
-                {preview.rejectedRows.length > 0 && (
+                {preview.rejectedRows.length > 0 && warning.includes("konnten nicht gelesen werden") && (
                   <ul className="ml-6 list-disc text-xs text-muted-foreground">
                     {preview.rejectedRows.map((row) => (
                       <li key={row.line}>

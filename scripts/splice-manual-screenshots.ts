@@ -25,6 +25,8 @@ const ALT_MATCH: Record<string, string> = {
   categories: "Kategorienübersicht mit Einnahmen- und Ausgabengruppen",
   recurring: "Wiederkehrende Buchungen mit Rhythmus und nächstem Datum",
   "import-preview": "Import-Vorschau mit erkannten Buchungen und Kategorien",
+  "import-mappings": "Mappings-Seite mit CSV-Mappings und PDF-Layouts",
+  "import-pdf-layout": "Dialog PDF-Layout mit Beispiel-PDF, markierten Zeilen und erkannten Buchungen",
   users: "Benutzerübersicht mit Rolle und Status",
   settings: "Einstellungsseite mit Währung und SMTP-Konfiguration",
   audit: "Audit-Log mit Filtern nach Aktion und Benutzer",

@@ -24,6 +24,7 @@ export type AuditEntity =
   | "RecurringTransaction"
   | "ImportRule"
   | "CsvMapping"
+  | "PdfLayout"
   | "CryptoWallet"
   | "User"
   | "Settings";

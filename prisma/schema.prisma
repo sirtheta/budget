@@ -376,6 +376,7 @@ model RecurringTransaction {
 enum ImportFormat {
   Camt053
   Csv
+  Pdf
 }
 
 model ImportBatch {
@@ -491,6 +492,35 @@ model CsvMapping {
 
   decimalSeparator   String @default(".")
   thousandsSeparator String @default("'")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// How the transaction lines of one issuer's PDF statement look once the PDF
+/// text has been extracted line by line (lib/import/pdf.ts). The regexes use
+/// named groups; see lib/import/pdf-parse.ts for which names carry meaning.
+model PdfLayout {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  /// One booking line. Required groups: date, amount. Optional: valuta, text,
+  /// counterparty, currency, foreignAmount, key.
+  transactionRegex String
+  dateFormat       String  @default("DD.MM.YY")
+  /// Tested against the whole booking line; a match makes the amount negative
+  /// (credits and refunds that carry a trailing minus).
+  negativeSuffixRegex String?
+  /// Same meaning as CsvMapping.invertAmount.
+  invertAmount        Boolean @default(false)
+  /// `{group}` placeholders filled from the line's named groups.
+  descriptionTemplate String  @default("{text}")
+  /// Lines that are never bookings (payments, carry-overs).
+  skipRegex           String?
+  /// Printed totals for the sum check; group `amount`, optional group `key`.
+  totalRegex          String?
+  /// JSON array of { regex, target: "section" | "transaction" }.
+  contextRegexes      String  @default("[]")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

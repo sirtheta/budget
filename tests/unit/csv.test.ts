@@ -89,6 +89,20 @@ describe("parseCsvDate", () => {
   });
 });
 
+describe("parseCsvDate DD.MM.YY", () => {
+  it("reads a two-digit year as 20YY", () => {
+    expect(parseCsvDate("26.09.26", "DD.MM.YY")).toBe("2026-09-26");
+  });
+
+  it("does not accept a four-digit year for the two-digit format", () => {
+    expect(parseCsvDate("26.09.2026", "DD.MM.YY")).toBeNull();
+  });
+
+  it("rejects impossible dates", () => {
+    expect(parseCsvDate("31.02.26", "DD.MM.YY")).toBeNull();
+  });
+});
+
 describe("parseCsvStatement", () => {
   it("reads a signed amount column", () => {
     const csv = "Datum;Text;Betrag\n05.02.2026;Migros;-82.40\n25.02.2026;Lohn;6800.00";

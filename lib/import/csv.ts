@@ -91,6 +91,7 @@ export function detectDelimiter(input: string): string {
 
 const DATE_PATTERNS: Record<string, RegExp> = {
   "DD.MM.YYYY": /^(\d{1,2})\.(\d{1,2})\.(\d{4})/,
+  "DD.MM.YY": /^(\d{1,2})\.(\d{1,2})\.(\d{2})(?!\d)/,
   "DD/MM/YYYY": /^(\d{1,2})\/(\d{1,2})\/(\d{4})/,
   "MM/DD/YYYY": /^(\d{1,2})\/(\d{1,2})\/(\d{4})/,
   "YYYY-MM-DD": /^(\d{4})-(\d{1,2})-(\d{1,2})/,
@@ -114,6 +115,7 @@ export function parseCsvDate(value: string, format: string): string | null {
   } else {
     [, day, month, year] = match;
   }
+  if (format === "DD.MM.YY") year = `20${year}`;
 
   const result = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
   return isValidDateString(result) ? result : null;

@@ -700,9 +700,10 @@
       <h3 class="sub">Schritt 1 — Datei hochladen</h3>
       <p><strong>CAMT.053</strong> ist der Kontoauszug, den jede Schweizer Bank im ISO-20022-Format liefert, und enthält Anfangs- und Schlusssaldo — damit lässt sich prüfen, ob der Import vollständig war. <strong>CSV</strong> ist der Rückfallweg, wenn eine Bank kein CAMT anbietet; dafür braucht es einmalig ein <strong>Spalten-Mapping</strong> pro Bank (unten auf der Seite unter «CSV-Mappings» verwaltet — welche Spalte Datum, Betrag usw. enthält). <strong>PDF</strong> ist für Abrechnungen gedacht, die es nur als PDF gibt (z.&nbsp;B. die Kreditkartenabrechnung, wenn der CSV-Export im Portal nicht funktioniert). Dafür braucht es ein <strong>PDF-Layout</strong>, das beschreibt, wie die Buchungszeilen aussehen; für die Migros-Kreditkarte gibt es eine fertige Vorlage unter «Mappings».</p>
       <ol class="steps">
-        <li><strong>Format wählen</strong> — «CAMT.053 (XML)» oder «CSV».</li>
-        <li><strong>Datei auswählen</strong> und <strong>Zielkonto</strong> bestimmen — bei CAMT steht zusätzlich «Automatisch (über IBAN)» zur Verfügung, sofern das Konto eine IBAN hinterlegt hat.</li>
+        <li><strong>Format wählen</strong> — «CAMT.053 (XML)», «CSV» oder «PDF».</li>
+        <li><strong>Datei auswählen</strong> und <strong>Zielkonto</strong> bestimmen — bei CAMT steht zusätzlich «Automatisch (über IBAN)» zur Verfügung, sofern das Konto eine IBAN hinterlegt hat. Bei PDF muss das Zielkonto immer von Hand gewählt werden, weil PDF-Abrechnungen keine IBAN enthalten.</li>
         <li>Bei CSV zusätzlich das passende <strong>Mapping</strong> wählen.</li>
+        <li>Bei PDF zusätzlich das passende <a href="#import-pdf"><strong>PDF-Layout</strong></a> wählen.</li>
         <li>Mit <strong>«Datei einlesen»</strong> zur Vorschau.</li>
       </ol>
 

@@ -37,7 +37,7 @@ test("liest eine PDF-Abrechnung über das Standardlayout und bucht sie", async (
   // Absent when an earlier attempt or spec already created the starter layout.
   const seed = page.getByRole("button", { name: "Standardlayouts anlegen" }).first();
   if (await seed.isVisible()) await seed.click();
-  await expect(page.getByText("Migros Kreditkarte (PDF)").first()).toBeVisible();
+  await expect(page.getByText("Migros Kreditkarte (PDF)", { exact: true }).first()).toBeVisible();
 
   await page.getByRole("tab", { name: "Neuer Import" }).click();
   await page.getByRole("button", { name: "PDF", exact: true }).click();

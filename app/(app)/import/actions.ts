@@ -572,7 +572,9 @@ export async function inspectPdfAction(
   if (typeof upload === "string") return { error: upload };
 
   try {
-    return { lines: (await extractPdfLines(upload.bytes)).slice(0, MAX_INSPECT_LINES) };
+    // Same caps as previewPdfLayoutAction; the parser ignores lines over 500 characters anyway.
+    const lines = (await extractPdfLines(upload.bytes)).slice(0, MAX_INSPECT_LINES).map((line) => line.slice(0, 2000));
+    return { lines };
   } catch (err) {
     log.warn({ err }, "PDF inspection failed");
     return { error: err instanceof Error ? err.message : "Das PDF konnte nicht gelesen werden." };

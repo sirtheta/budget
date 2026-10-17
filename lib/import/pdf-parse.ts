@@ -110,7 +110,7 @@ export function validateLayout(layout: PdfLayoutConfig): string | null {
 /** Fills `{group}` placeholders; a missing group leaves no dangling separator behind. */
 export function renderTemplate(template: string, groups: Record<string, string>): string {
   return template
-    .replace(/\{(\w+)\}/g, (_, name: string) => groups[name]?.trim() ?? "")
+    .replace(/\{(\w+)\}/g, (_, name: string) => (Object.hasOwn(groups, name) ? groups[name].trim() : ""))
     .replace(/\s{2,}/g, " ")
     .replace(/^[\s-]+|[\s-]+$/g, "")
     .trim();
@@ -300,7 +300,7 @@ function parseTables(tables: Tables, layout: PdfLayoutConfig): PdfParseResult {
         open = null;
       } else if (open) {
         for (const [name, value] of Object.entries(values)) {
-          if (!(name in open.groups)) open.groups[name] = value;
+          if (!Object.hasOwn(open.groups, name)) open.groups[name] = value;
         }
       }
       return;
@@ -314,12 +314,15 @@ function parseTables(tables: Tables, layout: PdfLayoutConfig): PdfParseResult {
     amountCents: draft.amountCents,
     description:
       renderTemplate(layout.descriptionTemplate, draft.groups) || draft.groups.text?.trim() || "Ohne Beschreibung",
-    counterparty: (draft.groups.counterparty ?? draft.groups.text?.split(",")[0] ?? "").trim() || null,
+    counterparty: (draft.groups.counterparty?.trim() || draft.groups.text?.split(",")[0] || "").trim() || null,
     bankReference: draft.reference,
   }));
 
   if (transactions.length === 0) {
-    warnings.push("Aus der Datei konnte keine einzige Buchung gelesen werden.");
+    warnings.push(
+      "Aus der Datei konnte keine einzige Buchung gelesen werden. " +
+        "Layout und Textansicht unter Import → Mappings → PDF-Layouts prüfen."
+    );
   }
   if (rejectedRows.length > 0) {
     warnings.push(`${rejectedRows.length} Zeile(n) konnten nicht gelesen werden — Layout prüfen.`);

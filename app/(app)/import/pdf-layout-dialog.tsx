@@ -143,7 +143,11 @@ export function PdfLayoutDialog({
       try {
         const response = await inspectPdfAction(data);
         if (response.error) toast.error(response.error);
-        else setLines(response.lines ?? null);
+        else {
+          // Drop the previous sample's analysis so it never flashes against the new lines.
+          setAnalysis(null);
+          setLines(response.lines ?? null);
+        }
       } catch {
         // A framework-level failure (e.g. request body too large) throws instead of returning.
         toast.error("Das PDF konnte nicht gelesen werden (Datei zu gross?).");
@@ -164,6 +168,7 @@ export function PdfLayoutDialog({
     setTotalRegex(layout?.totalRegex ?? "");
     setRules(layout ? parseContextRules(layout.contextRegexes) : []);
     setLines(null);
+    setAnalysis(null);
   };
 
   const updateRule = (index: number, patch: Partial<ContextRule>) =>

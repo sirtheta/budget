@@ -22,6 +22,7 @@ describe("actionLabel / entityLabel", () => {
     expect(actionLabel("IMPORT")).toBe("Importiert");
     expect(entityLabel("Transaction")).toBe("Buchung");
     expect(entityLabel("User")).toBe("Benutzer");
+    expect(entityLabel("PdfLayout")).toBe("PDF-Layout");
   });
 
   it("falls back to the raw value for unknown codes", () => {

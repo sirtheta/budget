@@ -92,6 +92,27 @@ describe("parsePdfStatement", () => {
     expect(result.transactions[0].counterparty).toBe("Coop-1500 Steffisb");
   });
 
+  it("falls back to the text prefix when the counterparty group is empty", () => {
+    const result = parsePdfStatement(
+      ["26.09.26 Coop, Bern  3.60"],
+      layout({
+        transactionRegex: String.raw`^(?<date>\d{2}\.\d{2}\.\d{2})\s(?<counterparty>\s?)(?<text>.+?)\s{2,}(?<amount>[\d']+\.\d{2})$`,
+      })
+    );
+    expect(result.transactions[0].counterparty).toBe("Coop");
+  });
+
+  it("can fill a context group named like an Object.prototype member", () => {
+    const result = parsePdfStatement(
+      ["26.09.26 Kaffee  4.50", "Typ Genuss"],
+      layout({
+        descriptionTemplate: "{text} {constructor}",
+        contextRules: [{ regex: String.raw`^Typ (?<constructor>\w+)$`, target: "transaction" }],
+      })
+    );
+    expect(result.transactions[0].description).toBe("Kaffee Genuss");
+  });
+
   it("rejects an impossible date with the reason", () => {
     const result = parsePdfStatement(["31.02.26 Test  1.00"], layout());
     expect(result.transactions).toHaveLength(0);
@@ -132,7 +153,10 @@ describe("parsePdfStatement", () => {
 
   it("warns when nothing could be read", () => {
     const result = parsePdfStatement(["nichts"], layout());
-    expect(result.warnings).toContain("Aus der Datei konnte keine einzige Buchung gelesen werden.");
+    expect(result.warnings).toContain(
+      "Aus der Datei konnte keine einzige Buchung gelesen werden. " +
+        "Layout und Textansicht unter Import → Mappings → PDF-Layouts prüfen."
+    );
   });
 
   it("warns about rejected rows", () => {
@@ -251,6 +275,11 @@ describe("renderTemplate", () => {
 
   it("drops a dangling separator when a group is missing", () => {
     expect(renderTemplate("{text} - {category}", { text: "Migros" })).toBe("Migros");
+  });
+
+  it("ignores placeholders named like Object.prototype members", () => {
+    expect(renderTemplate("{text} {toString}", { text: "Migros" })).toBe("Migros");
+    expect(renderTemplate("{constructor}", { constructor: "x" })).toBe("x");
   });
 
   it("returns an empty string when nothing is available", () => {

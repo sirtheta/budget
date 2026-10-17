@@ -68,6 +68,10 @@ export async function savePdfLayoutAction(
   if (!Array.isArray(submittedRules) || rules.length !== submittedRules.length) {
     return { error: "Kontext-Regeln sind ungültig." };
   }
+  // The same caps previewPdfLayoutAction enforces.
+  if (rules.length > 20 || rules.some((rule) => rule.regex.length > 2000)) {
+    return { error: "Höchstens 20 Kontext-Regeln mit je 2000 Zeichen." };
+  }
 
   const problem = validateLayout({
     transactionRegex: parsed.data.transactionRegex,
@@ -81,7 +85,11 @@ export async function savePdfLayoutAction(
   });
   if (problem) return { error: problem };
 
-  const data = { ...parsed.data, contextRegexes: JSON.stringify(rules) };
+  // Only the known keys are persisted; parseContextRules tolerates extras.
+  const data = {
+    ...parsed.data,
+    contextRegexes: JSON.stringify(rules.map(({ regex, target }) => ({ regex, target }))),
+  };
 
   const idRaw = formData.get("id");
   const id = idRaw ? parseInt(String(idRaw), 10) : null;

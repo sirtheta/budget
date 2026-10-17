@@ -19,7 +19,14 @@ vi.mock("@/lib/permissions", () => ({
   requireEditor: vi.fn(async () => sessionHolder.current),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// Real extraction by default; one test feeds oversized output that a PDF built
+// by buildTextPdf cannot produce (pdf.js drops text beyond the page edge).
+vi.mock("@/lib/import/pdf", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/import/pdf")>();
+  return { ...actual, extractPdfLines: vi.fn(actual.extractPdfLines) };
+});
 
+import { extractPdfLines } from "@/lib/import/pdf";
 import { commitImportAction, inspectPdfAction, previewImportAction } from "@/app/(app)/import/actions";
 import {
   deletePdfLayoutAction,
@@ -172,6 +179,17 @@ describe("inspectPdfAction", () => {
     expect(result.lines).toContain("26.09.26 28.09.26 Testladen, Bern CH  12.50");
   });
 
+  it("caps the number and the length of the returned lines", async () => {
+    const extracted = ["a".repeat(3000), ...Array.from({ length: 2500 }, (_, index) => `Zeile ${index}`)];
+    vi.mocked(extractPdfLines).mockResolvedValueOnce(extracted);
+    const data = new FormData();
+    data.append("file", new File([statementPdf() as BlobPart], "long.pdf", { type: "application/pdf" }));
+    const result = await inspectPdfAction(data);
+    expect(result.lines).toHaveLength(2000);
+    expect(result.lines?.[0]).toBe("a".repeat(2000));
+    expect(result.lines?.[1]).toBe("Zeile 0");
+  });
+
   it("rejects an empty upload", async () => {
     expect((await inspectPdfAction(new FormData())).error).toBe("Bitte eine Datei auswählen.");
   });
@@ -218,6 +236,36 @@ describe("PDF layout actions", () => {
   it("rejects broken context-rule JSON", async () => {
     const result = await savePdfLayoutAction(undefined, layoutForm({ name: "Json", contextRegexes: "nope" }));
     expect(result.error).toBe("Kontext-Regeln sind ungültig.");
+  });
+
+  it("rejects more than 20 context rules", async () => {
+    const rule = { regex: "^(?<a>x)$", target: "section" };
+    const result = await savePdfLayoutAction(
+      undefined,
+      layoutForm({ name: "Viele", contextRegexes: JSON.stringify(Array.from({ length: 21 }, () => rule)) })
+    );
+    expect(result.error).toBe("Höchstens 20 Kontext-Regeln mit je 2000 Zeichen.");
+    expect(await prisma.pdfLayout.findUnique({ where: { name: "Viele" } })).toBeNull();
+  });
+
+  it("rejects a context rule longer than 2000 characters", async () => {
+    const regex = `^(?<a>${"x".repeat(2000)})$`;
+    const result = await savePdfLayoutAction(
+      undefined,
+      layoutForm({ name: "Lang", contextRegexes: JSON.stringify([{ regex, target: "section" }]) })
+    );
+    expect(result.error).toBe("Höchstens 20 Kontext-Regeln mit je 2000 Zeichen.");
+  });
+
+  it("stores context rules with the known keys only", async () => {
+    const submitted = [{ regex: "^Typ (?<category>\\w+)$", target: "transaction", extra: "drop me" }];
+    const result = await savePdfLayoutAction(
+      undefined,
+      layoutForm({ name: "Mit Regel", contextRegexes: JSON.stringify(submitted) })
+    );
+    expect(result).toEqual({ success: true });
+    const row = await prisma.pdfLayout.findUniqueOrThrow({ where: { name: "Mit Regel" } });
+    expect(JSON.parse(row.contextRegexes)).toEqual([{ regex: "^Typ (?<category>\\w+)$", target: "transaction" }]);
   });
 
   it("updates an existing layout", async () => {

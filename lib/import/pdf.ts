@@ -53,7 +53,8 @@ export async function extractPdfLines(bytes: Uint8Array): Promise<string[]> {
     throw new PdfExtractError("Das PDF konnte nicht gelesen werden.");
   } finally {
     // The document proxy itself has no destroy(); its loading task does.
-    await pdf.loadingTask.destroy();
+    // A failing cleanup must not mask the result (or the real error).
+    await pdf.loadingTask.destroy().catch(() => {});
   }
 }
 

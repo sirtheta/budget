@@ -8,7 +8,13 @@
       "component": "budget",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
-      "automerge": true
+      "automerge": true,
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "public/benutzerhandbuch.html"
+        }
+      ]
     }
   }
 }

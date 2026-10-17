@@ -21,6 +21,12 @@ vi.mock("@/lib/permissions", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { commitImportAction, inspectPdfAction, previewImportAction } from "@/app/(app)/import/actions";
+import {
+  deletePdfLayoutAction,
+  previewPdfLayoutAction,
+  savePdfLayoutAction,
+  seedDefaultPdfLayoutsAction,
+} from "@/app/(app)/import/pdf-layout-actions";
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -168,5 +174,118 @@ describe("inspectPdfAction", () => {
 
   it("rejects an empty upload", async () => {
     expect((await inspectPdfAction(new FormData())).error).toBe("Bitte eine Datei auswählen.");
+  });
+});
+
+function layoutForm(fields: Record<string, string> = {}) {
+  const data = new FormData();
+  const base: Record<string, string> = {
+    name: "Testkarte",
+    transactionRegex: String.raw`^(?<date>\d{2}\.\d{2}\.\d{2})\s+(?<text>.+?)\s{2,}(?<amount>[\d']+\.\d{2})$`,
+    dateFormat: "DD.MM.YY",
+    negativeSuffixRegex: "",
+    descriptionTemplate: "{text}",
+    skipRegex: "",
+    totalRegex: "",
+    contextRegexes: "[]",
+  };
+  for (const [key, value] of Object.entries({ ...base, ...fields })) data.set(key, value);
+  return data;
+}
+
+describe("PDF layout actions", () => {
+  it("creates a layout", async () => {
+    expect(await savePdfLayoutAction(undefined, layoutForm())).toEqual({ success: true });
+    const row = await prisma.pdfLayout.findUnique({ where: { name: "Testkarte" } });
+    expect(row).toMatchObject({ dateFormat: "DD.MM.YY", invertAmount: false, skipRegex: null, contextRegexes: "[]" });
+  });
+
+  it("rejects a duplicate name", async () => {
+    expect((await savePdfLayoutAction(undefined, layoutForm())).error).toBe(
+      "Ein Layout mit diesem Namen existiert bereits."
+    );
+  });
+
+  it("rejects an invalid regex with the validation message", async () => {
+    const result = await savePdfLayoutAction(undefined, layoutForm({ name: "Kaputt", transactionRegex: "(" }));
+    expect(result.error).toBe("Buchungszeilen-Regex ist ungültig.");
+  });
+
+  it("rejects a missing name", async () => {
+    expect((await savePdfLayoutAction(undefined, layoutForm({ name: " " }))).error).toBe("Name darf nicht leer sein.");
+  });
+
+  it("rejects broken context-rule JSON", async () => {
+    const result = await savePdfLayoutAction(undefined, layoutForm({ name: "Json", contextRegexes: "nope" }));
+    expect(result.error).toBe("Kontext-Regeln sind ungültig.");
+  });
+
+  it("updates an existing layout", async () => {
+    const row = await prisma.pdfLayout.findUniqueOrThrow({ where: { name: "Testkarte" } });
+    const data = layoutForm({ name: "Testkarte 2" });
+    data.set("id", String(row.id));
+    data.set("invertAmount", "on");
+    expect(await savePdfLayoutAction(undefined, data)).toEqual({ success: true });
+    expect(await prisma.pdfLayout.findUnique({ where: { id: row.id } })).toMatchObject({
+      name: "Testkarte 2",
+      invertAmount: true,
+    });
+  });
+
+  it("writes audit rows for create and update", async () => {
+    const actions = await prisma.auditLog.findMany({ where: { entityType: "PdfLayout" }, select: { action: true } });
+    expect(actions.map((a) => a.action)).toEqual(expect.arrayContaining(["CREATE", "UPDATE"]));
+  });
+
+  it("deletes a layout", async () => {
+    const row = await prisma.pdfLayout.findUniqueOrThrow({ where: { name: "Testkarte 2" } });
+    expect(await deletePdfLayoutAction(row.id)).toEqual({ success: true });
+    expect(await prisma.pdfLayout.findUnique({ where: { id: row.id } })).toBeNull();
+  });
+
+  it("seeds the starter layout once", async () => {
+    await prisma.pdfLayout.deleteMany({ where: { name: "Migros Kreditkarte (PDF)" } });
+    expect(await seedDefaultPdfLayoutsAction()).toEqual({ success: true, created: 1 });
+    expect(await seedDefaultPdfLayoutsAction()).toEqual({ success: true, created: 0 });
+  });
+});
+
+describe("previewPdfLayoutAction", () => {
+  const config = {
+    transactionRegex: String.raw`^(?<date>\d{2}\.\d{2}\.\d{2})\s+(?<text>.+?)\s{2,}(?<amount>[\d']+\.\d{2})$`,
+    dateFormat: "DD.MM.YY",
+    negativeSuffixRegex: null,
+    invertAmount: true,
+    descriptionTemplate: "{text}",
+    skipRegex: null,
+    totalRegex: null,
+    contextRules: [],
+  };
+
+  it("returns line kinds and the parse result", async () => {
+    const response = await previewPdfLayoutAction({ lines: ["26.09.26 Migros  4.50", "Footer"], layout: config });
+    expect(response.kinds).toEqual(["transaction", "other"]);
+    expect(response.result?.transactions).toHaveLength(1);
+  });
+
+  it("reports an invalid layout", async () => {
+    const response = await previewPdfLayoutAction({ lines: [], layout: { ...config, transactionRegex: "(" } });
+    expect(response.error).toBe("Buchungszeilen-Regex ist ungültig.");
+  });
+
+  it("aborts a catastrophic regex with a message instead of hanging", async () => {
+    const started = Date.now();
+    const response = await previewPdfLayoutAction({
+      lines: [`${"a".repeat(40)}c`],
+      layout: { ...config, transactionRegex: String.raw`^(?<date>(a+)+)(?<amount>b)$` },
+    });
+    expect(response.error).toBe(
+      "Ein Regex im Layout braucht zu lange (vermutlich endloses Backtracking). Bitte vereinfachen."
+    );
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it("rejects malformed input", async () => {
+    expect((await previewPdfLayoutAction({ nope: 1 })).error).toBe("Ungültige Vorschau-Daten.");
   });
 });

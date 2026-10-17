@@ -1,0 +1,47 @@
+Migros Bank AG
+Postfach
+8010 Zürich
+Herr
+Test Person
+Musterweg 1
+3000 Bern
+Abrechnung vom  14.10.2026
+Kartenkontonummer  1111 2222 3333 4444
+Fälliger Betrag  226.50
+Datum  Valuta  Details  Währung  Betrag  Betrag in CHF
+14.09.26 Totalbetrag letzte Abrechnung  300.00
+28.09.26 15.09.26 Ihre Zahlung - Danke  300.00 -
+4435 92XX XXXX 1111 Cumulus Kreditkarte, Anna Muster
+Kartenlimite CHF 10'000
+26.09.26 28.09.26 Beispiel Pay**0001*, Zurich CH  150.00
+Finanzdienstleistungen
+26.09.26 28.09.26 SumUp *Testlokal 54 R, Hamburg DE  EUR  100.00  96.85
+Restaurants
+Umrechnungskurs 0.9683388 vom 26.09.26  CHF  96.85
+01.10.26 02.10.26 Testmarkt Bern, Bern CH  1.15
+Supermärkte, Lebensmittel
+02.10.26 03.10.26 Testshop Rueckgabe, Bern CH  10.00 -
+Warenhäuser
+Total Karte Cumulus Kreditkarte 4435 92XX XXXX 1111  238.00
+Zwischensumme Total  238.00
+Seite 1/2  Einzug der Forderung durch
+Viseca Payment Services SA,
+Hagenholzstrasse 56, 8050 Zürich
+Migros Bank AG
+Postfach
+8010 Zürich
+Datum  Valuta  Details  Währung  Betrag  Betrag in CHF
+Übertrag Total  238.00
+4435 92XX XXXX 2222 Cumulus Kreditkarte, Ben Muster
+Kartenlimite CHF 10'000
+14.09.26 15.09.26 Testdrogerie, Thun CH  8.50
+Drogerien und Apotheken
+18.09.26 21.09.26 Testmarkt Thun, Thun CH  47.60
+Supermärkte, Lebensmittel
+18.09.26 21.09.26 Testmarkt Thun, Thun CH  47.60
+Supermärkte, Lebensmittel
+Total Karte Cumulus Kreditkarte 4435 92XX XXXX 2222  103.70
+Total Rechnungsbetrag zu unseren Gunsten  341.70
+Seite 2/2  Einzug der Forderung durch
+Viseca Payment Services SA,
+Hagenholzstrasse 56, 8050 Zürich

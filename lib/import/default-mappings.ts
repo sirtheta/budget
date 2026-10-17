@@ -1,10 +1,11 @@
-import type { CsvMapping, PrismaClient } from "@prisma/client";
+import type { CsvMapping, PdfLayout, PrismaClient } from "@prisma/client";
 
 /**
  * Starter CSV column mappings for exports that show up in almost every Swiss
  * household: the household's own credit card (CSV-only, no CAMT.053) and
  * Revolut. Every mapping stays fully editable or deletable afterwards under
- * Import → CSV-Mappings — this is a starting point, not a fixed list.
+ * Import → Mappings — this is a starting point, not a fixed list. PDF layouts
+ * for statements that only come as PDF follow below.
  */
 export const DEFAULT_CSV_MAPPINGS: Omit<
   CsvMapping,
@@ -60,6 +61,58 @@ export async function seedDefaultCsvMappings(
       continue;
     }
     await prisma.csvMapping.create({ data: mapping });
+    created++;
+  }
+  return { created, skipped };
+}
+
+const CARD_NUMBER = String.raw`\d{4} [\dX]{4} X{4} \d{4}`;
+const AMOUNT = String.raw`[\d']+\.\d{2}`;
+
+/**
+ * Starter PDF layouts. Like the CSV mappings these stay editable under
+ * Import → Mappings.
+ */
+export const DEFAULT_PDF_LAYOUTS: Omit<PdfLayout, "id" | "createdAt" | "updatedAt">[] = [
+  {
+    // Viseca / Migros Bank Cumulus statement. Purchases are printed positive,
+    // credits carry a trailing minus — hence invertAmount. One booking per
+    // line; the next line is the card network's merchant category, and
+    // foreign-currency bookings add a currency/amount pair plus a rate line.
+    name: "Migros Kreditkarte (PDF)",
+    transactionRegex:
+      String.raw`^(?<date>\d{2}\.\d{2}\.\d{2})\s+(?<valuta>\d{2}\.\d{2}\.\d{2})\s+(?<text>.+?)` +
+      String.raw`(?:\s{2,}(?<currency>[A-Z]{3})\s{2,}(?<foreignAmount>${AMOUNT}))?` +
+      String.raw`\s{2,}(?<amount>${AMOUNT})(?:\s*-)?$`,
+    dateFormat: "DD.MM.YY",
+    negativeSuffixRegex: String.raw`\s*-$`,
+    invertAmount: true,
+    descriptionTemplate: "{text} - {category}",
+    skipRegex: "Ihre Zahlung|Totalbetrag letzte Abrechnung",
+    totalRegex: String.raw`^Total Karte .*?(?<key>${CARD_NUMBER})\s+(?<amount>${AMOUNT}(?:\s*-)?)$`,
+    contextRegexes: JSON.stringify([
+      { regex: String.raw`^(?<key>${CARD_NUMBER})\s+.*,\s*(?<holder>.+)$`, target: "section" },
+      { regex: String.raw`^Umrechnungskurs\s+(?<rate>[\d.]+)`, target: "transaction" },
+      { regex: String.raw`^(?<category>[^\d]+)$`, target: "transaction" },
+    ]),
+  },
+];
+
+/** Creates the starter PDF layouts, skipping any name that already exists. */
+export async function seedDefaultPdfLayouts(
+  prisma: PrismaClient
+): Promise<{ created: number; skipped: number }> {
+  const existing = await prisma.pdfLayout.findMany({ select: { name: true } });
+  const existingNames = new Set(existing.map((l) => l.name));
+
+  let created = 0;
+  let skipped = 0;
+  for (const layout of DEFAULT_PDF_LAYOUTS) {
+    if (existingNames.has(layout.name)) {
+      skipped++;
+      continue;
+    }
+    await prisma.pdfLayout.create({ data: layout });
     created++;
   }
   return { created, skipped };

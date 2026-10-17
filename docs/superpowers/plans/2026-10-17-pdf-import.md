@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- UI text, error messages, warnings: **German**. Code, comments, commit messages: **English**. Commits follow Conventional Commits (`feat(import): …`), each ending with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
+- UI text, error messages, warnings: **German**. Code, comments, commit messages: **English**. Commits follow Conventional Commits (`feat(import): …`). Every commit gets the trailer `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`: append `-m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"` to each `git commit` command below.
 - Amounts are signed integer Rappen; negative = expense (`lib/money.ts`). Never floats in the DB.
 - `lib/import/pdf-parse.ts` must not import Prisma runtime, `unpdf`, `fs`, or `pino` (it runs in the browser for the live preview). Type-only Prisma imports are fine.
 - Next.js 16: before touching routing or server-action conventions check `node_modules/next/dist/docs/`. This plan only adds files that follow patterns already used in `app/(app)/import/`.
@@ -26,7 +26,9 @@
 - The sum-check section key is a reserved named group `key` (in a section context regex and in the total regex). Without `key` in the total regex, all transactions are summed against the sum of all printed totals.
 - A `target: "transaction"` context line only attaches while the previous line was that transaction or another `transaction` context line (a "run" directly after the booking). Any other line closes it. This stops page headers from becoming a category.
 - "No transaction read" is a warning (same text as CSV), not a thrown error, so the preview shows the cause next to `rejectedRows`.
-- No `iban` group and no deterministic pathological-regex test (see spec edits in Task 1, Step 5); the 500-character line cap is the protection and is tested.
+- No `iban` group and no pathological-regex test (see spec edits in Task 1, Step 5).
+- **ReDoS is not solved, only bounded and documented.** The 500-character line cap limits ordinary regexes but not catastrophic backtracking such as `(a+)+$`. Layouts are written by editors (`requireEditor`), who are trusted; the layout dialog debounces its live preview. A `worker_threads` / Web Worker with a timeout would be the real fix and is deliberately out of scope here.
+- **Known limitation, documented rather than fixed:** the dedupe fingerprint (`lib/import/dedupe.ts`) hashes the rendered description and counterparty. Editing a layout's template or context rules and re-reading the same PDF makes every row look new, and a CSV export and the PDF of the same card never dedupe against each other. Task 10 documents this in CLAUDE.md, the manual and the dialog text. A stable `bankReference` built from the raw groups (`pdf:<date>|<valuta>|<text>|<amount>|<occurrence>`, occurrence included because `verifyImportHash` only checks occurrence 0 when a reference is set) would remove it.
 
 ## File Structure
 
@@ -71,9 +73,9 @@ git switch docs/pdf-import-spec && git switch -c feat/pdf-import
 - [ ] **Step 2: Install unpdf**
 
 ```bash
-npm install unpdf@1.9.0
+npm install --save-exact unpdf@1.9.0
 ```
-Expected: `package.json` gains `"unpdf": "1.9.0"` under `dependencies`.
+Expected: `package.json` gains `"unpdf": "1.9.0"` (exact, no caret) under `dependencies`.
 
 - [ ] **Step 3: Extend the schema**
 
@@ -125,11 +127,18 @@ model PdfLayout {
 ```bash
 npx prisma migrate dev --name add_pdf_layout
 ```
-Expected: a new folder `prisma/migrations/<timestamp>_add_pdf_layout/` containing `CREATE TABLE "PdfLayout"` and `CREATE UNIQUE INDEX "PdfLayout_name_key"`; Prisma client regenerated. SQLite stores enums as TEXT, so `Pdf` needs no SQL.
+Expected: a new folder `prisma/migrations/<timestamp>_add_pdf_layout/` containing `CREATE TABLE "PdfLayout"` and `CREATE UNIQUE INDEX "PdfLayout_name_key"`. SQLite stores enums as TEXT, so `Pdf` needs no SQL.
+
+Prisma 7's `migrate dev` does **not** regenerate the client (the `postinstall` generate in Step 2 ran before the schema change), so run it explicitly:
+
+```bash
+npx prisma generate
+```
+Expected: `Generated Prisma Client`. Without it `prisma.pdfLayout` and `ImportFormat.Pdf` are `undefined`, and `tsc` in Step 6 would not prove anything.
 
 - [ ] **Step 5: Fix the spec text for the removed separators**
 
-In `docs/superpowers/specs/2026-10-17-pdf-import-design.md` delete the bullet `- \`decimalSeparator\`, \`thousandsSeparator\` — defaults \`.\` and \`'\`.` and in "Parse flow" step 3 replace "using the layout separators" with "(it already accepts `1'234.50`, `1 234,50` and `1.234,50`)". Also add one sentence to the `contextRegexes` bullet: "A `transaction` context only applies while the previous line was that booking or another `transaction` context line." In "Parse flow" delete the sentence "`iban` is `null` unless the layout supplies a group `iban`, so the target account is chosen in the wizard." and replace it with "`iban` is always `null` (statements like the Viseca bill carry none), so the target account is chosen in the wizard." In "Tests" delete "pathological regex and" from the `pdf-parse` edge-case list (a pathological pattern cannot be asserted deterministically; the line-length cap is the protection and has its own test) and add `sum check per card key` to that list.
+In `docs/superpowers/specs/2026-10-17-pdf-import-design.md` delete the bullet `- \`decimalSeparator\`, \`thousandsSeparator\` — defaults \`.\` and \`'\`.` and in "Parse flow" step 3 replace "using the layout separators" with "(it already accepts `1'234.50`, `1 234,50` and `1.234,50`)". Also add one sentence to the `contextRegexes` bullet: "A `transaction` context only applies while the previous line was that booking or another `transaction` context line." In "Parse flow" delete the sentence "`iban` is `null` unless the layout supplies a group `iban`, so the target account is chosen in the wizard." and replace it with "`iban` is always `null` (statements like the Viseca bill carry none), so the target account is chosen in the wizard." In "Error handling" replace the sentence "User-supplied regexes are validated on save, and line length is capped so a pathological pattern cannot stall the server." with "User-supplied regexes are validated on save and lines are capped at 500 characters, which bounds ordinary regexes but not catastrophic backtracking; layouts are written by trusted editors and the dialog debounces its live preview." In "Tests" delete "pathological regex and" from the `pdf-parse` edge-case list (a pathological pattern cannot be asserted deterministically; the line-length cap is the protection and has its own test) and add `sum check per card key` to that list.
 
 - [ ] **Step 6: Verify and commit**
 
@@ -516,9 +525,10 @@ import type { ParsedStatement, ParsedTransaction } from "@/lib/import/types";
  * it in the browser for its live preview. The PDF → lines step lives in
  * lib/import/pdf.ts.
  *
- * Lines longer than MAX_PDF_LINE_LENGTH are ignored: the regexes are user
- * input, and capping the line keeps a badly written one from stalling the
- * server on a pathological line.
+ * Lines longer than MAX_PDF_LINE_LENGTH are ignored, which bounds the cost of
+ * an ordinary regex. It does NOT protect against catastrophic backtracking
+ * (e.g. `(a+)+$`): layouts are written by editors (requireEditor), who are
+ * trusted, and the layout dialog debounces its live preview.
  */
 
 export const MAX_PDF_LINE_LENGTH = 500;
@@ -976,6 +986,24 @@ describe("Migros Kreditkarte (PDF) starter layout", () => {
     const result = parsePdfStatement(broken, viseca);
     expect(result.warnings).toContain("Summe für 4435 92XX XXXX 2222 weicht ab: gelesen 103.70, laut PDF 104.70.");
   });
+
+  it("reads a trailing minus without a space as a credit", () => {
+    const result = parsePdfStatement(["02.10.26 03.10.26 Testshop, Bern CH  10.00-"], viseca);
+    expect(result.transactions[0].amountCents).toBe(1000);
+  });
+
+  it("checks a card whose printed total is negative", () => {
+    const result = parsePdfStatement(
+      [
+        "4435 92XX XXXX 1111 Cumulus Kreditkarte, Anna Muster",
+        "02.10.26 03.10.26 Testshop, Bern CH  10.00 -",
+        "Warenhäuser",
+        "Total Karte Cumulus Kreditkarte 4435 92XX XXXX 1111  10.00 -",
+      ],
+      viseca
+    );
+    expect(result.warnings).toEqual([]);
+  });
 });
 
 describe("seedDefaultPdfLayouts", () => {
@@ -1029,11 +1057,11 @@ export const DEFAULT_PDF_LAYOUTS: Omit<PdfLayout, "id" | "createdAt" | "updatedA
       String.raw`(?:\s{2,}(?<currency>[A-Z]{3})\s{2,}(?<foreignAmount>${AMOUNT}))?` +
       String.raw`\s{2,}(?<amount>${AMOUNT})(?:\s*-)?$`,
     dateFormat: "DD.MM.YY",
-    negativeSuffixRegex: String.raw`\s-$`,
+    negativeSuffixRegex: String.raw`\s*-$`,
     invertAmount: true,
     descriptionTemplate: "{text} - {category}",
     skipRegex: "Ihre Zahlung|Totalbetrag letzte Abrechnung",
-    totalRegex: String.raw`^Total Karte .*?(?<key>${CARD_NUMBER})\s+(?<amount>${AMOUNT})$`,
+    totalRegex: String.raw`^Total Karte .*?(?<key>${CARD_NUMBER})\s+(?<amount>${AMOUNT}(?:\s*-)?)$`,
     contextRegexes: JSON.stringify([
       { regex: String.raw`^(?<key>${CARD_NUMBER})\s+.*,\s*(?<holder>.+)$`, target: "section" },
       { regex: String.raw`^Umrechnungskurs\s+(?<rate>[\d.]+)`, target: "transaction" },
@@ -1063,7 +1091,7 @@ export async function seedDefaultPdfLayouts(
 }
 ```
 
-Also update the file's top doc comment to mention PDF layouts (one added sentence: "PDF layouts for statements that only come as PDF follow below.").
+Also update the file's top doc comment: change "Import → CSV-Mappings" to "Import → Mappings" and add one sentence "PDF layouts for statements that only come as PDF follow below.".
 
 - [ ] **Step 5: Run, expect PASS**
 
@@ -1262,20 +1290,27 @@ export async function extractPdfLines(bytes: Uint8Array): Promise<string[]> {
     throw new PdfExtractError("Das PDF konnte nicht gelesen werden.");
   }
 
-  // No explicit cleanup: unpdf's document proxy has no destroy(), and the
-  // document is garbage-collected once this request ends.
-  const lines: string[] = [];
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-    const content = await (await pdf.getPage(pageNumber)).getTextContent();
-    const fragments: Fragment[] = [];
-    for (const item of content.items) {
-      if (!("str" in item) || item.str.trim() === "") continue;
-      fragments.push({ text: item.str, x: item.transform[4], y: item.transform[5], width: item.width });
+  try {
+    const lines: string[] = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+      const content = await (await pdf.getPage(pageNumber)).getTextContent();
+      const fragments: Fragment[] = [];
+      for (const item of content.items) {
+        if (!("str" in item) || item.str.trim() === "") continue;
+        fragments.push({ text: item.str, x: item.transform[4], y: item.transform[5], width: item.width });
+      }
+      lines.push(...fragmentsToLines(fragments));
     }
-    lines.push(...fragmentsToLines(fragments));
+    if (lines.length === 0) throw new PdfExtractError("PDF enthält keinen lesbaren Text (Scan?).");
+    return lines;
+  } catch (err) {
+    // pdf.js errors are English; the user gets one German message.
+    if (err instanceof PdfExtractError) throw err;
+    throw new PdfExtractError("Das PDF konnte nicht gelesen werden.");
+  } finally {
+    // The document proxy itself has no destroy(); its loading task does.
+    await pdf.loadingTask.destroy();
   }
-  if (lines.length === 0) throw new PdfExtractError("PDF enthält keinen lesbaren Text (Scan?).");
-  return lines;
 }
 
 function fragmentsToLines(fragments: Fragment[]): string[] {
@@ -1588,6 +1623,19 @@ Leave `inspectCsvAction` as is (`readUpload(formData)` default = text).
 Run: `npx vitest run tests/integration/pdf-import.test.ts tests/integration/import-action.test.ts`
 Expected: both files PASS.
 
+- [ ] **Step 5a: Raise the Server Action body limit**
+
+Next 16 caps Server Action request bodies at 1 MB (`node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/serverActions.md`), while `readUpload` accepts `IMPORT_MAX_FILE_SIZE_BYTES` (10 MB). A bank PDF with fonts or logos easily exceeds 1 MB and would fail with a framework error instead of the app's message. In `next.config.ts` add inside `nextConfig`:
+
+```ts
+  experimental: {
+    // Same ceiling as readUpload() plus 1 MB for the multipart overhead.
+    serverActions: {
+      bodySizeLimit: `${Math.ceil((Number(process.env.IMPORT_MAX_FILE_SIZE_BYTES) || 10 * 1024 * 1024) / 1024 / 1024) + 1}mb`,
+    },
+  },
+```
+
 - [ ] **Step 5: Check the production bundle can load unpdf**
 
 Run: `npm run build`
@@ -1599,7 +1647,6 @@ Expected: build succeeds. If it fails on pdf.js (e.g. `Module not found` for a w
 git add "app/(app)/import/actions.ts" tests/integration/pdf-import.test.ts next.config.ts
 git commit -m "feat(import): preview PDF statements through stored layouts"
 ```
-(Drop `next.config.ts` from `git add` if it was not changed.)
 
 ---
 
@@ -1607,6 +1654,7 @@ git commit -m "feat(import): preview PDF statements through stored layouts"
 
 **Files:**
 - Create: `app/(app)/import/pdf-layout-actions.ts`
+- Modify: `lib/audit.ts:17-29` (`AuditEntity` union)
 - Modify: `tests/integration/pdf-import.test.ts` (append)
 
 **Interfaces:**
@@ -1702,6 +1750,10 @@ Caveat: the "Migros Kreditkarte (PDF)" row created in `beforeAll` is used by ear
 
 Run: `npx vitest run tests/integration/pdf-import.test.ts -t "PDF layout actions"`
 Expected: FAIL — module `pdf-layout-actions` not found.
+
+- [ ] **Step 3a: Allow the new audit entity**
+
+In `lib/audit.ts` add `| "PdfLayout"` to the `AuditEntity` union (after `| "CsvMapping"`). `logAudit` takes this closed union, so without it `tsc` and `npm run build` fail even though Vitest (which does not typecheck) passes.
 
 - [ ] **Step 3: Implement `app/(app)/import/pdf-layout-actions.ts`**
 
@@ -1824,12 +1876,12 @@ export async function seedDefaultPdfLayoutsAction(): Promise<ActionState & { cre
 - [ ] **Step 4: Run, expect PASS**
 
 Run: `npx vitest run tests/integration/pdf-import.test.ts`
-Expected: PASS. If the audit test fails with an unknown `entityType` check, read `lib/audit.ts` `logAudit` — the entity type is a free string in the existing `CsvMapping` calls, so it should not.
+Expected: PASS. Then run `npx tsc --noEmit` — it must be clean (Vitest does not typecheck).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add "app/(app)/import/pdf-layout-actions.ts" tests/integration/pdf-import.test.ts
+git add "app/(app)/import/pdf-layout-actions.ts" lib/audit.ts tests/integration/pdf-import.test.ts
 git commit -m "feat(import): add actions to manage PDF layouts"
 ```
 
@@ -1884,7 +1936,7 @@ export function SeedDefaultPdfLayoutsButton() {
 }
 ```
 
-- [ ] **Step 2: Delete button** — in `import-history.tsx` extend the import `import { deleteCsvMappingAction } from "./mapping-actions";` with a new line `import { deletePdfLayoutAction } from "./pdf-layout-actions";` and add after `DeleteMappingButton`:
+- [ ] **Step 2: Delete button** — in `import-history.tsx` add the import line `import { deletePdfLayoutAction } from "./pdf-layout-actions";` below the existing (multi-line) `./mapping-actions` import and add after `DeleteMappingButton`:
 
 ```tsx
 export function DeletePdfLayoutButton({ id, name }: { id: number; name: string }) {
@@ -1912,6 +1964,16 @@ export function DeletePdfLayoutButton({ id, name }: { id: number; name: string }
   );
 }
 ```
+
+- [ ] **Step 2b: Show the right format badge in the history**
+
+`import-history.tsx` renders `{batch.format === "Camt053" ? "CAMT.053" : "CSV"}` in two places (~lines 195 and 233), which would label PDF batches "CSV". Define once above the first component
+
+```tsx
+const FORMAT_LABEL = { Camt053: "CAMT.053", Csv: "CSV", Pdf: "PDF" } as const;
+```
+
+and replace both expressions with `{FORMAT_LABEL[batch.format]}`.
 
 - [ ] **Step 3: Wizard edits** in `import-wizard.tsx`
 
@@ -1969,6 +2031,7 @@ accept={
 ```
 9. Submit button: `disabled={pending || (format === "Csv" && mappings.length === 0) || (format === "Pdf" && pdfLayouts.length === 0)}`
 10. Card description (~line 280): append the sentence `PDF ist für Abrechnungen gedacht, die es nur als PDF gibt (z. B. Kreditkarte); es braucht ein Layout, das beschreibt, wie die Buchungszeilen aussehen.` inside the existing `CardDescription` text after the CSV sentence.
+11. Warnings block (~line 485): the rejected-rows list is rendered under every warning, so a PDF with two warnings (skipped payment, sum mismatch) would show it twice. Change `{preview.rejectedRows.length > 0 && (` to `{preview.rejectedRows.length > 0 && warning.includes("konnten nicht gelesen werden") && (`. Both the CSV and the PDF warning contain that phrase.
 
 The account combobox already hides "Automatisch (über IBAN)" for everything except `Camt053`, so PDF forces an explicit account with no further change.
 
@@ -2054,7 +2117,7 @@ git commit -m "feat(import): add PDF to the import wizard and mappings tab"
 ```tsx
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { PdfLayout } from "@prisma/client";
@@ -2155,25 +2218,62 @@ export function PdfLayoutDialog({
     [transactionRegex, dateFormat, negativeSuffixRegex, invertAmount, descriptionTemplate, skipRegex, totalRegex, rules]
   );
 
+  // Compiling is cheap, so validation follows every keystroke; running the
+  // regexes over the whole sample is debounced so a half-typed pattern is not
+  // executed on each key press.
   const problem = useMemo(() => validateLayout(config), [config]);
-  const kinds = useMemo(() => (lines ? classifyLines(lines, config) : []), [lines, config]);
-  const result = useMemo(() => (lines && !problem ? parsePdfStatement(lines, config) : null), [lines, config, problem]);
+  const [previewConfig, setPreviewConfig] = useState(config);
+  useEffect(() => {
+    const timer = setTimeout(() => setPreviewConfig(config), 400);
+    return () => clearTimeout(timer);
+  }, [config]);
+  const kinds = useMemo(() => (lines ? classifyLines(lines, previewConfig) : []), [lines, previewConfig]);
+  const result = useMemo(
+    () => (lines && !validateLayout(previewConfig) ? parsePdfStatement(lines, previewConfig) : null),
+    [lines, previewConfig]
+  );
 
   const inspect = (file: File) => {
     const data = new FormData();
     data.set("file", file);
     startInspect(async () => {
-      const response = await inspectPdfAction(data);
-      if (response.error) toast.error(response.error);
-      else setLines(response.lines ?? null);
+      try {
+        const response = await inspectPdfAction(data);
+        if (response.error) toast.error(response.error);
+        else setLines(response.lines ?? null);
+      } catch {
+        // A framework-level failure (e.g. request body too large) throws instead of returning.
+        toast.error("Das PDF konnte nicht gelesen werden (Datei zu gross?).");
+      }
     });
+  };
+
+  // The fields are controlled, so a form reset does not clear them: restore the
+  // saved layout (or the defaults of a new one) each time the dialog opens.
+  const reset = () => {
+    setName(layout?.name ?? "");
+    setTransactionRegex(layout?.transactionRegex ?? STARTER_REGEX);
+    setDateFormat(layout?.dateFormat ?? "DD.MM.YY");
+    setNegativeSuffixRegex(layout?.negativeSuffixRegex ?? "");
+    setInvertAmount(layout?.invertAmount ?? true);
+    setDescriptionTemplate(layout?.descriptionTemplate ?? "{text}");
+    setSkipRegex(layout?.skipRegex ?? "");
+    setTotalRegex(layout?.totalRegex ?? "");
+    setRules(layout ? parseContextRules(layout.contextRegexes) : []);
+    setLines(null);
   };
 
   const updateRule = (index: number, patch: Partial<ContextRule>) =>
     setRules((current) => current.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)));
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (next) reset();
+        setOpen(next);
+      }}
+    >
       <DialogTrigger asChild>
         {trigger ??
           (layout ? (
@@ -2191,7 +2291,8 @@ export function PdfLayoutDialog({
           <DialogTitle>{layout ? "Layout bearbeiten" : "Neues PDF-Layout"}</DialogTitle>
           <DialogDescription>
             Beschreibt einmalig, wie die Buchungszeilen einer Abrechnung im PDF-Text aussehen. Lade rechts ein
-            Beispiel-PDF, um die Regeln gegen echten Text zu prüfen. Das PDF wird nicht gespeichert.
+            Beispiel-PDF, um die Regeln gegen echten Text zu prüfen. Das PDF wird nicht gespeichert. Beschreibung und Gegenpartei fliessen in den Duplikat-Fingerabdruck: Wer Vorlage oder Kontext-Regeln
+            ändert, muss damit rechnen, dass schon importierte Zeilen beim erneuten Einlesen nicht mehr als Duplikat erkannt werden.
           </DialogDescription>
         </DialogHeader>
 
@@ -2230,7 +2331,7 @@ export function PdfLayoutDialog({
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="negativeSuffixRegex">Gutschrift erkennen (Regex, optional)</Label>
-                <Input id="negativeSuffixRegex" name="negativeSuffixRegex" value={negativeSuffixRegex} onChange={(e) => setNegativeSuffixRegex(e.target.value)} className="font-mono text-xs" placeholder={String.raw`\s-$`} />
+                <Input id="negativeSuffixRegex" name="negativeSuffixRegex" value={negativeSuffixRegex} onChange={(e) => setNegativeSuffixRegex(e.target.value)} className="font-mono text-xs" placeholder={String.raw`\s*-$`} />
               </div>
             </div>
 
@@ -2323,8 +2424,8 @@ export function PdfLayoutDialog({
                 {result && (
                   <div className="flex flex-col gap-2">
                     <p className="text-sm font-medium">{result.transactions.length} Buchung(en) erkannt</p>
-                    {result.warnings.map((warning) => (
-                      <p key={warning} className="text-xs text-amber-600 dark:text-amber-400">{warning}</p>
+                    {result.warnings.map((warning, index) => (
+                      <p key={index} className="text-xs text-amber-600 dark:text-amber-400">{warning}</p>
                     ))}
                     {result.rejectedRows.slice(0, 10).map((row) => (
                       <p key={row.line} className="text-xs text-destructive">Zeile {row.line}: {row.reason}</p>
@@ -2364,7 +2465,7 @@ Expected: no errors. If `cn` is not in `@/lib/utils`, check how `import-wizard.t
 - [ ] **Step 4: Manual check in the browser**
 
 Run: `npm run dev`, log in, open `/import` → tab «Mappings». Click «Standardlayouts anlegen», then edit the new layout and load a PDF. Expected: lines are coloured, transactions listed with signs, the form shows a red message while a regex is invalid and the save button is disabled.
-(If no real Viseca PDF is at hand, generate a sample with `buildTextPdf` — see Task 10's e2e test for the lines to use — or use the one from `C:\Users\micha\NextcloudPrivat`.)
+(If no real Viseca PDF is at hand, generate a sample with `buildTextPdf` — see Task 10's e2e test for the lines to use.)
 
 - [ ] **Step 5: Commit**
 
@@ -2402,10 +2503,18 @@ import { login } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
+/**
+ * Unique per run: the dedupe fingerprint includes the description, and CI
+ * retries (retries: 2) share one database — a fixed text would be a duplicate
+ * on the second attempt.
+ */
+const token = `PdfTest${Date.now()}`;
+const description = `${token} Laden, Bern CH - Lebensmittel`;
+
 const statement = buildTextPdf([
   [
     { x: 50, y: 720, text: "4435 92XX XXXX 1111 Cumulus Kreditkarte, Anna Muster" },
-    { x: 50, y: 700, text: "26.09.26 28.09.26 PdfTest Laden, Bern CH" },
+    { x: 50, y: 700, text: `26.09.26 28.09.26 ${token} Laden, Bern CH` },
     { x: 400, y: 700, text: "12.50" },
     { x: 50, y: 686, text: "Lebensmittel" },
     { x: 50, y: 660, text: "Total Karte Cumulus Kreditkarte 4435 92XX XXXX 1111" },
@@ -2418,7 +2527,9 @@ test("liest eine PDF-Abrechnung über das Standardlayout und bucht sie", async (
   await page.goto("/import");
 
   await page.getByRole("tab", { name: /Mappings/ }).click();
-  await page.getByRole("button", { name: "Standardlayouts anlegen" }).first().click();
+  // Absent when an earlier attempt or spec already created the starter layout.
+  const seed = page.getByRole("button", { name: "Standardlayouts anlegen" }).first();
+  if (await seed.isVisible()) await seed.click();
   await expect(page.getByText("Migros Kreditkarte (PDF)").first()).toBeVisible();
 
   await page.getByRole("tab", { name: "Neuer Import" }).click();
@@ -2433,14 +2544,14 @@ test("liest eine PDF-Abrechnung über das Standardlayout und bucht sie", async (
   });
   await page.getByRole("button", { name: "Datei einlesen" }).click();
 
-  await expect(page.getByText("PdfTest Laden, Bern CH - Lebensmittel").first()).toBeVisible();
+  await expect(page.getByText(description).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Alle neuen" }).click();
   await page.getByRole("button", { name: /1 Buchung\(en\) importieren/ }).click();
   await expect(page.getByText(/1 Buchung\(en\) importiert/).first()).toBeVisible();
 
-  await page.goto(`/transactions?q=${encodeURIComponent("PdfTest")}`);
-  await expect(page.getByText("PdfTest Laden, Bern CH - Lebensmittel").first()).toBeVisible();
+  await page.goto(`/transactions?q=${encodeURIComponent(token)}`);
+  await expect(page.getByText(description).first()).toBeVisible();
   await expect(page.getByText("−12.50").first()).toBeVisible();
 });
 ```
@@ -2455,7 +2566,7 @@ Expected: PASS. If the `PDF` toggle button is not found by `exact: true`, check 
 In the **Import** section, after the `csv.ts` bullet add:
 
 ```markdown
-- **`pdf.ts` / `pdf-parse.ts`** — PDF statements (Viseca/Migros credit-card bills when the CSV export is unavailable). `pdf.ts` (server only, `unpdf`) turns a PDF into text lines — fragments are grouped by y position and table columns joined with two spaces; `pdf-parse.ts` (pure, no Prisma/pdf.js, so the layout dialog can run it in the browser for its live preview) applies a stored `PdfLayout`: regexes with named groups for the booking line, section/follow-up context lines (card + holder, category, exchange rate), skipped lines and printed totals for a sum check that warns per card. PDF statements carry no IBAN, so the target account is always chosen in the wizard. The PDF itself is never stored (card numbers, address).
+- **`pdf.ts` / `pdf-parse.ts`** — PDF statements (Viseca/Migros credit-card bills when the CSV export is unavailable). `pdf.ts` (server only, `unpdf`) turns a PDF into text lines — fragments are grouped by y position and table columns joined with two spaces; `pdf-parse.ts` (pure, no Prisma/pdf.js, so the layout dialog can run it in the browser for its live preview) applies a stored `PdfLayout`: regexes with named groups for the booking line, section/follow-up context lines (card + holder, category, exchange rate), skipped lines and printed totals for a sum check that warns per card. PDF statements carry no IBAN, so the target account is always chosen in the wizard. The PDF itself is never stored (card numbers, address). The dedupe fingerprint hashes the *rendered* description and counterparty, so changing a layout's description template or context rules and re-reading the same PDF makes every row look new, and a CSV export and the PDF of one card never dedupe against each other.
 ```
 
 Also add `lib/import/pdf-parse.ts` to the sentence in "Client/server module boundary" about modules that must stay free of Prisma/pino imports ("…`lib/colors.ts`, and `lib/import/pdf-parse.ts`") and append to the Import paragraph's list of mappings: "CSV mappings and PDF layouts live under Import → Mappings".
@@ -2463,7 +2574,7 @@ Also add `lib/import/pdf-parse.ts` to the sentence in "Client/server module boun
 - [ ] **Step 4: Update the user manual** (`public/benutzerhandbuch.html`, German)
 
 1. In the paragraph at ~line 702 add after the CSV sentence: `<strong>PDF</strong> ist für Abrechnungen gedacht, die es nur als PDF gibt (z. B. die Kreditkartenabrechnung, wenn der CSV-Export im Portal nicht funktioniert). Dafür braucht es ein <strong>PDF-Layout</strong>, das beschreibt, wie die Buchungszeilen aussehen; für die Migros-Kreditkarte gibt es eine fertige Vorlage unter «Mappings».`
-2. Add a new `<h3 class="sub" id="import-pdf">PDF-Layouts</h3>` section directly before `<h3 class="sub" id="import-regeln">` (mirror the markup of the neighbouring `<h3 class="sub">` + `<p>` blocks) with this text: «Unter *Import → Mappings → PDF-Layouts* legst du fest, wie eine Abrechnung gelesen wird: eine Regex für die Buchungszeile (Pflichtgruppen `date` und `amount`), optional Regeln für Zeilen, die zur Buchung davor gehören (Kategorie, Kurs) oder für den ganzen Abschnitt gelten (Karte, Inhaber), Zeilen zum Überspringen (z. B. «Ihre Zahlung») und eine Total-Regex für die Summenprüfung. Wenn du ein Beispiel-PDF lädst, siehst du den extrahierten Text farbig markiert und rechts sofort die erkannten Buchungen. Das PDF wird nicht gespeichert. Weicht die Summe pro Karte vom gedruckten Total ab, erscheint eine Warnung über der Vorschau. Das Zielkonto wählst du selbst, weil PDF-Abrechnungen keine IBAN enthalten.»
+2. Add a new `<h3 class="sub" id="import-pdf">PDF-Layouts</h3>` section directly before `<h3 class="sub" id="import-regeln">` (mirror the markup of the neighbouring `<h3 class="sub">` + `<p>` blocks) with this text: «Unter *Import → Mappings → PDF-Layouts* legst du fest, wie eine Abrechnung gelesen wird: eine Regex für die Buchungszeile (Pflichtgruppen `date` und `amount`), optional Regeln für Zeilen, die zur Buchung davor gehören (Kategorie, Kurs) oder für den ganzen Abschnitt gelten (Karte, Inhaber), Zeilen zum Überspringen (z. B. «Ihre Zahlung») und eine Total-Regex für die Summenprüfung. Wenn du ein Beispiel-PDF lädst, siehst du den extrahierten Text farbig markiert und rechts sofort die erkannten Buchungen. Das PDF wird nicht gespeichert. Weicht die Summe pro Karte vom gedruckten Total ab, erscheint eine Warnung über der Vorschau. Das Zielkonto wählst du selbst, weil PDF-Abrechnungen keine IBAN enthalten. Achtung: Beschreibung und Gegenpartei fliessen in den Duplikat-Fingerabdruck. Wenn du die Beschreibungs-Vorlage oder die Kontext-Regeln eines Layouts änderst, werden bereits importierte Zeilen beim erneuten Einlesen derselben Datei nicht mehr als Duplikat erkannt; ein CSV-Export und das PDF derselben Karte erkennen sich ebenfalls nicht gegenseitig.»
 3. Line ~435 and ~769: change "CSV-Mappings" to "CSV-Mappings &amp; PDF-Layouts" (role table) and add "PDF-Layouts" to the audit list.
 4. Screenshots: do not hand-edit. Note in the commit message that screenshots were not regenerated; regenerating goes through `scripts/manual-screenshots.ts` (see CLAUDE.md) and is a separate follow-up.
 

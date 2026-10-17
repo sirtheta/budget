@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.29](https://github.com/sirtheta/budget/compare/budget-v0.1.28...budget-v0.1.29) (2026-10-17)
+
+
+### Features
+
+* **import:** import credit-card statements from PDF ([#138](https://github.com/sirtheta/budget/issues/138)) ([14b98dd](https://github.com/sirtheta/budget/commit/14b98dd9334c4b53656a449348c9d1a6a1f978d4))
+
 ## [0.1.28](https://github.com/sirtheta/budget/compare/budget-v0.1.27...budget-v0.1.28) (2026-10-01)
 
 

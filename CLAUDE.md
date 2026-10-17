@@ -97,10 +97,11 @@ Entries with `counterAccountId` post a transfer (both legs); `autoPost: false` e
 
 - **`camt.ts`** — CAMT.053 parser. Strips namespace prefixes (banks emit `ns2:`, `camt:`, none), falls back through several locations for description and counterparty, splits collective bookings (`Sammelbuchungen`) into their individual `TxDtls`, and skips entries that are not yet booked. CAMT.054 and MT940 are deliberately not supported: .054 only avises credits, MT940 is the superseded SWIFT format.
 - **`csv.ts`** — Hand-written RFC-4180 parser plus a per-bank column mapping (`CsvMapping`). Handles the BOM Excel writes, CRLF, and either one signed amount column or a debit/credit pair.
+- **`pdf.ts` / `pdf-parse.ts`** — PDF statements (Viseca/Migros credit-card bills when the CSV export is unavailable). `pdf.ts` (server only, `unpdf`) turns a PDF into text lines — fragments are grouped by y position and table columns joined with two spaces; `pdf-parse.ts` (pure, no Prisma/pdf.js/Node APIs; every regex runs through an injected `LineMatcher` — `nativeMatcher` for trusted input and tests, `createSafeMatcher` from `safe-regex.ts`, which runs each regex in `node:vm` with hard timeouts of 500 ms per regex and 2 s per request, for everything request-driven, including the layout dialog's live preview via `previewPdfLayoutAction`) applies a stored `PdfLayout`: regexes with named groups for the booking line, section/follow-up context lines (card + holder, category, exchange rate), skipped lines and printed totals for a sum check that warns per card. PDF statements carry no IBAN, so the target account is always chosen in the wizard. The PDF itself is never stored (card numbers, address). PDF bookings carry a stable `bankReference` (`pdf:<date>|<valuta>|<text>|<document cents>|<occurrence>`, from the raw regex groups), so changing a layout's description template or context rules does not break duplicate detection; changing the `date`/`valuta`/`text`/`amount` groups of the booking regex does, and a CSV export and the PDF of one card never dedupe against each other.
 - **`dedupe.ts`** — Fingerprints each candidate into `Transaction.importHash` (unique index). The bank reference dominates when present; otherwise the hash includes a positional occurrence counter so two genuinely identical bookings on the same day both import, while re-importing the same file skips both.
 - **`rules.ts`** — Auto-categorisation, lowest `priority` wins. An invalid user regex never matches instead of breaking the import.
 
-Nothing is written until the user has reviewed the preview. Duplicates start unchecked, and each import batch can be undone as a whole.
+Nothing is written until the user has reviewed the preview. Duplicates start unchecked, and each import batch can be undone as a whole. CSV mappings and PDF layouts live under Import → Mappings.
 
 **Authentication** (`lib/auth.ts`): NextAuth v5 Credentials provider, bcrypt, constant-time login response, in-memory rate limiting, JWT sessions with a periodic DB re-check so a demotion or deactivation takes effect within a minute.
 
@@ -116,7 +117,7 @@ Nothing is written until the user has reviewed the preview. Duplicates start unc
 
 ### Client/server module boundary
 
-Label constants used by Client Components live in dependency-free modules (`lib/intervals.ts`, `lib/import/rule-labels.ts`, `lib/colors.ts`). Importing them from `lib/recurring.ts` or `lib/import/rules.ts` instead would drag `node-cron`, Prisma, or pino into the browser bundle and break the build.
+Label constants used by Client Components live in dependency-free modules (`lib/intervals.ts`, `lib/import/rule-labels.ts`, `lib/colors.ts`, and `lib/import/pdf-parse.ts`). Importing them from `lib/recurring.ts` or `lib/import/rules.ts` instead would drag `node-cron`, Prisma, or pino into the browser bundle and break the build.
 
 Dialog forms use `useDialogFormAction` (`components/use-dialog-form.ts`) rather than closing themselves from an effect — React 19 flags the cascading render, and the effect variant could close the dialog again on an unrelated re-render.
 

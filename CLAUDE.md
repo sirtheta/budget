@@ -10,7 +10,7 @@ A self-hosted household budgeting app for a private Swiss household, implemented
 
 The UI, user-facing text, and documentation are **in German**. Code, comments, and commit messages are in English.
 
-A full illustrated end-user manual (with screenshots) lives at `public/benutzerhandbuch.html` — open it in a browser, or in the running app via the user menu / at `/benutzerhandbuch.html`. It documents app behavior for end users, not implementation details; regenerate its screenshots after significant UI changes rather than hand-editing stale ones (see `scripts/manual-screenshots.ts` for the capture pipeline).
+A full illustrated end-user manual (with screenshots) lives at `public/benutzerhandbuch.html` — open it in a browser, or in the running app via the user menu / at `/benutzerhandbuch.html`. It documents app behavior for end users, not implementation details; regenerate its screenshots after significant UI changes rather than hand-editing stale ones (see `scripts/manual-screenshots.ts` for the capture pipeline). The version strings in the manual carry an `<!-- x-release-please-version -->` marker and are bumped automatically by `release-please` (`extra-files` in `release-please-config.json`); keep the marker on any line that shows a version. `tests/unit/manual-version.test.ts` checks they match `package.json`.
 
 ---
 

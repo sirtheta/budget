@@ -15,8 +15,10 @@ import {
 import { ImportWizard } from "./import-wizard";
 import { CsvMappingDialog } from "./csv-mapping-dialog";
 import { RulesTable } from "./rules-table";
+import { PdfLayoutDialog } from "./pdf-layout-dialog";
 import { SeedDefaultMappingsButton } from "./seed-default-mappings-button";
-import { DeleteMappingButton, ImportHistoryList } from "./import-history";
+import { SeedDefaultPdfLayoutsButton } from "./seed-default-pdf-layouts-button";
+import { DeleteMappingButton, DeletePdfLayoutButton, ImportHistoryList } from "./import-history";
 import type { ImportBatchRow } from "./actions";
 import { IMPORT_HISTORY_PAGE_SIZE } from "./history-constants";
 
@@ -25,7 +27,7 @@ export const dynamic = "force-dynamic";
 export default async function ImportPage() {
   await requireEditor();
 
-  const [accounts, categories, parents, mappings, rules, batchPage] = await Promise.all([
+  const [accounts, categories, parents, mappings, pdfLayouts, rules, batchPage] = await Promise.all([
     prisma.account.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -38,6 +40,7 @@ export default async function ImportPage() {
       select: { id: true, name: true, kind: true },
     }),
     prisma.csvMapping.findMany({ orderBy: { name: "asc" } }),
+    prisma.pdfLayout.findMany({ orderBy: { name: "asc" } }),
     prisma.importRule.findMany({
       orderBy: [{ priority: "asc" }, { name: "asc" }],
       include: {
@@ -75,7 +78,7 @@ export default async function ImportPage() {
         <TabsList>
           <TabsTrigger value="wizard">Neuer Import</TabsTrigger>
           <TabsTrigger value="rules">Regeln ({rules.length})</TabsTrigger>
-          <TabsTrigger value="mappings">CSV-Mappings ({mappings.length})</TabsTrigger>
+          <TabsTrigger value="mappings">Mappings ({mappings.length + pdfLayouts.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="wizard" className="space-y-6">
@@ -86,7 +89,13 @@ export default async function ImportPage() {
               </CardContent>
             </Card>
           ) : (
-            <ImportWizard accounts={accounts} categories={categories} parents={parents} mappings={mappings} />
+            <ImportWizard
+              accounts={accounts}
+              categories={categories}
+              parents={parents}
+              mappings={mappings}
+              pdfLayouts={pdfLayouts}
+            />
           )}
 
           <div>
@@ -99,13 +108,13 @@ export default async function ImportPage() {
           <RulesTable rules={rules} categories={categories} accounts={accounts} />
         </TabsContent>
 
-        <TabsContent value="mappings">
+        <TabsContent value="mappings" className="space-y-6">
           <Card>
             <CardHeader className="flex-row items-start justify-between gap-2 flex-wrap">
               <div>
                 <CardTitle className="text-base">Spaltenzuordnung pro Bank</CardTitle>
                 <CardDescription>
-                  Nur nötig für CSV-Import — CAMT.053 braucht keine Zuordnung.
+                  Nur nötig für CSV-Import — CAMT.053 und PDF brauchen keine Spaltenzuordnung.
                 </CardDescription>
               </div>
               <div className="flex gap-2 flex-wrap w-full sm:w-auto sm:shrink-0">
@@ -184,6 +193,49 @@ export default async function ImportPage() {
                   ))}
                 </ul>
                 </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex-row items-start justify-between gap-2 flex-wrap">
+              <div>
+                <CardTitle className="text-base">PDF-Layouts</CardTitle>
+                <CardDescription>
+                  Beschreibt, wie die Buchungszeilen einer PDF-Abrechnung aussehen — nur nötig für den
+                  PDF-Import.
+                </CardDescription>
+              </div>
+              <div className="flex gap-2 flex-wrap w-full sm:w-auto sm:shrink-0">
+                {pdfLayouts.length === 0 && <SeedDefaultPdfLayoutsButton />}
+                <PdfLayoutDialog />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {pdfLayouts.length === 0 ? (
+                <div className="flex flex-col items-center gap-3 p-8 text-center text-sm text-muted-foreground">
+                  <p>Noch kein Layout angelegt. Fertige Vorlage: Migros Kreditkarte (PDF).</p>
+                  <SeedDefaultPdfLayoutsButton />
+                </div>
+              ) : (
+                <ul className="divide-y">
+                  {pdfLayouts.map((layout) => (
+                    <li key={layout.id} className="flex items-start justify-between gap-3 p-4">
+                      <div className="min-w-0">
+                        <p className="font-medium">{layout.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Datumsformat {layout.dateFormat}
+                          {layout.invertAmount ? " · Vorzeichen umgekehrt" : ""}
+                          {layout.totalRegex ? " · mit Summenprüfung" : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center shrink-0">
+                        <PdfLayoutDialog layout={layout} />
+                        <DeletePdfLayoutButton id={layout.id} name={layout.name} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>

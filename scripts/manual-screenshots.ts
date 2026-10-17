@@ -31,6 +31,7 @@
 import { chromium, type Page } from "playwright";
 import { existsSync, mkdirSync } from "fs";
 import path from "path";
+import { buildTextPdf } from "../tests/build-pdf";
 
 const BASE_URL = process.env.MANUAL_BASE_URL ?? "http://localhost:3222";
 const OUT_DIR = path.join(__dirname, ".manual-shots");
@@ -58,6 +59,38 @@ async function login(page: Page, creds: { email: string; password: string }) {
 async function settleCharts(page: Page) {
   await page.waitForSelector(".recharts-surface");
   await page.waitForTimeout(1500);
+}
+
+/**
+ * Invented Viseca-style statement for the PDF layout dialog shot. Built with the
+ * same helper the tests use (ASCII only: the font has no encoding table), so no
+ * binary fixture is needed and no real statement ends up in a screenshot.
+ */
+function demoStatementPdf(): Buffer {
+  const row = (y: number, left: string, amount?: string, extra?: { x: number; text: string }[]) => [
+    { x: 50, y, text: left },
+    ...(extra ?? []).map((item) => ({ ...item, y })),
+    ...(amount ? [{ x: 470, y, text: amount }] : []),
+  ];
+  const items = [
+    ...row(760, "Abrechnung vom 14.10.2026"),
+    ...row(736, "28.09.26 15.09.26 Ihre Zahlung - Danke", "850.00 -"),
+    ...row(712, "4435 92XX XXXX 4711 Cumulus Kreditkarte, Maria Muster"),
+    ...row(688, "02.09.26 04.09.26 MIGROS ZUERICH, Zuerich CH", "87.40"),
+    ...row(674, "Lebensmittel"),
+    ...row(612, "12.09.26 14.09.26 RESTAURANT BAHNHOF, Bern CH", "64.50"),
+    ...row(598, "Restaurants"),
+    ...row(536, "22.09.26 24.09.26 Pizzeria Da Mario, Rom IT", "46.30", [
+      { x: 340, text: "EUR" },
+      { x: 400, text: "48.00" },
+    ]),
+    ...row(522, "Restaurants"),
+    ...row(508, "Umrechnungskurs 0.9646 vom 22.09.26", "46.30", [{ x: 340, text: "CHF" }]),
+    ...row(484, "25.09.26 27.09.26 MIGROS ZUERICH, Zuerich CH", "12.00 -"),
+    ...row(470, "Lebensmittel"),
+    ...row(440, "Total Karte Cumulus Kreditkarte 4435 92XX XXXX 4711", "186.20"),
+  ];
+  return Buffer.from(buildTextPdf([items]));
 }
 
 type Shot = { name: string; run: (page: Page) => Promise<void> };
@@ -187,6 +220,40 @@ const shots: Shot[] = [
       await page.waitForSelector("text=Vorschau —");
       await page.waitForTimeout(300);
       await page.screenshot({ path: path.join(OUT_DIR, "import-preview.png"), fullPage: true });
+    },
+  },
+  {
+    name: "import-mappings",
+    run: async (page) => {
+      await login(page, ADMIN);
+      await page.goto(`${BASE_URL}/import`);
+      await page.getByRole("tab", { name: /Mappings/ }).click();
+      await page.waitForSelector("text=PDF-Layouts");
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(OUT_DIR, "import-mappings.png"), fullPage: true });
+    },
+  },
+  {
+    name: "import-pdf-layout",
+    run: async (page) => {
+      await login(page, ADMIN);
+      // The dialog grows with its content (max 90vh); a tall viewport keeps the
+      // whole form and the preview in one frame.
+      await page.setViewportSize({ width: 1440, height: 1300 });
+      await page.goto(`${BASE_URL}/import`);
+      await page.getByRole("tab", { name: /Mappings/ }).click();
+      await page.getByRole("button", { name: "Layout bearbeiten" }).click();
+      await page.setInputFiles("#sample-pdf", {
+        name: "abrechnung.pdf",
+        mimeType: "application/pdf",
+        buffer: demoStatementPdf(),
+      });
+      await page.waitForSelector("text=Buchung(en) erkannt");
+      // The dialog focuses its first field; click the title so the shot has no
+      // focus ring or selected text.
+      await page.getByRole("heading", { name: "Layout bearbeiten" }).click();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: path.join(OUT_DIR, "import-pdf-layout.png") });
     },
   },
   {

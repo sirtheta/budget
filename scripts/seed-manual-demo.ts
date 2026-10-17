@@ -56,6 +56,7 @@ async function main() {
   await prisma.importBatch.deleteMany();
   await prisma.importRule.deleteMany();
   await prisma.csvMapping.deleteMany();
+  await prisma.pdfLayout.deleteMany();
   await prisma.recurringTransaction.deleteMany();
   await prisma.reserve.deleteMany();
   await prisma.savingsGoal.deleteMany();
@@ -368,6 +369,10 @@ async function main() {
       counterpartyColumn: 3,
     },
   });
+
+  console.log("PDF-Layout…");
+  const { seedDefaultPdfLayouts } = await import("../lib/import/default-mappings");
+  await seedDefaultPdfLayouts(prisma);
 
   console.log("Systemeinstellungen…");
   await prisma.systemSettings.upsert({

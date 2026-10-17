@@ -14,7 +14,7 @@
 
 - UI text, error messages, warnings: **German**. Code, comments, commit messages: **English**. Commits follow Conventional Commits (`feat(import): …`). Every commit gets the trailer `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`: append `-m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"` to each `git commit` command below.
 - Amounts are signed integer Rappen; negative = expense (`lib/money.ts`). Never floats in the DB.
-- `lib/import/pdf-parse.ts` must not import Prisma runtime, `unpdf`, `fs`, or `pino` (it runs in the browser for the live preview). Type-only Prisma imports are fine.
+- `lib/import/pdf-parse.ts` must not import Prisma runtime, `unpdf`, `fs`, `pino` or any Node API (client components import its validation helpers). Type-only Prisma imports are fine. Node-only code (`node:vm`) lives in `lib/import/safe-regex.ts`.
 - Next.js 16: before touching routing or server-action conventions check `node_modules/next/dist/docs/`. This plan only adds files that follow patterns already used in `app/(app)/import/`.
 - Uploads are read in the request and discarded; the PDF is never stored (it holds card numbers and an address). No real statement in the repo — fixtures contain invented data only.
 - Vitest coverage thresholds (statements 85, branches 75, functions 87, lines 87) apply to `lib/**` and `app/**/actions.ts`; new lib code ships with tests.
@@ -27,8 +27,8 @@
 - A `target: "transaction"` context line only attaches while the previous line was that transaction or another `transaction` context line (a "run" directly after the booking). Any other line closes it. This stops page headers from becoming a category.
 - "No transaction read" is a warning (same text as CSV), not a thrown error, so the preview shows the cause next to `rejectedRows`.
 - No `iban` group and no pathological-regex test (see spec edits in Task 1, Step 5).
-- **ReDoS is not solved, only bounded and documented.** The 500-character line cap limits ordinary regexes but not catastrophic backtracking such as `(a+)+$`. Layouts are written by editors (`requireEditor`), who are trusted; the layout dialog debounces its live preview. A `worker_threads` / Web Worker with a timeout would be the real fix and is deliberately out of scope here.
-- **Known limitation, documented rather than fixed:** the dedupe fingerprint (`lib/import/dedupe.ts`) hashes the rendered description and counterparty. Editing a layout's template or context rules and re-reading the same PDF makes every row look new, and a CSV export and the PDF of the same card never dedupe against each other. Task 10 documents this in CLAUDE.md, the manual and the dialog text. A stable `bankReference` built from the raw groups (`pdf:<date>|<valuta>|<text>|<amount>|<occurrence>`, occurrence included because `verifyImportHash` only checks occurrence 0 when a reference is set) would remove it.
+- **ReDoS is solved with hard timeouts, not with a worker.** Every regex runs through an injected `LineMatcher`. Request-driven code (`previewImportAction`, `previewPdfLayoutAction`) uses `createSafeMatcher` from `lib/import/safe-regex.ts`: each regex runs over all lines in one `node:vm` script with a hard timeout (500 ms per regex, 2 s per request). Node 24 (also the Docker base image) enforces it inside a catastrophic backtrack — verified: `(a+)+$` on 40 `a`s aborts at the limit. `node:vm` instead of `worker_threads` because a worker file is not bundled by Next's standalone output and costs a thread per request; the effect, a timeout on a synchronous regex, is the same. Consequence: the layout dialog's live preview runs on the server (`previewPdfLayoutAction`), not in the browser.
+- **Stable dedupe reference.** PDF bookings get `bankReference = pdf:<date>|<valuta>|<text>|<document cents>|<occurrence>`, built from the raw `date`, `valuta`, `text` and `amount` groups. `importHash` uses a reference alone, so editing the description template or context rules does not change the fingerprint. The occurrence number is part of the string because `verifyImportHash` only checks occurrence 0 when a reference is set. A layout without a `text` group gets no reference and keeps the description-based hash. Remaining limitation (documented in CLAUDE.md, the manual and the dialog): changing those four groups of the booking regex, or comparing a CSV export with the PDF of the same card, defeats dedupe.
 
 ## File Structure
 
@@ -36,17 +36,18 @@
 |---|---|
 | `prisma/schema.prisma` + new migration | `ImportFormat.Pdf`, model `PdfLayout` |
 | `lib/import/csv.ts` (modify) | add `DD.MM.YY` to `parseCsvDate` |
-| `lib/import/pdf-parse.ts` (create) | `PdfLayoutConfig`, `validateLayout`, `parsePdfStatement`, `classifyLines`, `layoutFromRow`, `parseContextRules` — pure |
+| `lib/import/pdf-parse.ts` (create) | `PdfLayoutConfig`, `LineMatcher`, `nativeMatcher`, `validateLayout`, `parsePdfStatement`, `classifyLines`, `analyzePdf`, `layoutFromRow`, `parseContextRules` — pure |
+| `lib/import/safe-regex.ts` (create) | `createSafeMatcher`, `RegexTimeoutError` — `node:vm` with hard timeouts, server only |
 | `lib/import/pdf.ts` (create) | `extractPdfLines`, `PdfExtractError` — server only |
 | `lib/import/default-mappings.ts` (modify) | `DEFAULT_PDF_LAYOUTS`, `seedDefaultPdfLayouts` |
 | `app/(app)/import/actions.ts` (modify) | `Pdf` branch in `previewImportAction`, `inspectPdfAction`, bytes upload |
-| `app/(app)/import/pdf-layout-actions.ts` (create) | save / delete / seed layouts |
-| `app/(app)/import/pdf-layout-dialog.tsx` (create) | layout form + live preview |
+| `app/(app)/import/pdf-layout-actions.ts` (create) | save / delete / seed layouts, `previewPdfLayoutAction` |
+| `app/(app)/import/pdf-layout-dialog.tsx` (create) | layout form + live preview (server-side via `previewPdfLayoutAction`) |
 | `app/(app)/import/seed-default-pdf-layouts-button.tsx` (create) | one-click starter layout |
 | `app/(app)/import/import-history.tsx` (modify) | `DeletePdfLayoutButton` |
 | `app/(app)/import/import-wizard.tsx`, `page.tsx` (modify) | third format, layout select, Mappings tab |
 | `tests/build-pdf.ts` (create) | `buildTextPdf` — hand-built PDF for tests |
-| `tests/unit/pdf-parse.test.ts`, `pdf-extract.test.ts`, `tests/unit/fixtures/viseca-statement.txt` | unit tests |
+| `tests/unit/pdf-parse.test.ts`, `safe-regex.test.ts`, `pdf-extract.test.ts`, `tests/unit/fixtures/viseca-statement.txt` | unit tests |
 | `tests/integration/pdf-import.test.ts` | actions against a real test DB |
 | `tests/e2e/pdf-import.spec.ts` | one UI pass |
 | `CLAUDE.md`, `public/benutzerhandbuch.html` | docs |
@@ -59,7 +60,6 @@
 - Modify: `package.json`, `package-lock.json` (via npm)
 - Modify: `prisma/schema.prisma` (`ImportFormat` enum at ~line 376, new model after `CsvMapping` at ~line 497)
 - Create: `prisma/migrations/<timestamp>_add_pdf_layout/migration.sql` (generated)
-- Modify: `docs/superpowers/specs/2026-10-17-pdf-import-design.md`
 
 **Interfaces:**
 - Produces: Prisma model `PdfLayout` with fields `id, name, transactionRegex, dateFormat, negativeSuffixRegex, invertAmount, descriptionTemplate, skipRegex, totalRegex, contextRegexes (JSON string), createdAt, updatedAt`; enum member `ImportFormat.Pdf`.
@@ -136,9 +136,9 @@ npx prisma generate
 ```
 Expected: `Generated Prisma Client`. Without it `prisma.pdfLayout` and `ImportFormat.Pdf` are `undefined`, and `tsc` in Step 6 would not prove anything.
 
-- [ ] **Step 5: Fix the spec text for the removed separators**
+- [ ] **Step 5: Spec**
 
-In `docs/superpowers/specs/2026-10-17-pdf-import-design.md` delete the bullet `- \`decimalSeparator\`, \`thousandsSeparator\` — defaults \`.\` and \`'\`.` and in "Parse flow" step 3 replace "using the layout separators" with "(it already accepts `1'234.50`, `1 234,50` and `1.234,50`)". Also add one sentence to the `contextRegexes` bullet: "A `transaction` context only applies while the previous line was that booking or another `transaction` context line." In "Parse flow" delete the sentence "`iban` is `null` unless the layout supplies a group `iban`, so the target account is chosen in the wizard." and replace it with "`iban` is always `null` (statements like the Viseca bill carry none), so the target account is chosen in the wizard." In "Error handling" replace the sentence "User-supplied regexes are validated on save, and line length is capped so a pathological pattern cannot stall the server." with "User-supplied regexes are validated on save and lines are capped at 500 characters, which bounds ordinary regexes but not catastrophic backtracking; layouts are written by trusted editors and the dialog debounces its live preview." In "Tests" delete "pathological regex and" from the `pdf-parse` edge-case list (a pathological pattern cannot be asserted deterministically; the line-length cap is the protection and has its own test) and add `sum check per card key` to that list.
+Nothing to do: the spec on this branch already matches this plan (no separators, `transaction` context semantics, `iban` always null, safe matcher with timeouts, server-side preview, stable `bankReference`).
 
 - [ ] **Step 6: Verify and commit**
 
@@ -149,7 +149,7 @@ npm test -- --run tests/integration/import-action.test.ts
 Expected: no type errors; the existing integration tests still pass (they replay all migrations, so this also proves the new SQL is valid).
 
 ```bash
-git add package.json package-lock.json prisma docs/superpowers/specs/2026-10-17-pdf-import-design.md
+git add package.json package-lock.json prisma
 git commit -m "feat(import): add PdfLayout model and Pdf import format"
 ```
 
@@ -258,15 +258,20 @@ export interface PdfParseResult extends ParsedStatement {
   rejectedRows: { line: number; reason: string; raw: string[] }[];
 }
 export type LineKind = "transaction" | "context" | "skip" | "total" | "other";
+export type Groups = Record<string, string | undefined>;
+/** Runs one regex over many lines: one entry per line, null where it does not match. */
+export type LineMatcher = (source: string, lines: string[]) => (Groups | null)[];
+export const nativeMatcher: LineMatcher;
 export function validateLayout(layout: PdfLayoutConfig): string | null;
-export function parsePdfStatement(lines: string[], layout: PdfLayoutConfig): PdfParseResult;
-export function classifyLines(lines: string[], layout: PdfLayoutConfig): LineKind[];
+export function parsePdfStatement(lines: string[], layout: PdfLayoutConfig, matcher?: LineMatcher): PdfParseResult;
+export function classifyLines(lines: string[], layout: PdfLayoutConfig, matcher?: LineMatcher): LineKind[];
+export function analyzePdf(lines: string[], layout: PdfLayoutConfig, matcher?: LineMatcher): { kinds: LineKind[]; result: PdfParseResult };
 export function layoutFromRow(row: PdfLayoutRow): PdfLayoutConfig;
 export function parseContextRules(json: string): ContextRule[];
 export function renderTemplate(template: string, groups: Record<string, string>): string;
 ```
 
-Behaviour (spec "Parse flow"): per line in order — skip → total → transaction → context rules (first matching rule wins; `section` merges groups into the section state, `transaction` fills missing groups of the open booking) → otherwise ignore and close the open booking. Descriptions are rendered after the whole walk.
+Behaviour (spec "Parse flow"): per line in order — skip → total → transaction → context rules (first matching rule wins; `section` merges groups into the section state, `transaction` fills missing groups of the open booking) → otherwise ignore and close the open booking. Descriptions are rendered after the whole walk. Every regex runs through an injected `LineMatcher` (default `nativeMatcher`): each regex is evaluated once over all trimmed lines before the walk (ignored lines are passed as empty strings and skipped), and `analyzePdf` shares that single pass between `classifyLines` and `parsePdfStatement`. Each booking also gets a stable `bankReference` `pdf:<date>|<valuta>|<text>|<document cents>|<occurrence>` from the raw groups (null when the booking regex has no `text` group).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -275,12 +280,15 @@ Create `tests/unit/pdf-parse.test.ts`:
 ```ts
 import { describe, expect, it } from "vitest";
 import {
+  analyzePdf,
   classifyLines,
   layoutFromRow,
+  nativeMatcher,
   parseContextRules,
   parsePdfStatement,
   renderTemplate,
   validateLayout,
+  type LineMatcher,
   type PdfLayoutConfig,
 } from "@/lib/import/pdf-parse";
 
@@ -337,7 +345,13 @@ describe("parsePdfStatement", () => {
   it("parses a booking and inverts the sign (purchases are positive in the document)", () => {
     const result = parsePdfStatement(["26.09.26 Migros Bern  42.50"], layout());
     expect(result.transactions).toEqual([
-      { date: "2026-09-26", amountCents: -4250, description: "Migros Bern", counterparty: "Migros Bern", bankReference: null },
+      {
+        date: "2026-09-26",
+        amountCents: -4250,
+        description: "Migros Bern",
+        counterparty: "Migros Bern",
+        bankReference: "pdf:2026-09-26||Migros Bern|4250|0",
+      },
     ]);
     expect(result.periodFrom).toBe("2026-09-26");
     expect(result.periodTo).toBe("2026-09-26");
@@ -454,6 +468,62 @@ describe("sum check", () => {
   });
 });
 
+describe("bank reference", () => {
+  it("is built from the raw date, valuta, text and document amount", () => {
+    const withValuta = layout({
+      transactionRegex: String.raw`^(?<date>\d{2}\.\d{2}\.\d{2})\s+(?<valuta>\d{2}\.\d{2}\.\d{2})\s+(?<text>.+?)\s{2,}(?<amount>[\d']+\.\d{2})$`,
+    });
+    const result = parsePdfStatement(["26.09.26 28.09.26 Revolut, Zurich CH  150.00"], withValuta);
+    expect(result.transactions[0].bankReference).toBe("pdf:2026-09-26|28.09.26|Revolut, Zurich CH|15000|0");
+  });
+
+  it("numbers identical bookings so both import", () => {
+    const result = parsePdfStatement(["26.09.26 Kaffee  4.50", "26.09.26 Kaffee  4.50"], layout());
+    expect(result.transactions.map((t) => t.bankReference)).toEqual([
+      "pdf:2026-09-26||Kaffee|450|0",
+      "pdf:2026-09-26||Kaffee|450|1",
+    ]);
+  });
+
+  it("does not depend on the description template or on context lines", () => {
+    const lines = ["26.09.26 Migros  4.50", "Lebensmittel"];
+    const category = { regex: "^(?<category>[^\\d]+)$", target: "transaction" as const };
+    const plain = parsePdfStatement(lines, layout());
+    const rich = parsePdfStatement(lines, layout({ descriptionTemplate: "{text} - {category}", contextRules: [category] }));
+    expect(rich.transactions[0].description).toBe("Migros - Lebensmittel");
+    expect(rich.transactions[0].bankReference).toBe(plain.transactions[0].bankReference);
+  });
+
+  it("is null when the layout has no text group", () => {
+    const noText = layout({ transactionRegex: String.raw`^(?<date>\d{2}\.\d{2}\.\d{2})\s+.+?\s{2,}(?<amount>[\d']+\.\d{2})$` });
+    expect(parsePdfStatement(["26.09.26 X  1.00"], noText).transactions[0].bankReference).toBeNull();
+  });
+});
+
+describe("line matcher", () => {
+  it("hands every regex the trimmed lines and blanks out ignored ones", () => {
+    const seen: string[][] = [];
+    const spy: LineMatcher = (source, lines) => {
+      seen.push(lines);
+      return nativeMatcher(source, lines);
+    };
+    parsePdfStatement(["  26.09.26 A  1.00  ", "x".repeat(600), ""], layout(), spy);
+    expect(seen[0]).toEqual(["26.09.26 A  1.00", "", ""]);
+  });
+
+  it("analyzePdf evaluates each regex once for line kinds and result together", () => {
+    const sources: string[] = [];
+    const spy: LineMatcher = (source, lines) => {
+      sources.push(source);
+      return nativeMatcher(source, lines);
+    };
+    const { kinds, result } = analyzePdf(["26.09.26 A  1.00", "Footer"], layout(), spy);
+    expect(kinds).toEqual(["transaction", "other"]);
+    expect(result.transactions).toHaveLength(1);
+    expect(sources).toHaveLength(2); // transaction regex + negative-suffix regex
+  });
+});
+
 describe("renderTemplate", () => {
   it("fills placeholders", () => {
     expect(renderTemplate("{text} - {category}", { text: "Migros", category: "Lebensmittel" })).toBe("Migros - Lebensmittel");
@@ -521,14 +591,15 @@ import type { ParsedStatement, ParsedTransaction } from "@/lib/import/types";
  * Turns the text lines of a PDF statement into bookings, driven by a
  * user-defined layout (see `PdfLayout` in the schema).
  *
- * Pure on purpose — no Prisma, no PDF library — because the layout dialog runs
- * it in the browser for its live preview. The PDF → lines step lives in
- * lib/import/pdf.ts.
+ * Pure: no Prisma, no PDF library, no Node APIs, so client components may import
+ * its validation helpers. The PDF → lines step lives in lib/import/pdf.ts.
  *
- * Lines longer than MAX_PDF_LINE_LENGTH are ignored, which bounds the cost of
- * an ordinary regex. It does NOT protect against catastrophic backtracking
- * (e.g. `(a+)+$`): layouts are written by editors (requireEditor), who are
- * trusted, and the layout dialog debounces its live preview.
+ * The regexes are user input and a badly written one can backtrack
+ * catastrophically (`(a+)+$`). Every regex therefore runs through an injected
+ * `LineMatcher`: `nativeMatcher` for trusted input and tests, and
+ * `createSafeMatcher` (lib/import/safe-regex.ts, `node:vm` with hard timeouts)
+ * for everything driven by a request. Lines longer than MAX_PDF_LINE_LENGTH are
+ * ignored, which bounds the cost of ordinary regexes.
  */
 
 export const MAX_PDF_LINE_LENGTH = 500;
@@ -570,35 +641,50 @@ export interface PdfParseResult extends ParsedStatement {
 
 export type LineKind = "transaction" | "context" | "skip" | "total" | "other";
 
+export type Groups = Record<string, string | undefined>;
+
+/** Runs one regex over many lines: one entry per line, null where it does not match. */
+export type LineMatcher = (source: string, lines: string[]) => (Groups | null)[];
+
+/** In-process matcher — fine for trusted input and tests, no protection against ReDoS. */
+export const nativeMatcher: LineMatcher = (source, lines) => {
+  const re = new RegExp(source);
+  return lines.map((line) => {
+    const match = re.exec(line);
+    return match ? { ...(match.groups ?? {}) } : null;
+  });
+};
+
 function groupNames(source: string): string[] {
   return [...source.matchAll(/\(\?<([A-Za-z_]\w*)>/g)].map((match) => match[1]);
 }
 
-function compile(source: string | null): RegExp | null {
-  if (!source) return null;
+function compiles(source: string | null): boolean {
+  if (!source) return false;
   try {
-    return new RegExp(source);
+    new RegExp(source);
+    return true;
   } catch {
-    return null;
+    return false;
   }
 }
 
 /** A German message when the layout cannot be used, otherwise null. */
 export function validateLayout(layout: PdfLayoutConfig): string | null {
-  if (!compile(layout.transactionRegex)) return "Buchungszeilen-Regex ist ungültig.";
+  if (!compiles(layout.transactionRegex)) return "Buchungszeilen-Regex ist ungültig.";
   const groups = groupNames(layout.transactionRegex);
   if (!groups.includes("date") || !groups.includes("amount")) {
     return "Buchungszeilen-Regex braucht die Gruppen «date» und «amount».";
   }
   if (!SUPPORTED_DATE_FORMATS.includes(layout.dateFormat)) return "Nicht unterstütztes Datumsformat.";
-  if (layout.negativeSuffixRegex && !compile(layout.negativeSuffixRegex)) return "Gutschrift-Regex ist ungültig.";
-  if (layout.skipRegex && !compile(layout.skipRegex)) return "Überspringen-Regex ist ungültig.";
+  if (layout.negativeSuffixRegex && !compiles(layout.negativeSuffixRegex)) return "Gutschrift-Regex ist ungültig.";
+  if (layout.skipRegex && !compiles(layout.skipRegex)) return "Überspringen-Regex ist ungültig.";
   if (layout.totalRegex) {
-    if (!compile(layout.totalRegex)) return "Total-Regex ist ungültig.";
+    if (!compiles(layout.totalRegex)) return "Total-Regex ist ungültig.";
     if (!groupNames(layout.totalRegex).includes("amount")) return "Total-Regex braucht die Gruppe «amount».";
   }
   for (const [index, rule] of layout.contextRules.entries()) {
-    if (!compile(rule.regex)) return `Kontext-Regel ${index + 1} ist ungültig.`;
+    if (!compiles(rule.regex)) return `Kontext-Regel ${index + 1} ist ungültig.`;
     if (groupNames(rule.regex).length === 0) {
       return `Kontext-Regel ${index + 1} braucht mindestens eine benannte Gruppe.`;
     }
@@ -615,12 +701,40 @@ export function renderTemplate(template: string, groups: Record<string, string>)
     .trim();
 }
 
-function definedGroups(groups: Record<string, string | undefined>): Record<string, string> {
+function definedGroups(groups: Groups): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [name, value] of Object.entries(groups)) {
     if (value !== undefined) result[name] = value;
   }
   return result;
+}
+
+/** What every regex returned for every line, computed once. */
+interface Tables {
+  /** Trimmed line, or null for lines that are blank or too long to look at. */
+  texts: (string | null)[];
+  skip: (Groups | null)[] | null;
+  total: (Groups | null)[] | null;
+  transaction: (Groups | null)[];
+  negative: (Groups | null)[] | null;
+  context: (Groups | null)[][];
+}
+
+function buildTables(lines: string[], layout: PdfLayoutConfig, matcher: LineMatcher): Tables {
+  const texts = lines.map((raw) => {
+    const line = raw.trim();
+    return line && line.length <= MAX_PDF_LINE_LENGTH ? line : null;
+  });
+  const input = texts.map((text) => text ?? "");
+  const run = (source: string | null) => (source ? matcher(source, input) : null);
+  return {
+    texts,
+    skip: run(layout.skipRegex),
+    total: run(layout.totalRegex),
+    transaction: matcher(layout.transactionRegex, input),
+    negative: run(layout.negativeSuffixRegex),
+    context: layout.contextRules.map((rule) => matcher(rule.regex, input)),
+  };
 }
 
 interface Draft {
@@ -630,74 +744,124 @@ interface Draft {
   documentCents: number;
   key: string;
   groups: Record<string, string>;
+  reference: string | null;
 }
 
-export function parsePdfStatement(lines: string[], layout: PdfLayoutConfig): PdfParseResult {
+function assertValid(layout: PdfLayoutConfig): void {
   const problem = validateLayout(layout);
   if (problem) throw new Error(problem);
+}
 
-  const transactionRe = new RegExp(layout.transactionRegex);
-  const negativeRe = compile(layout.negativeSuffixRegex);
-  const skipRe = compile(layout.skipRegex);
-  const totalRe = compile(layout.totalRegex);
-  const contexts = layout.contextRules.map((rule) => ({ re: new RegExp(rule.regex), target: rule.target }));
+export function parsePdfStatement(
+  lines: string[],
+  layout: PdfLayoutConfig,
+  matcher: LineMatcher = nativeMatcher
+): PdfParseResult {
+  assertValid(layout);
+  return parseTables(buildTables(lines, layout, matcher), layout);
+}
 
+/** Which role each line plays — drives the colouring in the layout dialog. */
+export function classifyLines(
+  lines: string[],
+  layout: PdfLayoutConfig,
+  matcher: LineMatcher = nativeMatcher
+): LineKind[] {
+  if (validateLayout(layout)) return lines.map(() => "other");
+  return classifyTables(buildTables(lines, layout, matcher));
+}
+
+/** Line kinds and parse result from a single regex pass. */
+export function analyzePdf(
+  lines: string[],
+  layout: PdfLayoutConfig,
+  matcher: LineMatcher = nativeMatcher
+): { kinds: LineKind[]; result: PdfParseResult } {
+  assertValid(layout);
+  const tables = buildTables(lines, layout, matcher);
+  return { kinds: classifyTables(tables), result: parseTables(tables, layout) };
+}
+
+function classifyTables(tables: Tables): LineKind[] {
+  return tables.texts.map((text, index) => {
+    if (text === null) return "other";
+    if (tables.skip?.[index]) return "skip";
+    if (tables.total?.[index]) return "total";
+    if (tables.transaction[index]) return "transaction";
+    if (tables.context.some((table) => table[index])) return "context";
+    return "other";
+  });
+}
+
+function parseTables(tables: Tables, layout: PdfLayoutConfig): PdfParseResult {
   const rejectedRows: PdfParseResult["rejectedRows"] = [];
   const warnings: string[] = [];
   const drafts: Draft[] = [];
   const printedTotals = new Map<string, number>();
+  const occurrences = new Map<string, number>();
   let section: Record<string, string> = {};
   // The booking whose following lines may still add groups (category, rate).
   let open: Draft | null = null;
 
-  lines.forEach((raw, index) => {
-    const line = raw.trim();
+  tables.texts.forEach((line, index) => {
     const lineNumber = index + 1;
-    if (!line || line.length > MAX_PDF_LINE_LENGTH) {
+    if (line === null) {
       open = null;
       return;
     }
 
-    if (skipRe?.test(line)) {
-      if (transactionRe.test(line)) warnings.push(`Übersprungen: ${line}`);
+    if (tables.skip?.[index]) {
+      if (tables.transaction[index]) warnings.push(`Übersprungen: ${line}`);
       open = null;
       return;
     }
 
-    const total = totalRe?.exec(line);
-    if (total?.groups) {
-      const cents = parseMoney(total.groups.amount ?? "");
+    const total = tables.total?.[index];
+    if (total) {
+      const cents = parseMoney(total.amount ?? "");
       if (cents !== null) {
-        const key = total.groups.key ?? "";
+        const key = total.key ?? "";
         printedTotals.set(key, (printedTotals.get(key) ?? 0) + cents);
       }
       open = null;
       return;
     }
 
-    const match = transactionRe.exec(line);
-    if (match?.groups) {
+    const groups = tables.transaction[index];
+    if (groups) {
       open = null;
-      const groups = match.groups;
       const date = parseCsvDate(groups.date ?? "", layout.dateFormat);
       if (!date) {
         rejectedRows.push({
           line: lineNumber,
           reason: `Datum "${groups.date}" passt nicht zum Format ${layout.dateFormat}`,
-          raw: [raw],
+          raw: [line],
         });
         return;
       }
       let cents = parseMoney(groups.amount ?? "");
       if (cents === null) {
-        rejectedRows.push({ line: lineNumber, reason: "Kein lesbarer Betrag gefunden", raw: [raw] });
+        rejectedRows.push({ line: lineNumber, reason: "Kein lesbarer Betrag gefunden", raw: [line] });
         return;
       }
       if (cents === 0) {
-        rejectedRows.push({ line: lineNumber, reason: "Betrag ist 0", raw: [raw] });
+        rejectedRows.push({ line: lineNumber, reason: "Betrag ist 0", raw: [line] });
         return;
       }
-      if (negativeRe?.test(line)) cents = -Math.abs(cents);
+      if (tables.negative?.[index]) cents = -Math.abs(cents);
+
+      // Built from the raw groups only, so editing the description template or
+      // the context rules never changes the dedupe fingerprint. The occurrence
+      // number is part of the string: verifyImportHash only checks occurrence 0
+      // when a reference is set, and two identical bookings must both import.
+      let reference: string | null = null;
+      if (groups.text !== undefined) {
+        const base = `pdf:${date}|${(groups.valuta ?? "").trim()}|${groups.text.trim().replace(/\s+/g, " ")}|${cents}`;
+        const occurrence = occurrences.get(base) ?? 0;
+        occurrences.set(base, occurrence + 1);
+        reference = `${base}|${occurrence}`;
+      }
+
       const merged = { ...section, ...definedGroups(groups) };
       const draft: Draft = {
         date,
@@ -705,17 +869,18 @@ export function parsePdfStatement(lines: string[], layout: PdfLayoutConfig): Pdf
         documentCents: cents,
         key: merged.key ?? "",
         groups: merged,
+        reference,
       };
       drafts.push(draft);
       open = draft;
       return;
     }
 
-    for (const context of contexts) {
-      const found = context.re.exec(line);
-      if (!found?.groups) continue;
-      const values = definedGroups(found.groups);
-      if (context.target === "section") {
+    for (const [ruleIndex, rule] of layout.contextRules.entries()) {
+      const found = tables.context[ruleIndex][index];
+      if (!found) continue;
+      const values = definedGroups(found);
+      if (rule.target === "section") {
         section = { ...section, ...values };
         open = null;
       } else if (open) {
@@ -735,7 +900,7 @@ export function parsePdfStatement(lines: string[], layout: PdfLayoutConfig): Pdf
     description:
       renderTemplate(layout.descriptionTemplate, draft.groups) || draft.groups.text?.trim() || "Ohne Beschreibung",
     counterparty: (draft.groups.counterparty ?? draft.groups.text?.split(",")[0] ?? "").trim() || null,
-    bankReference: null,
+    bankReference: draft.reference,
   }));
 
   if (transactions.length === 0) {
@@ -789,24 +954,6 @@ function sumCheck(drafts: Draft[], printed: Map<string, number>, hasTotalRegex: 
   return messages;
 }
 
-/** Which role each line plays — drives the colouring in the layout dialog. */
-export function classifyLines(lines: string[], layout: PdfLayoutConfig): LineKind[] {
-  if (validateLayout(layout)) return lines.map(() => "other");
-  const transactionRe = new RegExp(layout.transactionRegex);
-  const skipRe = compile(layout.skipRegex);
-  const totalRe = compile(layout.totalRegex);
-  const contexts = layout.contextRules.map((rule) => new RegExp(rule.regex));
-  return lines.map((raw) => {
-    const line = raw.trim();
-    if (!line || line.length > MAX_PDF_LINE_LENGTH) return "other";
-    if (skipRe?.test(line)) return "skip";
-    if (totalRe?.test(line)) return "total";
-    if (transactionRe.test(line)) return "transaction";
-    if (contexts.some((re) => re.test(line))) return "context";
-    return "other";
-  });
-}
-
 export function parseContextRules(json: string): ContextRule[] {
   try {
     const data: unknown = JSON.parse(json);
@@ -847,6 +994,161 @@ Expected: all tests PASS. If the "skips lines … warns" test fails because the 
 ```bash
 git add lib/import/pdf-parse.ts tests/unit/pdf-parse.test.ts
 git commit -m "feat(import): add layout-driven PDF statement parser"
+```
+
+---
+
+### Task 3b: Hard-timeout regex execution (`safe-regex.ts`)
+
+**Files:**
+- Create: `lib/import/safe-regex.ts`
+- Test: `tests/unit/safe-regex.test.ts`
+
+**Interfaces:**
+- Consumes: `LineMatcher`, `Groups`, `nativeMatcher` (Task 3).
+- Produces (exact):
+
+```ts
+export class RegexTimeoutError extends Error {}
+export interface SafeMatcherOptions { perRegexMs?: number; totalMs?: number }   // defaults 500 / 2000
+export function createSafeMatcher(options?: SafeMatcherOptions): LineMatcher;
+```
+The error message is exactly `Ein Regex im Layout braucht zu lange (vermutlich endloses Backtracking). Bitte vereinfachen.` Each regex is run over all lines in one `node:vm` script; the budget is shared across the calls of one matcher and is exhausted for good after the first timeout.
+
+Why not `worker_threads`: a worker file is not bundled by Next's `standalone` output and costs a thread per request; a `vm` timeout is a hard stop on the same synchronous regex and needs no extra file. Why one vm call per regex (not per line): ~0.1 ms of overhead per `runInContext` call would add up to seconds for a long statement.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/unit/safe-regex.test.ts`:
+
+```ts
+import { describe, expect, it } from "vitest";
+import { nativeMatcher } from "@/lib/import/pdf-parse";
+import { RegexTimeoutError, createSafeMatcher } from "@/lib/import/safe-regex";
+
+const MESSAGE = "Ein Regex im Layout braucht zu lange (vermutlich endloses Backtracking). Bitte vereinfachen.";
+const EVIL_LINE = `${"a".repeat(40)}b`;
+
+describe("createSafeMatcher", () => {
+  it("returns the same matches as the native matcher", () => {
+    const source = String.raw`^(?<date>\d{2}\.\d{2}\.\d{2})\s+(?<text>.+?)(?:\s{2,}(?<currency>[A-Z]{3}))?\s{2,}(?<amount>[\d']+\.\d{2})$`;
+    const lines = ["26.09.26 Migros  12.50", "26.09.26 SumUp  EUR  100.00", "Footer", ""];
+    expect(createSafeMatcher()(source, lines)).toEqual(nativeMatcher(source, lines));
+  });
+
+  it("returns an empty groups object for a match without named groups", () => {
+    expect(createSafeMatcher()("^x$", ["x", "y"])).toEqual([{}, null]);
+  });
+
+  it("aborts a catastrophically backtracking regex at its limit", () => {
+    const started = performance.now();
+    expect(() => createSafeMatcher({ perRegexMs: 100 })("^(a+)+$", [EVIL_LINE])).toThrow(RegexTimeoutError);
+    expect(performance.now() - started).toBeLessThan(1500);
+  });
+
+  it("uses the German message", () => {
+    expect(() => createSafeMatcher({ perRegexMs: 100 })("^(a+)+$", [EVIL_LINE])).toThrow(MESSAGE);
+  });
+
+  it("shares one budget across regexes and stays exhausted after a timeout", () => {
+    const matcher = createSafeMatcher({ perRegexMs: 100, totalMs: 1000 });
+    expect(() => matcher("^(a+)+$", [EVIL_LINE])).toThrow(RegexTimeoutError);
+    expect(() => matcher("^x$", ["x"])).toThrow(RegexTimeoutError);
+  });
+
+  it("lets ordinary regexes run repeatedly within the budget", () => {
+    const matcher = createSafeMatcher({ perRegexMs: 100, totalMs: 1000 });
+    for (let i = 0; i < 5; i++) expect(matcher("^x$", ["x"])).toEqual([{}]);
+  });
+});
+```
+
+- [ ] **Step 2: Run, expect FAIL**
+
+Run: `npx vitest run tests/unit/safe-regex.test.ts`
+Expected: FAIL — cannot resolve `@/lib/import/safe-regex`.
+
+- [ ] **Step 3: Implement `lib/import/safe-regex.ts`**
+
+```ts
+import vm from "node:vm";
+import type { Groups, LineMatcher } from "@/lib/import/pdf-parse";
+
+/**
+ * Regex execution with a hard timeout, for layouts that users write.
+ *
+ * A pattern like `(a+)+$` backtracks exponentially and, run in-process, would
+ * freeze the Node event loop for every user. `vm.Script#runInContext` with
+ * `timeout` makes V8 terminate the running script — verified on Node 24 to
+ * interrupt a catastrophic regex — so the worst case is bounded to the budget.
+ *
+ * The regex and the lines enter the context as data (a string and JSON); no
+ * user text is ever evaluated as code. This is a timeout, not a security
+ * sandbox.
+ *
+ * One script run covers one regex over all lines: a `runInContext` call costs
+ * about 0.1 ms, which per line would add up for a long statement.
+ */
+
+const MESSAGE = "Ein Regex im Layout braucht zu lange (vermutlich endloses Backtracking). Bitte vereinfachen.";
+
+export class RegexTimeoutError extends Error {
+  constructor() {
+    super(MESSAGE);
+  }
+}
+
+export interface SafeMatcherOptions {
+  /** Longest a single regex may run over all lines. */
+  perRegexMs?: number;
+  /** Longest all regexes of one matcher may run together. */
+  totalMs?: number;
+}
+
+const RUN = new vm.Script(`(function () {
+  var lines = JSON.parse(__lines);
+  var re = new RegExp(__source);
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var m = re.exec(lines[i]);
+    out.push(m ? (m.groups ? Object.assign({}, m.groups) : {}) : null);
+  }
+  return JSON.stringify(out);
+})()`);
+
+export function createSafeMatcher({ perRegexMs = 500, totalMs = 2000 }: SafeMatcherOptions = {}): LineMatcher {
+  let remaining = totalMs;
+
+  return (source, lines) => {
+    if (remaining <= 0) throw new RegexTimeoutError();
+    const context = vm.createContext({ __source: source, __lines: JSON.stringify(lines) });
+    const started = performance.now();
+    try {
+      const json = RUN.runInContext(context, { timeout: Math.max(1, Math.min(perRegexMs, Math.ceil(remaining))) });
+      return JSON.parse(json as string) as (Groups | null)[];
+    } catch (err) {
+      if (typeof err === "object" && err !== null && (err as { code?: string }).code === "ERR_SCRIPT_EXECUTION_TIMEOUT") {
+        remaining = 0;
+        throw new RegexTimeoutError();
+      }
+      throw err;
+    } finally {
+      remaining -= performance.now() - started;
+    }
+  };
+}
+```
+
+- [ ] **Step 4: Run, expect PASS**
+
+Run: `npx vitest run tests/unit/safe-regex.test.ts`
+Expected: PASS, in well under a second per timeout test.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/import/safe-regex.ts tests/unit/safe-regex.test.ts
+git commit -m "feat(import): run user regexes with hard timeouts"
 ```
 
 ---
@@ -931,6 +1233,7 @@ import { join } from "path";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_PDF_LAYOUTS, seedDefaultPdfLayouts } from "@/lib/import/default-mappings";
 import { layoutFromRow, parsePdfStatement, validateLayout } from "@/lib/import/pdf-parse";
+import { createSafeMatcher } from "@/lib/import/safe-regex";
 
 const lines = readFileSync(join(__dirname, "fixtures", "viseca-statement.txt"), "utf8").split(/\r?\n/);
 const viseca = layoutFromRow(DEFAULT_PDF_LAYOUTS.find((l) => l.name === "Migros Kreditkarte (PDF)")!);
@@ -1003,6 +1306,10 @@ describe("Migros Kreditkarte (PDF) starter layout", () => {
       viseca
     );
     expect(result.warnings).toEqual([]);
+  });
+
+  it("gives the same result through the vm-backed matcher", () => {
+    expect(parsePdfStatement(lines, viseca, createSafeMatcher())).toEqual(parsePdfStatement(lines, viseca));
   });
 });
 
@@ -1500,6 +1807,33 @@ describe("previewImportAction with a PDF", () => {
     const again = (await previewImportAction(undefined, pdfForm())).preview!;
     expect(again.duplicateCount).toBe(1);
   });
+
+  it("still recognises the duplicate after the layout's description template changed", async () => {
+    await prisma.pdfLayout.update({ where: { id: layoutId }, data: { descriptionTemplate: "{text}" } });
+    try {
+      const preview = (await previewImportAction(undefined, pdfForm())).preview!;
+      expect(preview.rows[0].description).toBe("Testladen, Bern CH");
+      expect(preview.duplicateCount).toBe(1);
+    } finally {
+      await prisma.pdfLayout.update({
+        where: { id: layoutId },
+        data: { descriptionTemplate: DEFAULT_PDF_LAYOUTS[0].descriptionTemplate },
+      });
+    }
+  });
+
+  it("aborts a layout whose regex backtracks catastrophically", async () => {
+    const evil = await prisma.pdfLayout.create({
+      data: { ...DEFAULT_PDF_LAYOUTS[0], name: "Boese", transactionRegex: String.raw`^(?<date>(a+)+)(?<amount>b)$` },
+    });
+    const bytes = buildTextPdf([[{ x: 50, y: 700, text: `${"a".repeat(40)}c` }]]);
+    const started = Date.now();
+    const result = await previewImportAction(undefined, pdfForm({ layoutId: String(evil.id) }, bytes));
+    expect(result.error).toBe(
+      "Ein Regex im Layout braucht zu lange (vermutlich endloses Backtracking). Bitte vereinfachen."
+    );
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
 });
 
 describe("inspectPdfAction", () => {
@@ -1528,6 +1862,7 @@ Add imports:
 ```ts
 import { extractPdfLines } from "@/lib/import/pdf";
 import { layoutFromRow, parsePdfStatement } from "@/lib/import/pdf-parse";
+import { createSafeMatcher } from "@/lib/import/safe-regex";
 ```
 (`PdfExtractError` is not imported: the existing `catch` returns `err.message`, which is already the German text. An unused import would fail lint.)
 
@@ -1581,7 +1916,12 @@ In `previewImportAction` replace the block from `const upload = await readUpload
       if (!Number.isInteger(layoutId)) return { error: "Bitte ein PDF-Layout auswählen." };
       const layout = await prisma.pdfLayout.findUnique({ where: { id: layoutId } });
       if (!layout) return { error: "PDF-Layout nicht gefunden." };
-      const pdfResult = parsePdfStatement(await extractPdfLines(bytes), layoutFromRow(layout));
+      // Layout regexes are user input: run them with hard timeouts (lib/import/safe-regex.ts).
+      const pdfResult = parsePdfStatement(
+        await extractPdfLines(bytes),
+        layoutFromRow(layout),
+        createSafeMatcher()
+      );
       statement = pdfResult;
       rejectedRows = pdfResult.rejectedRows;
     } else {
@@ -1666,6 +2006,7 @@ git commit -m "feat(import): preview PDF statements through stored layouts"
 ```ts
 import {
   deletePdfLayoutAction,
+  previewPdfLayoutAction,
   savePdfLayoutAction,
   seedDefaultPdfLayoutsAction,
 } from "@/app/(app)/import/pdf-layout-actions";
@@ -1744,7 +2085,51 @@ describe("PDF layout actions", () => {
 });
 ```
 
-Caveat: the "Migros Kreditkarte (PDF)" row created in `beforeAll` is used by earlier tests via `layoutId`. The last test deletes and recreates it — it runs last, so no earlier test is affected. Keep it last in the file.
+Caveat: the "Migros Kreditkarte (PDF)" row created in `beforeAll` is used by the `previewImportAction` tests via `layoutId`. The seed test in this describe deletes and recreates it, so keep this describe (and every describe that follows) independent of `layoutId`.
+
+Append this describe after it (same file):
+
+```ts
+describe("previewPdfLayoutAction", () => {
+  const config = {
+    transactionRegex: String.raw`^(?<date>\d{2}\.\d{2}\.\d{2})\s+(?<text>.+?)\s{2,}(?<amount>[\d']+\.\d{2})$`,
+    dateFormat: "DD.MM.YY",
+    negativeSuffixRegex: null,
+    invertAmount: true,
+    descriptionTemplate: "{text}",
+    skipRegex: null,
+    totalRegex: null,
+    contextRules: [],
+  };
+
+  it("returns line kinds and the parse result", async () => {
+    const response = await previewPdfLayoutAction({ lines: ["26.09.26 Migros  4.50", "Footer"], layout: config });
+    expect(response.kinds).toEqual(["transaction", "other"]);
+    expect(response.result?.transactions).toHaveLength(1);
+  });
+
+  it("reports an invalid layout", async () => {
+    const response = await previewPdfLayoutAction({ lines: [], layout: { ...config, transactionRegex: "(" } });
+    expect(response.error).toBe("Buchungszeilen-Regex ist ungültig.");
+  });
+
+  it("aborts a catastrophic regex with a message instead of hanging", async () => {
+    const started = Date.now();
+    const response = await previewPdfLayoutAction({
+      lines: [`${"a".repeat(40)}c`],
+      layout: { ...config, transactionRegex: String.raw`^(?<date>(a+)+)(?<amount>b)$` },
+    });
+    expect(response.error).toBe(
+      "Ein Regex im Layout braucht zu lange (vermutlich endloses Backtracking). Bitte vereinfachen."
+    );
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it("rejects malformed input", async () => {
+    expect((await previewPdfLayoutAction({ nope: 1 })).error).toBe("Ungültige Vorschau-Daten.");
+  });
+});
+```
 
 - [ ] **Step 2: Run, expect FAIL**
 
@@ -1766,7 +2151,17 @@ import prisma from "@/lib/prisma";
 import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { seedDefaultPdfLayouts } from "@/lib/import/default-mappings";
-import { parseContextRules, validateLayout } from "@/lib/import/pdf-parse";
+import {
+  analyzePdf,
+  parseContextRules,
+  validateLayout,
+  type LineKind,
+  type PdfParseResult,
+} from "@/lib/import/pdf-parse";
+import { RegexTimeoutError, createSafeMatcher } from "@/lib/import/safe-regex";
+import logger from "@/lib/logger";
+
+const log = logger.child({ module: "import" });
 
 export type ActionState = { error?: string; success?: boolean };
 
@@ -1861,6 +2256,48 @@ export async function deletePdfLayoutAction(id: number): Promise<ActionState> {
   await logAudit(session, "DELETE", "PdfLayout", id, { name: layout.name });
   revalidatePath("/import");
   return { success: true };
+}
+
+const previewSchema = z.object({
+  lines: z.array(z.string().max(2000)).max(2000),
+  layout: z.object({
+    transactionRegex: z.string().max(2000),
+    dateFormat: z.string().max(20),
+    negativeSuffixRegex: z.string().max(2000).nullable(),
+    invertAmount: z.boolean(),
+    descriptionTemplate: z.string().max(200),
+    skipRegex: z.string().max(2000).nullable(),
+    totalRegex: z.string().max(2000).nullable(),
+    contextRules: z
+      .array(z.object({ regex: z.string().max(2000), target: z.enum(["section", "transaction"]) }))
+      .max(20),
+  }),
+});
+
+/**
+ * Live preview of an unsaved layout against sample lines, for the layout
+ * dialog. Runs on the server so the regexes get the same hard timeouts as a real
+ * import — a half-typed pattern must not be able to freeze anything.
+ */
+export async function previewPdfLayoutAction(
+  input: unknown
+): Promise<{ error?: string; kinds?: LineKind[]; result?: PdfParseResult }> {
+  await requireEditor();
+
+  const parsed = previewSchema.safeParse(input);
+  if (!parsed.success) return { error: "Ungültige Vorschau-Daten." };
+  const { lines, layout } = parsed.data;
+
+  const problem = validateLayout(layout);
+  if (problem) return { error: problem };
+
+  try {
+    return analyzePdf(lines, layout, createSafeMatcher());
+  } catch (err) {
+    if (err instanceof RegexTimeoutError) return { error: err.message };
+    log.warn({ err }, "PDF layout preview failed");
+    return { error: "Die Vorschau konnte nicht berechnet werden." };
+  }
 }
 
 /** Creates the starter PDF layouts (Migros Kreditkarte); skips names already taken. */
@@ -2122,19 +2559,18 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { PdfLayout } from "@prisma/client";
 import { inspectPdfAction } from "./actions";
-import { savePdfLayoutAction } from "./pdf-layout-actions";
+import { previewPdfLayoutAction, savePdfLayoutAction } from "./pdf-layout-actions";
 import { useDialogFormAction } from "@/components/use-dialog-form";
 import { SUPPORTED_DATE_FORMATS } from "@/lib/import/csv";
 import { formatDateCH } from "@/lib/date";
 import { formatMoney } from "@/lib/money";
 import {
-  classifyLines,
   parseContextRules,
-  parsePdfStatement,
   validateLayout,
   type ContextRule,
   type LineKind,
   type PdfLayoutConfig,
+  type PdfParseResult,
 } from "@/lib/import/pdf-parse";
 import { cn } from "@/lib/utils";
 import {
@@ -2218,20 +2654,41 @@ export function PdfLayoutDialog({
     [transactionRegex, dateFormat, negativeSuffixRegex, invertAmount, descriptionTemplate, skipRegex, totalRegex, rules]
   );
 
-  // Compiling is cheap, so validation follows every keystroke; running the
-  // regexes over the whole sample is debounced so a half-typed pattern is not
-  // executed on each key press.
+  // Compiling is cheap, so validation follows every keystroke. Running the
+  // regexes over the sample happens on the server (previewPdfLayoutAction, with
+  // hard regex timeouts) and is debounced; a flag drops answers that a newer
+  // edit has overtaken.
   const problem = useMemo(() => validateLayout(config), [config]);
-  const [previewConfig, setPreviewConfig] = useState(config);
+  const [analysis, setAnalysis] = useState<{
+    kinds: LineKind[];
+    result: PdfParseResult | null;
+    error?: string;
+  } | null>(null);
   useEffect(() => {
-    const timer = setTimeout(() => setPreviewConfig(config), 400);
-    return () => clearTimeout(timer);
-  }, [config]);
-  const kinds = useMemo(() => (lines ? classifyLines(lines, previewConfig) : []), [lines, previewConfig]);
-  const result = useMemo(
-    () => (lines && !validateLayout(previewConfig) ? parsePdfStatement(lines, previewConfig) : null),
-    [lines, previewConfig]
-  );
+    if (!lines || problem) return;
+    let stale = false;
+    const timer = setTimeout(async () => {
+      try {
+        const response = await previewPdfLayoutAction({ lines, layout: config });
+        if (stale) return;
+        setAnalysis(
+          response.error
+            ? { kinds: [], result: null, error: response.error }
+            : { kinds: response.kinds ?? [], result: response.result ?? null }
+        );
+      } catch {
+        if (!stale) setAnalysis({ kinds: [], result: null, error: "Vorschau nicht verfügbar." });
+      }
+    }, 400);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [lines, config, problem]);
+  const shown = lines && !problem ? analysis : null;
+  const kinds = shown?.kinds ?? [];
+  const result = shown?.result ?? null;
+  const previewError = shown?.error ?? null;
 
   const inspect = (file: File) => {
     const data = new FormData();
@@ -2291,8 +2748,8 @@ export function PdfLayoutDialog({
           <DialogTitle>{layout ? "Layout bearbeiten" : "Neues PDF-Layout"}</DialogTitle>
           <DialogDescription>
             Beschreibt einmalig, wie die Buchungszeilen einer Abrechnung im PDF-Text aussehen. Lade rechts ein
-            Beispiel-PDF, um die Regeln gegen echten Text zu prüfen. Das PDF wird nicht gespeichert. Beschreibung und Gegenpartei fliessen in den Duplikat-Fingerabdruck: Wer Vorlage oder Kontext-Regeln
-            ändert, muss damit rechnen, dass schon importierte Zeilen beim erneuten Einlesen nicht mehr als Duplikat erkannt werden.
+            Beispiel-PDF, um die Regeln gegen echten Text zu prüfen. Das PDF wird nicht gespeichert. Ändere die Gruppen date, valuta, text und amount der Buchungszeile nicht nachträglich:
+            sie bilden den Duplikat-Fingerabdruck, und schon importierte Zeilen gälten beim erneuten Einlesen als neu.
           </DialogDescription>
         </DialogHeader>
 
@@ -2420,6 +2877,8 @@ export function PdfLayoutDialog({
                     </div>
                   ))}
                 </div>
+
+                {previewError && <p className="text-sm text-destructive">{previewError}</p>}
 
                 {result && (
                   <div className="flex flex-col gap-2">
@@ -2566,7 +3025,7 @@ Expected: PASS. If the `PDF` toggle button is not found by `exact: true`, check 
 In the **Import** section, after the `csv.ts` bullet add:
 
 ```markdown
-- **`pdf.ts` / `pdf-parse.ts`** — PDF statements (Viseca/Migros credit-card bills when the CSV export is unavailable). `pdf.ts` (server only, `unpdf`) turns a PDF into text lines — fragments are grouped by y position and table columns joined with two spaces; `pdf-parse.ts` (pure, no Prisma/pdf.js, so the layout dialog can run it in the browser for its live preview) applies a stored `PdfLayout`: regexes with named groups for the booking line, section/follow-up context lines (card + holder, category, exchange rate), skipped lines and printed totals for a sum check that warns per card. PDF statements carry no IBAN, so the target account is always chosen in the wizard. The PDF itself is never stored (card numbers, address). The dedupe fingerprint hashes the *rendered* description and counterparty, so changing a layout's description template or context rules and re-reading the same PDF makes every row look new, and a CSV export and the PDF of one card never dedupe against each other.
+- **`pdf.ts` / `pdf-parse.ts`** — PDF statements (Viseca/Migros credit-card bills when the CSV export is unavailable). `pdf.ts` (server only, `unpdf`) turns a PDF into text lines — fragments are grouped by y position and table columns joined with two spaces; `pdf-parse.ts` (pure, no Prisma/pdf.js/Node APIs; every regex runs through an injected `LineMatcher` — `nativeMatcher` for trusted input and tests, `createSafeMatcher` from `safe-regex.ts`, which runs each regex in `node:vm` with hard timeouts of 500 ms per regex and 2 s per request, for everything request-driven, including the layout dialog's live preview via `previewPdfLayoutAction`) applies a stored `PdfLayout`: regexes with named groups for the booking line, section/follow-up context lines (card + holder, category, exchange rate), skipped lines and printed totals for a sum check that warns per card. PDF statements carry no IBAN, so the target account is always chosen in the wizard. The PDF itself is never stored (card numbers, address). PDF bookings carry a stable `bankReference` (`pdf:<date>|<valuta>|<text>|<document cents>|<occurrence>`, from the raw regex groups), so changing a layout's description template or context rules does not break duplicate detection; changing the `date`/`valuta`/`text`/`amount` groups of the booking regex does, and a CSV export and the PDF of one card never dedupe against each other.
 ```
 
 Also add `lib/import/pdf-parse.ts` to the sentence in "Client/server module boundary" about modules that must stay free of Prisma/pino imports ("…`lib/colors.ts`, and `lib/import/pdf-parse.ts`") and append to the Import paragraph's list of mappings: "CSV mappings and PDF layouts live under Import → Mappings".
@@ -2574,7 +3033,7 @@ Also add `lib/import/pdf-parse.ts` to the sentence in "Client/server module boun
 - [ ] **Step 4: Update the user manual** (`public/benutzerhandbuch.html`, German)
 
 1. In the paragraph at ~line 702 add after the CSV sentence: `<strong>PDF</strong> ist für Abrechnungen gedacht, die es nur als PDF gibt (z. B. die Kreditkartenabrechnung, wenn der CSV-Export im Portal nicht funktioniert). Dafür braucht es ein <strong>PDF-Layout</strong>, das beschreibt, wie die Buchungszeilen aussehen; für die Migros-Kreditkarte gibt es eine fertige Vorlage unter «Mappings».`
-2. Add a new `<h3 class="sub" id="import-pdf">PDF-Layouts</h3>` section directly before `<h3 class="sub" id="import-regeln">` (mirror the markup of the neighbouring `<h3 class="sub">` + `<p>` blocks) with this text: «Unter *Import → Mappings → PDF-Layouts* legst du fest, wie eine Abrechnung gelesen wird: eine Regex für die Buchungszeile (Pflichtgruppen `date` und `amount`), optional Regeln für Zeilen, die zur Buchung davor gehören (Kategorie, Kurs) oder für den ganzen Abschnitt gelten (Karte, Inhaber), Zeilen zum Überspringen (z. B. «Ihre Zahlung») und eine Total-Regex für die Summenprüfung. Wenn du ein Beispiel-PDF lädst, siehst du den extrahierten Text farbig markiert und rechts sofort die erkannten Buchungen. Das PDF wird nicht gespeichert. Weicht die Summe pro Karte vom gedruckten Total ab, erscheint eine Warnung über der Vorschau. Das Zielkonto wählst du selbst, weil PDF-Abrechnungen keine IBAN enthalten. Achtung: Beschreibung und Gegenpartei fliessen in den Duplikat-Fingerabdruck. Wenn du die Beschreibungs-Vorlage oder die Kontext-Regeln eines Layouts änderst, werden bereits importierte Zeilen beim erneuten Einlesen derselben Datei nicht mehr als Duplikat erkannt; ein CSV-Export und das PDF derselben Karte erkennen sich ebenfalls nicht gegenseitig.»
+2. Add a new `<h3 class="sub" id="import-pdf">PDF-Layouts</h3>` section directly before `<h3 class="sub" id="import-regeln">` (mirror the markup of the neighbouring `<h3 class="sub">` + `<p>` blocks) with this text: «Unter *Import → Mappings → PDF-Layouts* legst du fest, wie eine Abrechnung gelesen wird: eine Regex für die Buchungszeile (Pflichtgruppen `date` und `amount`), optional Regeln für Zeilen, die zur Buchung davor gehören (Kategorie, Kurs) oder für den ganzen Abschnitt gelten (Karte, Inhaber), Zeilen zum Überspringen (z. B. «Ihre Zahlung») und eine Total-Regex für die Summenprüfung. Wenn du ein Beispiel-PDF lädst, siehst du den extrahierten Text farbig markiert und rechts sofort die erkannten Buchungen. Das PDF wird nicht gespeichert. Weicht die Summe pro Karte vom gedruckten Total ab, erscheint eine Warnung über der Vorschau. Das Zielkonto wählst du selbst, weil PDF-Abrechnungen keine IBAN enthalten. Die Duplikaterkennung stützt sich auf Datum, Valuta, Text und Betrag der Buchungszeile — Änderungen an der Beschreibungs-Vorlage oder den Kontext-Regeln schaden ihr nicht. Änderst du aber die Gruppen «date», «valuta», «text» oder «amount» der Buchungszeilen-Regex, gelten schon importierte Zeilen beim erneuten Einlesen als neu. Ein CSV-Export und das PDF derselben Karte erkennen sich nicht gegenseitig. Ein Regex, der endlos rechnet, wird nach spätestens 2 Sekunden mit einer Fehlermeldung abgebrochen.»
 3. Line ~435 and ~769: change "CSV-Mappings" to "CSV-Mappings &amp; PDF-Layouts" (role table) and add "PDF-Layouts" to the audit list.
 4. Screenshots: do not hand-edit. Note in the commit message that screenshots were not regenerated; regenerating goes through `scripts/manual-screenshots.ts` (see CLAUDE.md) and is a separate follow-up.
 

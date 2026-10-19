@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { parseMoney } from "@/lib/money";
 
 /**
  * Free-text search over transactions.
@@ -43,4 +44,31 @@ export function transactionSearchFilter(
     { counterparty: { contains: variant } },
     { notes: { contains: variant } },
   ]);
+}
+
+/**
+ * Amount filter on the *magnitude* of a booking, so "50" finds both a
+ * CHF 50 expense and a CHF 50 income. An exact match is min == max. Input
+ * that does not parse as money is ignored rather than emptying the list.
+ * Returns undefined when neither bound is usable.
+ */
+export function amountRangeFilter(
+  min: string | null | undefined,
+  max: string | null | undefined
+): Prisma.TransactionWhereInput | undefined {
+  const lo = min ? parseMoney(min) : null;
+  const hi = max ? parseMoney(max) : null;
+  const low = lo === null ? null : Math.abs(lo);
+  const high = hi === null ? null : Math.abs(hi);
+  if (low === null && high === null) return undefined;
+
+  const positive = {
+    ...(low !== null ? { gte: low } : {}),
+    ...(high !== null ? { lte: high } : {}),
+  };
+  const negative = {
+    ...(high !== null ? { gte: -high } : {}),
+    ...(low !== null ? { lte: -low } : {}),
+  };
+  return { OR: [{ amountCents: positive }, { amountCents: negative }] };
 }

@@ -130,8 +130,9 @@ const shots: Shot[] = [
     name: "transactions",
     run: async (page) => {
       await login(page, ADMIN);
-      await page.goto(`${BASE_URL}/transactions`);
-      await page.waitForSelector("text=Buchungen");
+      await page.goto(`${BASE_URL}/transactions?amountMin=20&amountMax=200`);
+      // "text=Buchungen" would already match the nav link while the loading skeleton is up.
+      await page.waitForSelector("#amountMin");
       await page.screenshot({ path: path.join(OUT_DIR, "transactions.png"), fullPage: true });
     },
   },

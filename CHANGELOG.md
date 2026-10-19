@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.30](https://github.com/sirtheta/budget/compare/budget-v0.1.29...budget-v0.1.30) (2026-10-19)
+
+
+### Features
+
+* **transactions:** filter bookings by amount ([#149](https://github.com/sirtheta/budget/issues/149)) ([88c9456](https://github.com/sirtheta/budget/commit/88c945638c90d17b2877c144d9789201f02b0bbc))
+
 ## [0.1.29](https://github.com/sirtheta/budget/compare/budget-v0.1.28...budget-v0.1.29) (2026-10-17)
 
 

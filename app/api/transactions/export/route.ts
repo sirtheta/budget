@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { attachmentHeader, csvAmount, toCsv } from "@/lib/csv-export";
-import { transactionSearchFilter } from "@/lib/search";
+import { amountRangeFilter, transactionSearchFilter } from "@/lib/search";
 import { formatDateCH, toDateString } from "@/lib/date";
 
 /**
@@ -50,6 +50,9 @@ export async function GET(request: NextRequest) {
   // Same helper as the page, so "export what I'm looking at" keeps meaning it.
   const search = transactionSearchFilter(params.get("q"));
   if (search) where.OR = search;
+
+  const amount = amountRangeFilter(params.get("amountMin"), params.get("amountMax"));
+  if (amount) where.AND = [amount];
 
   const transactions = await prisma.transaction.findMany({
     where,

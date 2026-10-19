@@ -53,7 +53,7 @@ export function TransactionFilters({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  const hasFilters = ["q", "from", "to", "accountId", "categoryId", "type"].some((key) =>
+  const hasFilters = ["q", "from", "to", "accountId", "categoryId", "type", "amountMin", "amountMax"].some((key) =>
     params.has(key)
   );
 
@@ -106,6 +106,46 @@ export function TransactionFilters({
           defaultValue={params.get("to") ?? ""}
           onChange={(event) => apply({ to: event.target.value })}
           className="w-full sm:w-40"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="amountMin" className="text-xs">
+          Betrag von
+        </Label>
+        <Input
+          id="amountMin"
+          inputMode="decimal"
+          placeholder="z.B. 50"
+          defaultValue={params.get("amountMin") ?? ""}
+          onBlur={(event) => {
+            if (event.target.value !== (params.get("amountMin") ?? ""))
+              apply({ amountMin: event.target.value.trim() });
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") apply({ amountMin: event.currentTarget.value.trim() });
+          }}
+          className="w-full sm:w-28"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="amountMax" className="text-xs">
+          Betrag bis
+        </Label>
+        <Input
+          id="amountMax"
+          inputMode="decimal"
+          placeholder="z.B. 100"
+          defaultValue={params.get("amountMax") ?? ""}
+          onBlur={(event) => {
+            if (event.target.value !== (params.get("amountMax") ?? ""))
+              apply({ amountMax: event.target.value.trim() });
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") apply({ amountMax: event.currentTarget.value.trim() });
+          }}
+          className="w-full sm:w-28"
         />
       </div>
 

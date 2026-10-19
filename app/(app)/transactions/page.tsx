@@ -5,7 +5,7 @@ import prisma from "@/lib/prisma";
 import { requireSession } from "@/lib/permissions";
 import { hasRole } from "@/lib/permissions";
 import { categoryOptions } from "@/lib/categories";
-import { transactionSearchFilter } from "@/lib/search";
+import { amountRangeFilter, transactionSearchFilter } from "@/lib/search";
 import { config } from "@/lib/config";
 import { formatMoney } from "@/lib/money";
 import { formatDateCH, todayInZone } from "@/lib/date";
@@ -75,6 +75,9 @@ function buildWhere(params: Record<string, string | undefined>): Prisma.Transact
   const search = transactionSearchFilter(params.q);
   if (search) and.push({ OR: search });
 
+  const amount = amountRangeFilter(params.amountMin, params.amountMax);
+  if (amount) and.push(amount);
+
   if (and.length > 0) where.AND = and;
 
   return where;
@@ -96,6 +99,8 @@ export default async function TransactionsPage({
     accountId: single(raw.accountId),
     categoryId: single(raw.categoryId),
     type: single(raw.type),
+    amountMin: single(raw.amountMin),
+    amountMax: single(raw.amountMax),
   };
   const page = Math.max(1, parseInt(single(raw.page) ?? "1", 10) || 1);
   const where = buildWhere(params);

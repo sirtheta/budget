@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { AccountType } from "@prisma/client";
 import prisma from "@/lib/prisma";
-import { requireEditor } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { parseMoney } from "@/lib/money";
 import { recordBtcPurchase } from "@/lib/transactions";
+import { holdingEntryStatement, loadHoldingHistory } from "@/lib/btc-history";
+import { requireEditor } from "@/lib/permissions";
 import { isValidDateString } from "@/lib/date";
 import logger from "@/lib/logger";
 
@@ -110,13 +111,45 @@ export async function saveAccountAction(
   };
 
   try {
+    const userId = parseInt(session.user.id, 10);
     if (id) {
-      await prisma.account.update({ where: { id }, data });
+      const before = await prisma.account.findUnique({
+        where: { id },
+        select: { btcAmount: true, btcCostBasisCents: true },
+      });
+      const btcDelta = isCrypto ? (btcAmount ?? 0) - (before?.btcAmount ?? 0) : 0;
+      const costDeltaCents = isCrypto
+        ? (btcCostBasisCents ?? 0) - (before?.btcCostBasisCents ?? 0)
+        : 0;
+      const changed = Math.abs(btcDelta) > 1e-9 || costDeltaCents !== 0;
+      await prisma.$transaction([
+        prisma.account.update({ where: { id }, data }),
+        ...(changed
+          ? [
+              holdingEntryStatement(prisma, {
+                accountId: id,
+                kind: "Edit",
+                btcDelta: Math.round(btcDelta * 1e8) / 1e8,
+                costDeltaCents,
+                createdById: userId,
+              }),
+            ]
+          : []),
+      ]);
       await logAudit(session, "UPDATE", "Account", id, { name: data.name });
     } else {
       const created = await prisma.account.create({
         data: { ...data, sortOrder: await nextSortOrder() },
       });
+      if (isCrypto && ((btcAmount ?? 0) > 0 || (btcCostBasisCents ?? 0) > 0)) {
+        await holdingEntryStatement(prisma, {
+          accountId: created.id,
+          kind: "Initial",
+          btcDelta: btcAmount ?? 0,
+          costDeltaCents: btcCostBasisCents ?? 0,
+          createdById: userId,
+        });
+      }
       await logAudit(session, "CREATE", "Account", created.id, { name: data.name });
     }
   } catch (err) {
@@ -397,6 +430,13 @@ export async function updateWalletStakesAction(
         // keeps repeated float additions from accumulating into values like
         // 0.30000000000000004 — 8 decimals is one satoshi.
         await tx.$executeRaw`UPDATE "Account" SET "btcAmount" = ROUND(COALESCE("btcAmount", 0) + ${row.btcDelta}, 8), "btcCostBasisCents" = COALESCE("btcCostBasisCents", 0) + ${row.costDeltaCents} WHERE "id" = ${row.accountId}`;
+        await holdingEntryStatement(tx, {
+          accountId: row.accountId,
+          kind: "Stake",
+          btcDelta: row.btcDelta,
+          costDeltaCents: row.costDeltaCents,
+          createdById: parseInt(session.user.id, 10),
+        });
       }
 
       const after = await tx.account.findMany({
@@ -425,4 +465,14 @@ export async function updateWalletStakesAction(
   revalidatePath("/dashboard");
   revalidatePath("/analytics");
   return { success: true };
+}
+
+/**
+ * Loads the holding history on demand when a history dialog opens, rather than
+ * shipping every wallet's full history with the accounts page.
+ */
+export async function loadHoldingHistoryAction(accountIds: number[]) {
+  await requireEditor();
+  const ids = accountIds.filter((id) => Number.isInteger(id));
+  return loadHoldingHistory(prisma, ids);
 }

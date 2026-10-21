@@ -376,7 +376,7 @@ export async function deleteTransactionAction(id: number): Promise<ActionState> 
     // The wallet's btcAmount was incremented directly when this was booked
     // (see recordBtcPurchase) — take it back out, or the wallet keeps BTC
     // that no longer has a booking behind it.
-    await deleteBtcPurchase(prisma, existing);
+    await deleteBtcPurchase(prisma, existing, parseInt(session.user.id, 10));
     await logAudit(session, "DELETE", "Transaction", id, {
       btcPurchase: true,
       date: existing.date,

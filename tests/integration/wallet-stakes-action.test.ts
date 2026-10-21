@@ -22,6 +22,7 @@ vi.mock("@/lib/permissions", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
 
 import { updateWalletStakesAction } from "@/app/(app)/accounts/actions";
+import { loadHoldingHistory } from "@/lib/btc-history";
 
 let prisma: PrismaClient;
 let cleanup: () => Promise<void>;
@@ -162,5 +163,41 @@ describe("updateWalletStakesAction", () => {
       form({ walletId: String(walletId), [`btcDelta-${mine}`]: "viel" })
     );
     expect(result.error).toMatch(/BTC/);
+  });
+
+  it("records a history entry per changed stake with the resulting balance", async () => {
+    await updateWalletStakesAction(
+      undefined,
+      form({
+        walletId: String(walletId),
+        [`btcDelta-${mine}`]: "0.05",
+        [`costDelta-${mine}`]: "100.00",
+        [`btcDelta-${kid}`]: "0.01",
+      })
+    );
+    // A correcting entry must show up on top, with its own running balance.
+    await updateWalletStakesAction(
+      undefined,
+      form({ walletId: String(walletId), [`btcDelta-${mine}`]: "-0.05", [`costDelta-${mine}`]: "-100" })
+    );
+
+    const history = await loadHoldingHistory(prisma, [mine, kid]);
+    expect(history).toHaveLength(3);
+    const mineRows = history.filter((row) => row.accountId === mine);
+    expect(mineRows[0].btcDelta).toBeCloseTo(-0.05, 8);
+    expect(mineRows[0].btcAfter).toBeCloseTo(0.2, 8);
+    expect(mineRows[0].costBasisAfterCents).toBe(500000);
+    expect(mineRows[1].btcAfter).toBeCloseTo(0.25, 8);
+    expect(mineRows[0].kind).toBe("Stake");
+    expect(mineRows[0].userName).toBe("Editor");
+    expect(history.find((row) => row.accountId === kid)?.btcAfter).toBeCloseTo(0.01, 8);
+  });
+
+  it("writes no history when the batch is rolled back", async () => {
+    await updateWalletStakesAction(
+      undefined,
+      form({ walletId: String(walletId), [`btcDelta-${kid}`]: "0.01", [`btcDelta-${mine}`]: "-5" })
+    );
+    expect(await prisma.btcHoldingEntry.count()).toBe(0);
   });
 });

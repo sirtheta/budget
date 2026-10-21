@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { AccountRowActions } from "./account-row-actions";
 import { BtcPurchaseDialog } from "./btc-purchase-dialog";
+import { BtcHistoryDialog } from "./btc-history-dialog";
 
 export type BtcInfo = {
   amount: number | null;
@@ -274,7 +275,13 @@ function SortableRow({
       </TableCell>
       <TableCell>
         <div className="flex justify-end">
-          {account.type === "Crypto" && sourceAccounts.length > 0 && (
+          {account.type === "Crypto" && (
+            <BtcHistoryDialog accountIds={[account.id]} title={account.name} />
+          )}
+          {account.type === "Crypto" && (
+          <BtcHistoryDialog accountIds={[account.id]} title={account.name} />
+        )}
+        {account.type === "Crypto" && sourceAccounts.length > 0 && (
             <BtcPurchaseDialog
               cryptoAccountId={account.id}
               sourceAccounts={sourceAccounts}

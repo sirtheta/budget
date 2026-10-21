@@ -47,6 +47,7 @@ model User {
   auditLogs           AuditLog[]
   passwordResetTokens PasswordResetToken[]
   importBatches       ImportBatch[]
+  btcHoldingEntries   BtcHoldingEntry[]
 }
 
 model PasswordResetToken {
@@ -113,6 +114,7 @@ model Account {
 
   transactions     Transaction[]
   btcPurchases     Transaction[]          @relation("BtcPurchaseWallet")
+  btcHistory       BtcHoldingEntry[]
   recurring        RecurringTransaction[] @relation("RecurringAccount")
   recurringCounter RecurringTransaction[] @relation("RecurringCounterAccount")
   reserves         Reserve[]
@@ -144,6 +146,29 @@ model CryptoWallet {
   accounts Account[]
 
   @@index([sortOrder])
+}
+
+/// One change to a Crypto account's BTC holding or cost basis. The account
+/// itself only carries the current values, so without this a mistyped stake
+/// could not be traced or undone. `btcAfter`/`costBasisAfterCents` are
+/// snapshots rather than something derived from the deltas, because holdings
+/// that predate this table have no earlier entries to sum from.
+model BtcHoldingEntry {
+  id        Int @id @default(autoincrement())
+  accountId Int
+  // Initial | Stake | Purchase | PurchaseReversal | Edit
+  kind                String
+  btcDelta            Float
+  costDeltaCents      Int
+  btcAfter            Float
+  costBasisAfterCents Int?
+  createdById         Int?
+  createdAt           DateTime @default(now())
+
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt])
 }
 
 // ── Categories ────────────────────────────────────────────────────────────────

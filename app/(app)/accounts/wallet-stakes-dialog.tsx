@@ -61,7 +61,7 @@ export function WalletStakesDialog({ wallet }: { wallet: WalletView }) {
           <DialogTitle>Anteile erfassen — {wallet.name}</DialogTitle>
           <DialogDescription>
             Pro Person eintragen, wie viel dazugekommen ist. Negative Werte für Verkauf oder
-            Korrektur. Es wird keine Buchung auf einem Bankkonto ausgelöst.
+            Korrektur — ein Irrtum lässt sich mit dem Gegenwert aufheben (siehe «Verlauf»). Es wird keine Buchung auf einem Bankkonto ausgelöst.
           </DialogDescription>
         </DialogHeader>
 

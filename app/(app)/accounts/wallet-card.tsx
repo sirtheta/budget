@@ -2,6 +2,7 @@ import type { WalletView } from "@/lib/crypto-wallets";
 import { Money } from "@/components/money";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { BtcHistoryDialog } from "./btc-history-dialog";
 import { WalletStakesDialog } from "./wallet-stakes-dialog";
 import { WalletFormDialog } from "./wallet-form-dialog";
 
@@ -26,6 +27,10 @@ export function WalletCard({ wallet }: { wallet: WalletView }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <BtcHistoryDialog
+            accountIds={wallet.stakes.map((stake) => stake.accountId)}
+            title={wallet.name}
+          />
           <WalletStakesDialog wallet={wallet} />
           <WalletFormDialog wallet={{ id: wallet.id, name: wallet.name, notes: wallet.notes }} />
         </div>

@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { holdingEntryStatement } from "@/lib/btc-history";
 import { Prisma, type PrismaClient, type Transaction, type TransactionSource } from "@prisma/client";
 import { addDays } from "@/lib/date";
 
@@ -376,6 +377,13 @@ export async function recordBtcPurchase(
     // from the same value and the second write would silently discard the
     // first's BTC.
     prisma.$executeRaw`UPDATE "Account" SET "btcAmount" = COALESCE("btcAmount", 0) + ${input.btcAmount}, "btcCostBasisCents" = COALESCE("btcCostBasisCents", 0) + ${input.chfAmountCents} WHERE "id" = ${input.cryptoAccountId}`,
+    holdingEntryStatement(prisma, {
+      accountId: input.cryptoAccountId,
+      kind: "Purchase",
+      btcDelta: input.btcAmount,
+      costDeltaCents: input.chfAmountCents,
+      createdById: input.createdById,
+    }),
   ]);
 
   return transaction;
@@ -388,12 +396,23 @@ export async function recordBtcPurchase(
  * deleted — without this, the wallet's `btcAmount` would keep BTC that no
  * longer has a corresponding booking anywhere.
  */
-export async function deleteBtcPurchase(prisma: PrismaClient, transaction: Transaction): Promise<void> {
+export async function deleteBtcPurchase(
+  prisma: PrismaClient,
+  transaction: Transaction,
+  createdById?: number | null
+): Promise<void> {
   if (transaction.btcWalletId === null || transaction.btcQuantity === null) {
     throw new Error("Buchung ist keinem Bitcoin-Kauf zugeordnet.");
   }
   await prisma.$transaction([
     prisma.$executeRaw`UPDATE "Account" SET "btcAmount" = COALESCE("btcAmount", 0) - ${transaction.btcQuantity}, "btcCostBasisCents" = COALESCE("btcCostBasisCents", 0) + ${transaction.amountCents} WHERE "id" = ${transaction.btcWalletId}`,
+    holdingEntryStatement(prisma, {
+      accountId: transaction.btcWalletId,
+      kind: "PurchaseReversal",
+      btcDelta: -transaction.btcQuantity,
+      costDeltaCents: transaction.amountCents,
+      createdById,
+    }),
     prisma.transaction.delete({ where: { id: transaction.id } }),
   ]);
 }

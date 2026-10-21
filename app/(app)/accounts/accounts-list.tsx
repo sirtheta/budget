@@ -278,10 +278,7 @@ function SortableRow({
           {account.type === "Crypto" && (
             <BtcHistoryDialog accountIds={[account.id]} title={account.name} />
           )}
-          {account.type === "Crypto" && (
-          <BtcHistoryDialog accountIds={[account.id]} title={account.name} />
-        )}
-        {account.type === "Crypto" && sourceAccounts.length > 0 && (
+          {account.type === "Crypto" && sourceAccounts.length > 0 && (
             <BtcPurchaseDialog
               cryptoAccountId={account.id}
               sourceAccounts={sourceAccounts}
@@ -388,6 +385,9 @@ function SortableListItem({
         </div>
       </div>
       <div className="flex justify-end mt-2">
+        {account.type === "Crypto" && (
+          <BtcHistoryDialog accountIds={[account.id]} title={account.name} />
+        )}
         {account.type === "Crypto" && sourceAccounts.length > 0 && (
           <BtcPurchaseDialog
             cryptoAccountId={account.id}

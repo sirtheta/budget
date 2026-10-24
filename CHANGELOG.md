@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.31](https://github.com/sirtheta/budget/compare/budget-v0.1.30...budget-v0.1.31) (2026-10-24)
+
+
+### Features
+
+* **accounts:** add history of recorded BTC holdings ([#151](https://github.com/sirtheta/budget/issues/151)) ([51f7d59](https://github.com/sirtheta/budget/commit/51f7d594074803f8c6d0053ab7ccc44459bac739))
+
+
+### Bug Fixes
+
+* **deps:** upgrade Next.js to 16.4.3 for October 2026 security fixes ([#153](https://github.com/sirtheta/budget/issues/153)) ([9dc2a37](https://github.com/sirtheta/budget/commit/9dc2a37cc57b660d9274001e46d5df01e0ef3634))
+
 ## [0.1.30](https://github.com/sirtheta/budget/compare/budget-v0.1.29...budget-v0.1.30) (2026-10-19)
 
 

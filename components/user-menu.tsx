@@ -39,7 +39,7 @@ export function UserMenu({
         <DropdownMenuTrigger asChild>
           <button
             className="flex items-center justify-center size-8 rounded-full bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors"
-            aria-label="Benutzermenü"
+            aria-label={initials ? `${initials} Benutzermenü` : "Benutzermenü"}
           >
             {initials || <UserIcon className="size-4" />}
           </button>

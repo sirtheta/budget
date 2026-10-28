@@ -14,7 +14,7 @@ import { WalletFormDialog } from "./wallet-form-dialog";
 export function WalletCard({ wallet }: { wallet: WalletView }) {
   return (
     <Card className="mb-6">
-      <CardHeader className="flex flex-row items-start justify-between gap-2">
+      <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-2">
         <div>
           <CardTitle>{wallet.name}</CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -26,7 +26,7 @@ export function WalletCard({ wallet }: { wallet: WalletView }) {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <BtcHistoryDialog
             accountIds={wallet.stakes.map((stake) => stake.accountId)}
             title={wallet.name}

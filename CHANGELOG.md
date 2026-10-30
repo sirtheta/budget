@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0](https://github.com/sirtheta/budget/compare/budget-v0.1.31...budget-v1.0.0) (2026-10-28)
+
+
+### Bug Fixes
+
+* **a11y:** include visible initials in user menu button label ([4ede7f1](https://github.com/sirtheta/budget/commit/4ede7f1334a93e100baea903d76357678f242ee9))
+* **accounts:** stack wallet card header actions on mobile ([155eab9](https://github.com/sirtheta/budget/commit/155eab9bc3d6c1c58077134f98ab477b1e6f4130))
+
+
+### Miscellaneous Chores
+
+* release 1.0.0 ([c3a2e87](https://github.com/sirtheta/budget/commit/c3a2e87877aad3eda8ccde955f070a213b15e86c))
+
 ## [0.1.31](https://github.com/sirtheta/budget/compare/budget-v0.1.30...budget-v0.1.31) (2026-10-24)
 
 

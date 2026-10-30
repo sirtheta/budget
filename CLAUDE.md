@@ -14,7 +14,7 @@ npm run build
 npm run lint
 npx prisma migrate dev --name <name>
 npx prisma studio
-npm run db:seed        # a year of faker data (dev only)
+npm run db:seed        # a year of faker data (dev only); db:seed:users = users only
 npm test               # Vitest
 npm run test:watch
 npm run test:coverage
@@ -28,8 +28,8 @@ npx vitest run tests/unit/money.test.ts
 ## Architecture
 
 - `app/(auth)/` — public: login, forgot-password, reset-password
-- `app/(app)/` — protected (session required): `dashboard/`, `transactions/`, `budget/` (Soll/Ist per month), `reserves/` (Rückstellungen, savings goals), `analytics/` (Recharts), `accounts/`, `categories/`, `recurring/`, `import/` (CAMT.053/CSV/PDF, rules, mappings, history); admin only: `users/`, `settings/`, `audit/`
-- `app/api/` — only streaming/external endpoints (CSV export, NextAuth)
+- `app/(app)/` — protected (session required): `dashboard/`, `transactions/`, `budget/` (Soll/Ist per month), `reserves/` (Rückstellungen, savings goals), `analytics/` (Recharts), `accounts/`, `categories/`, `recurring/`, `import/` (CAMT.053/CSV/PDF, rules, mappings, history); admin only: `users/`, `settings/`, `audit/`, `logs/`
+- `app/api/` — only streaming/external endpoints (`auth/` NextAuth, `health/`, `transactions/export/` CSV, `logs/[filename]/`)
 - `lib/` — server utilities + business logic
 - `prisma/schema.prisma` — data model source of truth
 
@@ -51,7 +51,7 @@ Derived, never stored: `openingBalanceCents` + sum of account's transactions. St
 Rückstellungen: yearly/half-yearly costs (Krankenkasse, Steuern, Versicherungen) saved monthly. `monthlyRateCents()` spreads missing amount over months until due date; past due → demands full outstanding amount at once.
 
 ### Recurring (`lib/recurring.ts`)
-`node-cron` job (`RECURRING_CRON_SCHEDULE`) posts due entries, catches up missed occurrences (cap 24 per entry per run). `addMonths` clamps to shorter month (31st doesn't drift). `counterAccountId` → posts transfer (both legs). `autoPost: false` → dashboard suggestion instead.
+`node-cron` job (`RECURRING_CRON_SCHEDULE`) posts due entries, catches up missed occurrences (cap 24 per entry per run). `addMonths` (`lib/date.ts`) clamps to shorter month (31st doesn't drift). `counterAccountId` → posts transfer (both legs). `autoPost: false` → dashboard suggestion instead.
 
 ### Import (`lib/import/`)
 - **`camt.ts`** — CAMT.053. Strips namespace prefixes (`ns2:`, `camt:`, none), falls back through several locations for description/counterparty, splits Sammelbuchungen into `TxDtls`, skips unbooked entries. CAMT.054 and MT940 deliberately unsupported.
@@ -68,6 +68,7 @@ Nothing written before user reviews preview. Duplicates start unchecked. Each ba
 - **Audit** (`lib/audit.ts`): failures logged, never thrown.
 - **Backups** (`lib/backup.ts`): nightly `VACUUM INTO` to `backups/` next to DB file.
 - **Logs** (`lib/log-capture.ts`, `lib/logs.ts`): `startLogCapture()` tees `process.stdout`/`stderr` to `logs/app.log` in data volume. Kept out of `lib/logger.ts` because that module reaches the client bundle via `lib/crypto-price.ts` (no `fs`). `lib/log-capture.ts` must not import `lib/logger`; `instrumentation.ts` calls it **first** in `register()`. pino writes straight to fd 1/2 via `SonicBoom` unless `stdout`/`stderr.write` were reassigned before first `pino()` call (`hasBeenTampered`) — importing `lib/logs` or anything importing `lib/logger` earlier silently breaks capture (empty file). Nightly job copy-truncates `app.log` → `app-<date>.log` (rename would keep open stream on renamed file), prunes beyond `LOG_MAX_KEEP_DAYS`. Admin download at `/logs` via `GET /api/logs/[filename]`; filename validated against exact `app.log` / `app-YYYY-MM-DD.log` shape before filesystem access.
+- **Invoicing** (`lib/invoicing.ts`): if `CUSTOMER_MANAGEMENT_URL` set, after import POSTs income bookings to sibling CustomerManagement app to mark matching open invoice paid. No-op when unset, never throws.
 - **Production startup** (`scripts/startup.js`): applies migrations via `better-sqlite3` (no Prisma CLI in image), generates `AUTH_SECRET`/`ENCRYPTION_KEY` if unset, seeds first admin.
 
 ### Client/server boundary
@@ -92,9 +93,10 @@ Dialog forms use `useDialogFormAction` (`components/use-dialog-form.ts`), not se
 | `AUDIT_RETENTION_DAYS` | No | default `365` (`0` = forever) |
 | `IMPORT_MAX_FILE_SIZE_BYTES` | No | default 10 MB |
 | `KEEP_ALIVE_TIMEOUT` | Behind proxy | ms, default 5000; must exceed proxy's upstream keep-alive or requests hang (see [`docs/01-app/03-api-reference/06-cli/next.md`](node_modules/next/dist/docs/01-app/03-api-reference/06-cli/next.md)) |
+| `CUSTOMER_MANAGEMENT_URL` / `CUSTOMER_MANAGEMENT_API_KEY` | No | invoice-matching integration; unset = off |
 | `DISABLE_EMAIL` / `DISABLE_BACKUP` / `DISABLE_RECURRING` / `DISABLE_LOG_ROTATION` | No | dev/staging switches |
 
-Full list: `.env.example`.
+Full list (`TZ`, session/rate-limit/bcrypt tuning, `TRUST_PROXY_HEADERS`, `LOG_LEVEL`): `.env.example`.
 
 ## Testing
 
@@ -110,7 +112,7 @@ English, [Conventional Commits](https://www.conventionalcommits.org/) (drives `r
 
 ## CI/CD
 
-`ci.yml` (PRs to `main`, ignores doc-only): ESLint → Vitest + coverage → prod build → Playwright. `release.yml` (push to `main`): `release-please` opens/updates release PR (tag `budget-v<version>`); on release or `workflow_dispatch` re-runs checks, then builds/pushes Docker image `ghcr.io/sirtheta/budget` (ARM64).
+`ci.yml` (PRs to `main`; ignores `**.md`, `.github/dependabot.yml`, `LICENSE`) = PR gate, three parallel jobs: ESLint + `npm prune --omit=dev --dry-run` (catches peer conflicts the Docker image's prune would hit); Vitest coverage + prod build; Playwright (skipped for Dependabot). `release.yml` (push to `main`): `release-please` opens/updates release PR (tag `budget-v<version>`); on release or `workflow_dispatch` re-runs checks, then builds/pushes Docker image `ghcr.io/sirtheta/budget` (`linux/arm64`).
 
 ## Next.js 16
 

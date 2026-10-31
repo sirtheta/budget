@@ -1,186 +1,125 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+**Always use the `caveman` skill** for all responses here (invoke via Skill tool at start of each conversation/task).
 
-**Always use the `caveman` skill** for all responses in this repository (invoke it via the Skill tool at the start of each conversation/task).
+Self-hosted budgeting app for a private Swiss household: Next.js 16, TypeScript, React 19, Tailwind CSS 4, Prisma + SQLite. UI, user-facing text, docs: **German**. Code, comments, commits: English.
 
-## Repository Overview
+End-user manual: `public/benutzerhandbuch.html` (served at `/benutzerhandbuch.html`, linked from user menu). Documents behavior, not implementation. After significant UI changes regenerate screenshots via `scripts/manual-screenshots.ts`, don't hand-edit. Version strings carry `<!-- x-release-please-version -->` marker, bumped by `release-please` (`extra-files` in `release-please-config.json`); keep marker on any line showing a version. `tests/unit/manual-version.test.ts` checks match with `package.json`.
 
-A self-hosted household budgeting app for a private Swiss household, implemented as a Next.js 16 web dashboard (TypeScript, React 19, Tailwind CSS 4, Prisma + SQLite).
-
-The UI, user-facing text, and documentation are **in German**. Code, comments, and commit messages are in English.
-
-A full illustrated end-user manual (with screenshots) lives at `public/benutzerhandbuch.html` — open it in a browser, or in the running app via the user menu / at `/benutzerhandbuch.html`. It documents app behavior for end users, not implementation details; regenerate its screenshots after significant UI changes rather than hand-editing stale ones (see `scripts/manual-screenshots.ts` for the capture pipeline). The version strings in the manual carry an `<!-- x-release-please-version -->` marker and are bumped automatically by `release-please` (`extra-files` in `release-please-config.json`); keep the marker on any line that shows a version. `tests/unit/manual-version.test.ts` checks they match `package.json`.
-
----
-
-## Web Application (repo root)
-
-### Commands
+## Commands
 
 ```bash
-# Development
-npm run dev            # Start dev server at localhost:3000
-npm run build          # Production build
-npm run lint           # ESLint check
-
-# Database
-npx prisma migrate dev --name <name>   # Create and apply a new migration
-npx prisma studio                       # GUI to inspect the DB
-npm run db:seed                         # Seed a year of faker data (dev only)
-
-# Tests
-npm test               # Run all tests (Vitest)
-npm run test:watch     # Watch mode
-npm run test:coverage  # Coverage report (v8)
-npm run test:integration  # Integration tests only
-npm run test:e2e       # Playwright E2E tests (starts its own dev server on :3111)
-# Run a single test file:
+npm run dev            # dev server :3000
+npm run build
+npm run lint
+npx prisma migrate dev --name <name>
+npx prisma studio
+npm run db:seed        # a year of faker data (dev only); db:seed:users = users only
+npm test               # Vitest
+npm run test:watch
+npm run test:coverage
+npm run test:integration
+npm run test:e2e       # Playwright, own dev server on :3111
 npx vitest run tests/unit/money.test.ts
 ```
 
-> **Note:** `prisma generate` runs automatically via `postinstall`. After pulling schema changes, run `npx prisma migrate dev` to keep the local DB in sync.
+`prisma generate` runs via `postinstall`. After pulling schema changes: `npx prisma migrate dev`.
 
-### Architecture
+## Architecture
 
-**Next.js App Router layout:**
+- `app/(auth)/` — public: login, forgot-password, reset-password
+- `app/(app)/` — protected (session required): `dashboard/`, `transactions/`, `budget/` (Soll/Ist per month), `reserves/` (Rückstellungen, savings goals), `analytics/` (Recharts), `accounts/`, `categories/`, `recurring/`, `import/` (CAMT.053/CSV/PDF, rules, mappings, history); admin only: `users/`, `settings/`, `audit/`, `logs/`
+- `app/api/` — only streaming/external endpoints (`auth/` NextAuth, `health/`, `transactions/export/` CSV, `logs/[filename]/`)
+- `lib/` — server utilities + business logic
+- `prisma/schema.prisma` — data model source of truth
 
-- `app/(auth)/` — Public routes (login, forgot-password, reset-password)
-- `app/(app)/` — Protected routes; all require an active session
-  - `dashboard/` — Month overview, balances, budget traffic lights, recent bookings
-  - `transactions/` — Filterable booking list, entry form, transfers
-  - `budget/` — Soll/Ist per category for one month
-  - `reserves/` — Rückstellungen (provisions) and savings goals
-  - `analytics/` — Yearly charts (Recharts)
-  - `accounts/`, `categories/`, `recurring/` — Master data
-  - `import/` — CAMT.053 / CSV import, rules, mappings, import history
-  - `users/`, `settings/`, `audit/` — Admin only
-- `app/api/` — Reserved for streaming/external endpoints (CSV export, NextAuth)
-- `lib/` — Shared server-side utilities and business logic
-- `prisma/schema.prisma` — Single source of truth for the data model
-
-**Data mutations** use Next.js Server Actions (`actions.ts` files co-located with routes), not API routes.
+Mutations = Server Actions in co-located `actions.ts`, not API routes.
 
 ### Money (`lib/money.ts`)
-
-Every amount in the database is a **signed integer number of Rappen** — never a float, never a Prisma `Decimal`. Integers keep arithmetic exact and survive the Server-Component → Client-Component boundary unchanged, which a `Decimal` does not.
-
-Sign convention throughout: **negative = expense, positive = income**.
-
-`parseMoney` accepts the shapes that actually turn up in Swiss bank exports and form input (`1'234.50`, `1 234,50`, `42-`, `(42.50)`, `CHF 12.–`) and returns `null` for non-numeric input, so callers can tell "invalid" from "zero".
+DB amounts = **signed integer Rappen**, never float or Prisma `Decimal` (exact, crosses Server→Client boundary unchanged). **Negative = expense, positive = income.** `parseMoney` accepts Swiss export/form shapes (`1'234.50`, `1 234,50`, `42-`, `(42.50)`, `CHF 12.–`), returns `null` for non-numeric (invalid ≠ zero).
 
 ### Transfers (`lib/transactions.ts`)
-
-A transfer between the household's own accounts is stored as **two rows sharing a `transferGroupId`**: negative on the source, positive on the target, both with no category. That is what keeps them out of every income/expense evaluation while each account's balance stays a plain sum of its own rows. Both legs are always created, updated, and deleted together.
+Two rows sharing `transferGroupId`: negative on source, positive on target, no category → excluded from income/expense, balances stay plain sums. Both legs always created/updated/deleted together.
 
 ### Balances (`lib/balances.ts`)
-
-Balances are **derived**, never stored: `openingBalanceCents` plus the sum of the account's transactions. A stored running balance would drift the moment a transaction is edited or back-dated — and back-dating is the normal case when importing a statement.
+Derived, never stored: `openingBalanceCents` + sum of account's transactions. Stored running balance would drift on edits/back-dating (normal on import).
 
 ### Budget (`lib/budget.ts`)
-
-`loadBudgetMonth()` returns planned vs. booked per leaf category, grouped by top-level category. Expenses are reported as positive magnitudes so Soll and Ist are directly comparable; the direction comes from `Category.kind`.
-
-Excluded from every evaluation: transfers (`transferGroupId != null`) and accounts flagged `excludeFromBudget` (depots). Uncategorised bookings are reported separately rather than dropped — a large "ohne Kategorie" figure is the signal the user needs.
+`loadBudgetMonth()`: planned vs. booked per leaf category, grouped by top-level. Expenses as positive magnitudes; direction from `Category.kind`. Excluded: transfers (`transferGroupId != null`), accounts with `excludeFromBudget` (depots). Uncategorised reported separately ("ohne Kategorie"), never dropped.
 
 ### Reserves (`lib/reserves.ts`)
+Rückstellungen: yearly/half-yearly costs (Krankenkasse, Steuern, Versicherungen) saved monthly. `monthlyRateCents()` spreads missing amount over months until due date; past due → demands full outstanding amount at once.
 
-Rückstellungen cover costs that fall due yearly or half-yearly (Krankenkasse, Steuern, Versicherungen) but must be set aside monthly. Without the concept a Swiss household budget looks healthy for eleven months and collapses in the twelfth. `monthlyRateCents()` spreads what is still missing over the months until the due date; once the due date has passed it demands the full outstanding amount at once rather than understating the obligation.
-
-### Recurring transactions (`lib/recurring.ts`)
-
-A `node-cron` job (`RECURRING_CRON_SCHEDULE`, default hourly) posts due entries and **catches up occurrences missed while the app was down**, capped at 24 postings per entry and run. `addMonths` clamps to the shorter target month, so an entry booked on the 31st does not drift into the following month.
-
-Entries with `counterAccountId` post a transfer (both legs); `autoPost: false` entries surface on the dashboard as a suggestion instead.
+### Recurring (`lib/recurring.ts`)
+`node-cron` job (`RECURRING_CRON_SCHEDULE`) posts due entries, catches up missed occurrences (cap 24 per entry per run). `addMonths` (`lib/date.ts`) clamps to shorter month (31st doesn't drift). `counterAccountId` → posts transfer (both legs). `autoPost: false` → dashboard suggestion instead.
 
 ### Import (`lib/import/`)
+- **`camt.ts`** — CAMT.053. Strips namespace prefixes (`ns2:`, `camt:`, none), falls back through several locations for description/counterparty, splits Sammelbuchungen into `TxDtls`, skips unbooked entries. CAMT.054 and MT940 deliberately unsupported.
+- **`csv.ts`** — hand-written RFC-4180 parser + per-bank `CsvMapping`. Handles Excel BOM, CRLF, signed amount column or debit/credit pair.
+- **`pdf.ts` / `pdf-parse.ts`** — PDF statements (Viseca/Migros credit card). `pdf.ts` (server only, `unpdf`) → text lines, fragments grouped by y, table columns joined with two spaces. `pdf-parse.ts` is pure (no Prisma/pdf.js/Node APIs) and applies a stored `PdfLayout`: named-group regexes for booking line, section/follow-up context (card + holder, category, exchange rate), skipped lines, printed totals (per-card sum check warning). Every regex runs through injected `LineMatcher`: `nativeMatcher` for trusted input/tests; `createSafeMatcher` (`safe-regex.ts`, `node:vm`, 500 ms per regex / 2 s per request) for all request-driven input, incl. layout dialog preview (`previewPdfLayoutAction`). No IBAN in PDFs → target account chosen in wizard. PDF never stored. `bankReference` = `pdf:<date>|<valuta>|<text>|<document cents>|<occurrence>` from raw regex groups: changing description template/context rules keeps dedupe; changing `date`/`valuta`/`text`/`amount` groups breaks it. CSV and PDF of same card never dedupe against each other.
+- **`dedupe.ts`** — fingerprint into `Transaction.importHash` (unique index). Bank reference dominates; otherwise includes positional occurrence counter (two identical same-day bookings both import, re-import skips both).
+- **`rules.ts`** — auto-categorisation, lowest `priority` wins. Invalid user regex never matches, never breaks import.
 
-- **`camt.ts`** — CAMT.053 parser. Strips namespace prefixes (banks emit `ns2:`, `camt:`, none), falls back through several locations for description and counterparty, splits collective bookings (`Sammelbuchungen`) into their individual `TxDtls`, and skips entries that are not yet booked. CAMT.054 and MT940 are deliberately not supported: .054 only avises credits, MT940 is the superseded SWIFT format.
-- **`csv.ts`** — Hand-written RFC-4180 parser plus a per-bank column mapping (`CsvMapping`). Handles the BOM Excel writes, CRLF, and either one signed amount column or a debit/credit pair.
-- **`pdf.ts` / `pdf-parse.ts`** — PDF statements (Viseca/Migros credit-card bills when the CSV export is unavailable). `pdf.ts` (server only, `unpdf`) turns a PDF into text lines — fragments are grouped by y position and table columns joined with two spaces; `pdf-parse.ts` (pure, no Prisma/pdf.js/Node APIs; every regex runs through an injected `LineMatcher` — `nativeMatcher` for trusted input and tests, `createSafeMatcher` from `safe-regex.ts`, which runs each regex in `node:vm` with hard timeouts of 500 ms per regex and 2 s per request, for everything request-driven, including the layout dialog's live preview via `previewPdfLayoutAction`) applies a stored `PdfLayout`: regexes with named groups for the booking line, section/follow-up context lines (card + holder, category, exchange rate), skipped lines and printed totals for a sum check that warns per card. PDF statements carry no IBAN, so the target account is always chosen in the wizard. The PDF itself is never stored (card numbers, address). PDF bookings carry a stable `bankReference` (`pdf:<date>|<valuta>|<text>|<document cents>|<occurrence>`, from the raw regex groups), so changing a layout's description template or context rules does not break duplicate detection; changing the `date`/`valuta`/`text`/`amount` groups of the booking regex does, and a CSV export and the PDF of one card never dedupe against each other.
-- **`dedupe.ts`** — Fingerprints each candidate into `Transaction.importHash` (unique index). The bank reference dominates when present; otherwise the hash includes a positional occurrence counter so two genuinely identical bookings on the same day both import, while re-importing the same file skips both.
-- **`rules.ts`** — Auto-categorisation, lowest `priority` wins. An invalid user regex never matches instead of breaking the import.
+Nothing written before user reviews preview. Duplicates start unchecked. Each batch undoable as a whole. CSV mappings + PDF layouts under Import → Mappings.
 
-Nothing is written until the user has reviewed the preview. Duplicates start unchecked, and each import batch can be undone as a whole. CSV mappings and PDF layouts live under Import → Mappings.
+### Cross-cutting
+- **Auth** (`lib/auth.ts`): NextAuth v5 Credentials, bcrypt, constant-time login response, in-memory rate limit, JWT sessions with periodic DB re-check (demotion/deactivation effective within a minute).
+- **Authorization** (`lib/permissions.ts`): `requireAdmin()` / `requireEditor()` / `requireSession()` at top of Server Components/Actions; `hasRole()` for UI.
+- **Audit** (`lib/audit.ts`): failures logged, never thrown.
+- **Backups** (`lib/backup.ts`): nightly `VACUUM INTO` to `backups/` next to DB file.
+- **Logs** (`lib/log-capture.ts`, `lib/logs.ts`): `startLogCapture()` tees `process.stdout`/`stderr` to `logs/app.log` in data volume. Kept out of `lib/logger.ts` because that module reaches the client bundle via `lib/crypto-price.ts` (no `fs`). `lib/log-capture.ts` must not import `lib/logger`; `instrumentation.ts` calls it **first** in `register()`. pino writes straight to fd 1/2 via `SonicBoom` unless `stdout`/`stderr.write` were reassigned before first `pino()` call (`hasBeenTampered`) — importing `lib/logs` or anything importing `lib/logger` earlier silently breaks capture (empty file). Nightly job copy-truncates `app.log` → `app-<date>.log` (rename would keep open stream on renamed file), prunes beyond `LOG_MAX_KEEP_DAYS`. Admin download at `/logs` via `GET /api/logs/[filename]`; filename validated against exact `app.log` / `app-YYYY-MM-DD.log` shape before filesystem access.
+- **Invoicing** (`lib/invoicing.ts`): if `CUSTOMER_MANAGEMENT_URL` set, after import POSTs income bookings to sibling CustomerManagement app to mark matching open invoice paid. No-op when unset, never throws.
+- **Production startup** (`scripts/startup.js`): applies migrations via `better-sqlite3` (no Prisma CLI in image), generates `AUTH_SECRET`/`ENCRYPTION_KEY` if unset, seeds first admin.
 
-**Authentication** (`lib/auth.ts`): NextAuth v5 Credentials provider, bcrypt, constant-time login response, in-memory rate limiting, JWT sessions with a periodic DB re-check so a demotion or deactivation takes effect within a minute.
+### Client/server boundary
+Label constants for Client Components live in dependency-free modules (`lib/intervals.ts`, `lib/import/rule-labels.ts`, `lib/colors.ts`, `lib/import/pdf-parse.ts`). Importing from `lib/recurring.ts` or `lib/import/rules.ts` drags `node-cron`/Prisma/pino into browser bundle → build breaks.
 
-**Authorization** (`lib/permissions.ts`): `requireAdmin()` / `requireEditor()` / `requireSession()` at the top of Server Components and Server Actions; `hasRole()` for UI rendering.
+Dialog forms use `useDialogFormAction` (`components/use-dialog-form.ts`), not self-closing effects (React 19 flags cascading render; effect could re-close on unrelated re-render).
 
-**Audit logging** (`lib/audit.ts`): failures are logged but never thrown, so a broken audit trail never blocks the underlying mutation.
+## Environment Variables
 
-**Backups** (`lib/backup.ts`): nightly `VACUUM INTO` snapshot to `backups/` next to the database file, inside the data volume.
-
-**Logs** (`lib/log-capture.ts`, `lib/logs.ts`): `startLogCapture()` tees `process.stdout`/`process.stderr` to `logs/app.log` in the data volume, so a file ends up with everything `docker logs` would show — not just what happens to go through the shared pino logger — without `lib/logger.ts` itself importing `fs` (that module is reachable from the client bundle via `lib/crypto-price.ts`, and pino's browser build has no filesystem to give it). It lives in its own `lib/log-capture.ts`, with no import of `lib/logger`, and `instrumentation.ts` calls it as the very first thing in `register()`: pino writes straight to file descriptor 1/2 via a `SonicBoom`, bypassing `process.stdout`/`stderr.write` entirely, *unless* those methods were already reassigned before the first `pino()` call anywhere in the process (`hasBeenTampered`) — importing `lib/logs` (or anything else that imports `lib/logger`) before `startLogCapture()` runs silently breaks capture, with nothing but an empty downloaded file to show for it. A nightly job copy-truncates `app.log` to `app-<date>.log` (rename would leave the already-open write stream writing into the renamed file) and prunes files older than `LOG_MAX_KEEP_DAYS`. Admins download files from `/logs` in the UI (`GET /api/logs/[filename]`, filename validated against the exact `app.log` / `app-YYYY-MM-DD.log` shape before touching the filesystem).
-
-**Production startup** (`scripts/startup.js`): applies pending migrations directly via `better-sqlite3` (no Prisma CLI in the image), generates `AUTH_SECRET`/`ENCRYPTION_KEY` if unset, and seeds the first admin.
-
-### Client/server module boundary
-
-Label constants used by Client Components live in dependency-free modules (`lib/intervals.ts`, `lib/import/rule-labels.ts`, `lib/colors.ts`, and `lib/import/pdf-parse.ts`). Importing them from `lib/recurring.ts` or `lib/import/rules.ts` instead would drag `node-cron`, Prisma, or pino into the browser bundle and break the build.
-
-Dialog forms use `useDialogFormAction` (`components/use-dialog-form.ts`) rather than closing themselves from an effect — React 19 flags the cascading render, and the effect variant could close the dialog again on an unrelated re-render.
-
-### Key Environment Variables
-
-| Variable | Required | Description |
+| Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | No | SQLite path, defaults to `file:./data/budget.db` |
-| `AUTH_SECRET` | Production only | NextAuth JWT signing key (min 32 chars); auto-generated in Docker if unset |
-| `AUTH_URL` | Production only | Full URL for auth redirects and reset links |
-| `ENCRYPTION_KEY` | Production only | 32-byte hex key for encrypting the SMTP password at rest; auto-generated in Docker if unset |
-| `ADMIN_EMAIL` / `ADMIN_NAME` / `ADMIN_PASSWORD` | First run | Bootstraps the initial admin user |
-| `ADMIN_PASSWORD_HASH` | First run | Pre-hashed bcrypt alternative to `ADMIN_PASSWORD` |
-| `APP_TIMEZONE` | No | IANA timezone deciding which calendar day is "today", defaults to `Europe/Zurich` |
-| `RECURRING_CRON_SCHEDULE` | No | Cron expression for posting due recurring entries, defaults to `5 * * * *` |
-| `BACKUP_CRON_SCHEDULE` / `BACKUP_MAX_KEEP_DAYS` | No | Nightly backup schedule (`30 2 * * *`) and retention (`14`, `0` = keep all) |
-| `LOG_ROTATE_CRON_SCHEDULE` / `LOG_MAX_KEEP_DAYS` | No | Nightly log rotation schedule (`35 2 * * *`) and retention (`14`, `0` = keep all) |
-| `AUDIT_RETENTION_DAYS` | No | Days to keep audit rows (`0` = forever), default `365` |
-| `IMPORT_MAX_FILE_SIZE_BYTES` | No | Upload guard for statement files, default 10 MB |
-| `KEEP_ALIVE_TIMEOUT` | Behind reverse proxy | Node HTTP keep-alive timeout in ms, default 5000; must exceed the proxy's own upstream keep-alive timeout or requests occasionally hang silently (see [`docs/01-app/03-api-reference/06-cli/next.md`](node_modules/next/dist/docs/01-app/03-api-reference/06-cli/next.md)) |
-| `DISABLE_EMAIL` / `DISABLE_BACKUP` / `DISABLE_RECURRING` / `DISABLE_LOG_ROTATION` | No | Dev/staging switches |
+| `DATABASE_URL` | No | default `file:./data/budget.db` |
+| `AUTH_SECRET` | Prod | NextAuth JWT key, min 32 chars; auto-generated in Docker |
+| `AUTH_URL` | Prod | full URL for auth redirects/reset links |
+| `ENCRYPTION_KEY` | Prod | 32-byte hex, encrypts SMTP password; auto-generated in Docker |
+| `ADMIN_EMAIL` / `ADMIN_NAME` / `ADMIN_PASSWORD` | First run | bootstrap admin |
+| `ADMIN_PASSWORD_HASH` | First run | bcrypt alternative to `ADMIN_PASSWORD` |
+| `APP_TIMEZONE` | No | decides "today", default `Europe/Zurich` |
+| `RECURRING_CRON_SCHEDULE` | No | default `5 * * * *` |
+| `BACKUP_CRON_SCHEDULE` / `BACKUP_MAX_KEEP_DAYS` | No | `30 2 * * *` / `14` (`0` = keep all) |
+| `LOG_ROTATE_CRON_SCHEDULE` / `LOG_MAX_KEEP_DAYS` | No | `35 2 * * *` / `14` (`0` = keep all) |
+| `AUDIT_RETENTION_DAYS` | No | default `365` (`0` = forever) |
+| `IMPORT_MAX_FILE_SIZE_BYTES` | No | default 10 MB |
+| `KEEP_ALIVE_TIMEOUT` | Behind proxy | ms, default 5000; must exceed proxy's upstream keep-alive or requests hang (see [`docs/01-app/03-api-reference/06-cli/next.md`](node_modules/next/dist/docs/01-app/03-api-reference/06-cli/next.md)) |
+| `CUSTOMER_MANAGEMENT_URL` / `CUSTOMER_MANAGEMENT_API_KEY` | No | invoice-matching integration; unset = off |
+| `DISABLE_EMAIL` / `DISABLE_BACKUP` / `DISABLE_RECURRING` / `DISABLE_LOG_ROTATION` | No | dev/staging switches |
 
-See `.env.example` for the full list.
+Full list (`TZ`, session/rate-limit/bcrypt tuning, `TRUST_PROXY_HEADERS`, `LOG_LEVEL`): `.env.example`.
 
-### Testing
+## Testing
 
-Tests live in `tests/unit/` and `tests/integration/`. Integration tests build a throwaway SQLite database per file by replaying the committed migration SQL (`tests/integration/helpers.ts`), so the test schema is identical to production — including the unique index on `Transaction.importHash`. Coverage is collected for `lib/**/*.ts`, `app/api/**/*.ts` and `app/**/actions.ts`.
+`tests/unit/`, `tests/integration/`. Integration tests build a throwaway SQLite DB per file by replaying committed migration SQL (`tests/integration/helpers.ts`) → schema identical to prod, incl. unique index on `Transaction.importHash`. Coverage: `lib/**/*.ts`, `app/api/**/*.ts`, `app/**/actions.ts`.
 
-Playwright E2E tests live in `tests/e2e/` (`npm run test:e2e`): the config boots a dev server on port 3111 against a freshly migrated SQLite DB (`tests/e2e/global-setup.ts`, admin login `admin@e2e.local`).
+E2E: `tests/e2e/` (`npm run test:e2e`), dev server :3111, fresh migrated DB (`tests/e2e/global-setup.ts`), admin `admin@e2e.local`.
 
-`tests/e2e-prod/` (`npm run build && npm run test:e2e:prod`, port 3112) is a second, opt-in suite running against `next start`. It exists because the client router dispatches Server Action results through a different code path in a production build than in dev — a stale-by-one-dispatch router bug in Next 16.2 was invisible to the dev-server suite and to `npm run dev`, and only this setup reproduced it.
+`tests/e2e-prod/` (`npm run build && npm run test:e2e:prod`, :3112): opt-in suite against `next start`. Prod build dispatches Server Action results via a different router path; a stale-by-one-dispatch bug in Next 16.2 only reproduced here.
 
----
+## Commits
 
-## Commit Conventions
-
-All commit messages must be **in English** and follow the [Conventional Commits](https://www.conventionalcommits.org/) spec, which `release-please` uses to determine version bumps and generate changelogs:
-
-- `feat: <description>` — new feature — minor version bump
-- `fix: <description>` — bug fix — patch version bump
-- `feat!:` / `fix!:` or `BREAKING CHANGE:` footer — breaking change — major version bump
-- `chore:`, `docs:`, `test:`, `refactor:`, `build:`, `ci:` — no release triggered
-
-The scope is optional but encouraged, e.g. `feat(import): support collective bookings`.
-
----
+English, [Conventional Commits](https://www.conventionalcommits.org/) (drives `release-please`): `feat:` minor, `fix:` patch, `feat!:`/`fix!:`/`BREAKING CHANGE:` major; `chore:`, `docs:`, `test:`, `refactor:`, `build:`, `ci:` no release. Scope optional, encouraged: `feat(import): support collective bookings`.
 
 ## CI/CD
 
-The **`ci.yml`** GitHub Actions workflow triggers on PRs to `main` (ignoring doc-only changes). It runs ESLint, then Vitest with coverage, then a production build, then Playwright — this is the PR gate. The **`release.yml`** workflow triggers on push to `main`: `release-please` opens/updates a release PR (tags as `budget-v<version>`); once a release is created (or on manual `workflow_dispatch`), it re-runs the same checks and then builds and pushes a Docker image to `ghcr.io/sirtheta/budget` (ARM64 target).
+`ci.yml` (PRs to `main`; ignores `**.md`, `.github/dependabot.yml`, `LICENSE`) = PR gate, three parallel jobs: ESLint + `npm prune --omit=dev --dry-run` (catches peer conflicts the Docker image's prune would hit); Vitest coverage + prod build; Playwright (skipped for Dependabot). `release.yml` (push to `main`): `release-please` opens/updates release PR (tag `budget-v<version>`); on release or `workflow_dispatch` re-runs checks, then builds/pushes Docker image `ghcr.io/sirtheta/budget` (`linux/arm64`).
 
----
+## Next.js 16
 
-## Next.js Version Note
-
-This project uses **Next.js 16**, which has breaking changes from earlier versions. Before modifying routing, middleware, or data-fetching patterns, check `node_modules/next/dist/docs/` for current API conventions — do not assume behavior from older Next.js knowledge.
-
-<!-- BEGIN:nextjs-agent-rules -->
+Breaking changes vs. older versions. Before touching routing, middleware, or data fetching, check `node_modules/next/dist/docs/`.
 
 # This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->

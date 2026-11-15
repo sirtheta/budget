@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/sirtheta/budget/compare/budget-v1.0.0...budget-v1.0.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* **import:** book CSV fee column and flag renamed duplicates ([#173](https://github.com/sirtheta/budget/issues/173)) ([312a715](https://github.com/sirtheta/budget/commit/312a71533283d7a767437cd3aa9a5ad2c97b12ed))
+
 ## [1.0.0](https://github.com/sirtheta/budget/compare/budget-v0.1.31...budget-v1.0.0) (2026-10-28)
 
 

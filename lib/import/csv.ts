@@ -136,7 +136,8 @@ export interface CsvParseResult extends ParsedStatement {
  *
  * Amounts come either as one signed column or as separate debit/credit
  * columns; in the latter case the debit column is negated, since banks write
- * both as positive numbers.
+ * both as positive numbers. An optional fee column (Revolut lists foreign
+ * currency fees apart from the amount) is subtracted on top.
  */
 export function parseCsvStatement(input: string, mapping: CsvMapping): CsvParseResult {
   const rows = parseCsvRows(input, mapping.delimiter);
@@ -192,10 +193,19 @@ export function parseCsvStatement(input: string, mapping: CsvMapping): CsvParseR
       return;
     }
 
+    // A fee is always a cost, whatever the sign of the amount it belongs to.
+    // An unreadable fee cell counts as no fee rather than rejecting the row.
+    let feeCents = 0;
+    if (mapping.feeColumn !== null && mapping.feeColumn !== undefined) {
+      const fee = parseMoney(cell(row, mapping.feeColumn));
+      if (fee !== null) feeCents = Math.abs(fee);
+    }
+
     const counterparty = cell(row, mapping.counterpartyColumn) || null;
     transactions.push({
       date,
-      amountCents,
+      amountCents: amountCents - feeCents,
+      ...(feeCents > 0 ? { feeCents } : {}),
       description: cell(row, mapping.descriptionColumn) || counterparty || "Ohne Beschreibung",
       counterparty,
       bankReference: null,

@@ -150,7 +150,7 @@ export function editsReducer(state: EditState | null, action: EditAction): EditS
       // outside the date filter are left exactly as they were.
       const shown = new Set(action.rows.map((row) => row.hash));
       const selected = new Set([...current.selected].filter((hash) => !shown.has(hash)));
-      for (const row of action.rows) if (!row.isDuplicate) selected.add(row.hash);
+      for (const row of action.rows) if (!row.isDuplicate && !row.possibleDuplicateOf) selected.add(row.hash);
       return { ...current, selected };
     }
 

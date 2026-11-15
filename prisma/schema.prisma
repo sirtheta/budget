@@ -514,6 +514,11 @@ model CsvMapping {
   debitColumn        Int?
   creditColumn       Int?
   counterpartyColumn Int?
+  /// Optional separate fee column (Revolut: `Gebühr`). Printed as a positive
+  /// number next to an amount that excludes it; the importer books
+  /// amount − fee, so the balance matches the bank's. Fingerprints still use the
+  /// printed amount, so fee-less imports made before this column existed dedupe.
+  feeColumn          Int?
 
   decimalSeparator   String @default(".")
   thousandsSeparator String @default("'")

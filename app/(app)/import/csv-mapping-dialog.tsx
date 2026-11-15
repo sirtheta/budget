@@ -241,6 +241,17 @@ export function CsvMappingDialog({
                 defaultValue={mapping?.creditColumn ?? null}
               />
             </div>
+            <div className="grid grid-cols-3 gap-3">
+              <ColumnField
+                id="feeColumn"
+                label="Gebühr (optional)"
+                defaultValue={mapping?.feeColumn ?? null}
+              />
+              <p className="col-span-2 self-end text-xs text-muted-foreground">
+                Für Exporte mit separater Gebührenspalte (z. B. Revolut): Die Gebühr wird vom
+                Betrag abgezogen, damit der Saldo mit dem der Bank übereinstimmt.
+              </p>
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"

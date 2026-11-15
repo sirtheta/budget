@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitDuplicates, verifyImportHash, withHashes } from "@/lib/import/dedupe";
+import { findRenamedDuplicates, splitDuplicates, verifyImportHash, withHashes } from "@/lib/import/dedupe";
 import type { ParsedTransaction } from "@/lib/import/types";
 
 function tx(overrides: Partial<ParsedTransaction> = {}): ParsedTransaction {
@@ -121,5 +121,68 @@ describe("verifyImportHash", () => {
     expect(verifyImportHash(account, { ...referenced, bankReference: "OTHER" }, row.hash)).toBe(
       false
     );
+  });
+});
+
+describe("fee-aware fingerprint", () => {
+  const printed = tx({ amountCents: -7080, counterparty: null });
+  const withFee = tx({ amountCents: -7151, feeCents: 71, counterparty: null });
+
+  it("hashes the amount as printed, so rows imported before fee support still match", () => {
+    expect(withHashes(1, [withFee])[0].hash).toBe(withHashes(1, [printed])[0].hash);
+  });
+
+  it("verifies a fee row against the hash derived from its printed amount", () => {
+    const [row] = withHashes(1, [withFee]);
+    expect(verifyImportHash(1, withFee, row.hash)).toBe(true);
+    // Dropping the fee changes the printed amount, so the hash no longer fits.
+    expect(verifyImportHash(1, { ...withFee, feeCents: undefined }, row.hash)).toBe(false);
+  });
+});
+
+describe("findRenamedDuplicates", () => {
+  const booked = (over: Partial<Parameters<typeof findRenamedDuplicates>[1][number]> = {}) => ({
+    id: 1,
+    date: "2026-09-04",
+    amountCents: -1700,
+    description: "Anthropic",
+    importHash: "old",
+    ...over,
+  });
+  const fresh = (over: Partial<ParsedTransaction> = {}) =>
+    withHashes(1, [tx({ date: "2026-09-04", amountCents: -1700, description: "CLAUDE", counterparty: null, ...over })]);
+
+  it("pairs a fresh row with an old booking the statement no longer contains", () => {
+    const rows = fresh();
+    const result = findRenamedDuplicates(rows, [booked()], new Set(rows.map((r) => r.hash)));
+    expect(result.get(rows[0].hash)?.description).toBe("Anthropic");
+  });
+
+  it("ignores a booking that still hashes to a row of this statement", () => {
+    const rows = fresh();
+    const result = findRenamedDuplicates(rows, [booked({ importHash: "kept" })], new Set([...rows.map((r) => r.hash), "kept"]));
+    expect(result.size).toBe(0);
+  });
+
+  it("lets one old booking explain only one fresh row", () => {
+    const rows = withHashes(1, [
+      tx({ date: "2026-09-04", amountCents: -1700, description: "CLAUDE", counterparty: null }),
+      tx({ date: "2026-09-04", amountCents: -1700, description: "Spotify", counterparty: null }),
+    ]);
+    const result = findRenamedDuplicates(rows, [booked()], new Set(rows.map((r) => r.hash)));
+    expect(result.size).toBe(1);
+  });
+
+  it("needs the same date and amount", () => {
+    const rows = fresh();
+    const hashes = new Set(rows.map((r) => r.hash));
+    expect(findRenamedDuplicates(rows, [booked({ date: "2026-09-05" })], hashes).size).toBe(0);
+    expect(findRenamedDuplicates(rows, [booked({ amountCents: -1800 })], hashes).size).toBe(0);
+  });
+
+  it("also matches an old booking stored with the printed amount when the new row carries a fee", () => {
+    const rows = fresh({ amountCents: -1717, feeCents: 17 });
+    const result = findRenamedDuplicates(rows, [booked()], new Set(rows.map((r) => r.hash)));
+    expect(result.size).toBe(1);
   });
 });

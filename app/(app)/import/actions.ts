@@ -11,7 +11,7 @@ import { matchInvoicePayment } from "@/lib/invoicing";
 import { addDays, isValidDateString } from "@/lib/date";
 import { parseCamt053 } from "@/lib/import/camt";
 import { detectDelimiter, parseCsvStatement, previewRows, type CsvParseResult } from "@/lib/import/csv";
-import { normalize, verifyImportHash, withHashes } from "@/lib/import/dedupe";
+import { findRenamedDuplicates, normalize, verifyImportHash, withHashes } from "@/lib/import/dedupe";
 import { loadHistoryCategorySuggestions } from "@/lib/import/history";
 import { extractPdfLines } from "@/lib/import/pdf";
 import { layoutFromRow, parsePdfStatement } from "@/lib/import/pdf-parse";
@@ -34,6 +34,8 @@ export type ActionState = { error?: string; success?: boolean };
 export interface PreviewRow {
   date: string;
   amountCents: number;
+  /** Fee already included in `amountCents` (CSV fee column); 0 when none. */
+  feeCents: number;
   description: string;
   counterparty: string | null;
   bankReference: string | null;
@@ -51,6 +53,10 @@ export interface PreviewRow {
    *  into that leg instead of creating a new transaction. */
   isAdopted: boolean;
   isDuplicate: boolean;
+  /** Description of an already-imported booking with the same date and amount
+   *  that this statement no longer contains — likely the same payment after the
+   *  bank renamed it (see findRenamedDuplicates). Starts unchecked. */
+  possibleDuplicateOf: string | null;
 }
 
 export interface ImportPreview {
@@ -210,6 +216,29 @@ export async function previewImportAction(
     }
   }
 
+  // Fresh rows whose payment may already be booked under an older description.
+  // Only bookings this file does not account for are candidates, so the
+  // lookup is bounded to the file's own period.
+  const renamedFrom = new Map<string, string>();
+  const freshForRename = hashed.filter((row) => !existingHashes.has(row.hash) && !adoptedHashes.has(row.hash));
+  if (freshForRename.length > 0) {
+    const dates = hashed.map((row) => row.date).sort();
+    const candidates = await prisma.transaction.findMany({
+      where: {
+        accountId,
+        importHash: { not: null },
+        date: { gte: dates[0], lte: dates[dates.length - 1] },
+      },
+      select: { id: true, date: true, amountCents: true, description: true, importHash: true },
+    });
+    const matches = findRenamedDuplicates(
+      freshForRename,
+      candidates.flatMap((c) => (c.importHash ? [{ ...c, importHash: c.importHash }] : [])),
+      new Set(hashed.map((row) => row.hash))
+    );
+    for (const [hash, booking] of matches) renamedFrom.set(hash, booking.description);
+  }
+
   const rows: PreviewRow[] = hashed.map((row) => {
     // The rule match travels with the row as the fallback categorisation for
     // whichever row doesn't get adopted, instead of silently falling through
@@ -222,6 +251,7 @@ export async function previewImportAction(
     return {
       date: row.date,
       amountCents: row.amountCents,
+      feeCents: row.feeCents ?? 0,
       description: row.description,
       counterparty: row.counterparty,
       bankReference: row.bankReference,
@@ -234,6 +264,7 @@ export async function previewImportAction(
         : null,
       isAdopted: adoptedHashes.has(row.hash),
       isDuplicate: existingHashes.has(row.hash),
+      possibleDuplicateOf: renamedFrom.get(row.hash) ?? null,
     };
   });
 
@@ -285,6 +316,7 @@ export async function previewImportAction(
 const commitRowSchema = z.object({
   date: z.string().refine(isValidDateString),
   amountCents: z.number().int(),
+  feeCents: z.number().int().min(0).default(0),
   description: z.string().max(500),
   counterparty: z.string().nullable(),
   bankReference: z.string().nullable(),
@@ -310,7 +342,7 @@ const commitSchema = z.object({
  * concurrent import.
  */
 export async function commitImportAction(
-  payload: z.infer<typeof commitSchema>
+  payload: z.input<typeof commitSchema>
 ): Promise<ActionState & { imported?: number; skipped?: number }> {
   const session = await requireEditor();
 

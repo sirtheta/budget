@@ -26,6 +26,15 @@ export function normalize(value: string | null): string {
 }
 
 /**
+ * The amount as the bank printed it, before a separately listed fee was folded
+ * in. Fingerprints use this, so a mapping gaining a fee column later doesn't
+ * change the hash of rows that were already imported without it.
+ */
+export function printedAmountCents(transaction: Pick<ParsedTransaction, "amountCents" | "feeCents">): number {
+  return transaction.amountCents + (transaction.feeCents ?? 0);
+}
+
+/**
  * Fingerprint of one parsed transaction for a given account.
  *
  * When the bank supplies a reference it dominates the hash: references are
@@ -41,7 +50,7 @@ export function importHash(
     : [
         accountId,
         transaction.date,
-        transaction.amountCents,
+        printedAmountCents(transaction),
         normalize(transaction.description),
         normalize(transaction.counterparty),
         occurrence,
@@ -65,7 +74,7 @@ export function withHashes(
   return transactions.map((transaction) => {
     const key = [
       transaction.date,
-      transaction.amountCents,
+      printedAmountCents(transaction),
       normalize(transaction.description),
       normalize(transaction.counterparty),
     ].join("|");
@@ -132,4 +141,50 @@ export function splitDuplicates(
     else fresh.push(candidate);
   }
   return { fresh, duplicates };
+}
+
+export interface ExistingBooking {
+  id: number;
+  date: string;
+  amountCents: number;
+  description: string;
+  importHash: string;
+}
+
+/**
+ * Finds fresh rows that are probably an already-imported booking whose text
+ * the bank changed afterwards.
+ *
+ * Revolut, for one, renames merchants retroactively ("Anthropic" → "CLAUDE"):
+ * the same payment then comes back under a new description, hashes differently,
+ * and would import a second time. Same date and same amount is the only thing
+ * that survives such a rename.
+ *
+ * To keep real same-day, same-amount purchases at different shops out of this,
+ * only existing bookings that the statement itself does *not* account for may
+ * match — one that still hashes to a row of this file is that row, not a
+ * renamed one — and each can explain at most one fresh row.
+ *
+ * `existing` must hold only bookings with an `importHash`; `amountCents` is
+ * compared both as booked and as the bank printed it, since rows imported
+ * before fee support carry the printed amount.
+ */
+export function findRenamedDuplicates(
+  fresh: HashedTransaction[],
+  existing: ExistingBooking[],
+  statementHashes: Set<string>
+): Map<string, ExistingBooking> {
+  const unclaimed = existing.filter((booking) => !statementHashes.has(booking.importHash));
+  const matches = new Map<string, ExistingBooking>();
+  for (const row of fresh) {
+    const index = unclaimed.findIndex(
+      (booking) =>
+        booking.date === row.date &&
+        (booking.amountCents === row.amountCents || booking.amountCents === printedAmountCents(row))
+    );
+    if (index === -1) continue;
+    matches.set(row.hash, unclaimed[index]);
+    unclaimed.splice(index, 1);
+  }
+  return matches;
 }

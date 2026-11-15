@@ -2,8 +2,14 @@
 export interface ParsedTransaction {
   /** Booking date, YYYY-MM-DD. */
   date: string;
-  /** Signed amount in Rappen: negative = money out. */
+  /** Signed amount in Rappen: negative = money out. Includes `feeCents`. */
   amountCents: number;
+  /**
+   * Fee the bank lists separately from the amount, as a positive number of
+   * Rappen already folded into `amountCents`. Kept so the fingerprint can still
+   * be derived from the amount as printed. Absent/0 when the file has none.
+   */
+  feeCents?: number;
   description: string;
   counterparty: string | null;
   /** AcctSvcrRef / EndToEndId, when the file provides one. */

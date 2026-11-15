@@ -131,9 +131,13 @@ export function ImportWizard({
   );
 
   // Duplicates start unchecked — re-importing them is exactly what the
-  // fingerprint exists to prevent.
+  // fingerprint exists to prevent. So do likely renamed duplicates: the user
+  // decides after seeing which booking they might repeat.
   const defaultSelected = useMemo(
-    () => new Set(filteredRows.filter((row) => !row.isDuplicate).map((row) => row.hash)),
+    () =>
+      new Set(
+        filteredRows.filter((row) => !row.isDuplicate && !row.possibleDuplicateOf).map((row) => row.hash)
+      ),
     [filteredRows]
   );
 
@@ -220,6 +224,7 @@ export function ImportWizard({
         return {
           date: row.date,
           amountCents: row.amountCents,
+          feeCents: row.feeCents,
           description: row.description,
           counterparty: row.counterparty,
           bankReference: row.bankReference,
@@ -712,6 +717,14 @@ const DesktopPreviewRow = memo(function DesktopPreviewRow({
             <span className="text-xs text-muted-foreground truncate">{row.counterparty}</span>
           )}
           {row.isDuplicate && <Badge variant="secondary">Bereits importiert</Badge>}
+          {row.possibleDuplicateOf && (
+            <Badge variant="outline" title="Gleiches Datum und gleicher Betrag wie eine schon importierte Buchung, die in dieser Datei nicht mehr vorkommt.">
+              Mögliches Duplikat von «{row.possibleDuplicateOf}»
+            </Badge>
+          )}
+          {row.feeCents > 0 && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">inkl. <Money cents={-row.feeCents} /> Gebühr</span>
+          )}
         </span>
       </td>
       <td className="p-2">
@@ -791,6 +804,14 @@ const MobilePreviewRow = memo(function MobilePreviewRow({
               <span className="text-xs text-muted-foreground truncate">{row.counterparty}</span>
             )}
             {row.isDuplicate && <Badge variant="secondary">Bereits importiert</Badge>}
+          {row.possibleDuplicateOf && (
+            <Badge variant="outline" title="Gleiches Datum und gleicher Betrag wie eine schon importierte Buchung, die in dieser Datei nicht mehr vorkommt.">
+              Mögliches Duplikat von «{row.possibleDuplicateOf}»
+            </Badge>
+          )}
+          {row.feeCents > 0 && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">inkl. <Money cents={-row.feeCents} /> Gebühr</span>
+          )}
           </div>
         </div>
       </div>

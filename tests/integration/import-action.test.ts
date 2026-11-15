@@ -141,6 +141,73 @@ describe("previewImportAction", () => {
     await prisma.transaction.deleteMany({ where: { importHash: hashed.hash } });
   });
 
+  it("flags a fresh row as a possible duplicate of an old booking the bank has since renamed", async () => {
+    // Same payment, date and amount — but imported earlier under another text,
+    // so its fingerprint no longer matches this statement.
+    const old = await prisma.transaction.create({
+      data: {
+        date: "2026-07-01",
+        amountCents: -4250,
+        accountId: fixtures.account.id,
+        description: "Altname",
+        importHash: "legacy-renamed-hash",
+      },
+    });
+
+    const result = await previewImportAction(undefined, csvForm({ accountId: String(fixtures.account.id) }));
+    const byDescription = new Map(result.preview?.rows.map((r) => [r.description, r]));
+    expect(byDescription.get("Migros")?.possibleDuplicateOf).toBe("Altname");
+    expect(byDescription.get("Lohn")?.possibleDuplicateOf).toBeNull();
+
+    await prisma.transaction.delete({ where: { id: old.id } });
+  });
+
+  it("books a separately listed fee on top of the amount without changing the fingerprint", async () => {
+    const feeMapping = await prisma.csvMapping.create({
+      data: {
+        name: "Testbank mit Gebühr",
+        delimiter: ";",
+        dateColumn: 0,
+        dateFormat: "YYYY-MM-DD",
+        descriptionColumn: 1,
+        amountColumn: 2,
+        feeColumn: 3,
+        decimalSeparator: ".",
+        thousandsSeparator: "'",
+      },
+    });
+    const text = "Datum;Beschreibung;Betrag;Gebuehr\n2026-09-27;Kik;-70.80;0.71\n";
+    const data = csvForm({ accountId: String(fixtures.account.id) }, text);
+    data.set("mappingId", String(feeMapping.id));
+
+    const result = await previewImportAction(undefined, data);
+    const row = result.preview?.rows[0];
+    expect(row).toMatchObject({ amountCents: -7151, feeCents: 71 });
+
+    // Same hash as the fee-less import of that row, so earlier imports dedupe.
+    const [printed] = withHashes(fixtures.account.id, [
+      { date: "2026-09-27", amountCents: -7080, description: "Kik", counterparty: null, bankReference: null },
+    ]);
+    expect(row?.hash).toBe(printed.hash);
+
+    // And the preview row commits: the fingerprint check accepts the fee row.
+    const committed = await commitImportAction({
+      accountId: fixtures.account.id,
+      filename: "fee.csv",
+      format: "Csv",
+      periodFrom: "2026-09-27",
+      periodTo: "2026-09-27",
+      closingBalanceCents: null,
+      rows: [{ ...row!, categoryId: null, transferAccountId: null }],
+    });
+    expect(committed.error).toBeUndefined();
+    const stored = await prisma.transaction.findFirst({ where: { importHash: printed.hash } });
+    expect(stored?.amountCents).toBe(-7151);
+
+    await prisma.transaction.deleteMany({ where: { importHash: printed.hash } });
+    await prisma.importBatch.deleteMany({ where: { filename: "fee.csv" } });
+  });
+
   it("does not count a row adopting a pending transfer leg twice in the balance check", async () => {
     // Simulates a recurring auto-transfer that already posted its synthetic,
     // not-yet-confirmed leg on this account (see applyAutoTransfer).

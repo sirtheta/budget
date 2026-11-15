@@ -27,10 +27,12 @@ export const DEFAULT_CSV_MAPPINGS: Omit<
     debitColumn: null,
     creditColumn: null,
     counterpartyColumn: 8,
+    feeColumn: null,
   },
   {
     // Revolut account statement: Betrag is already signed the way this app
-    // expects, and there is no separate merchant column.
+    // expects, there is no separate merchant column, and Gebühr (foreign
+    // currency fees) is listed apart from Betrag, so it has to be subtracted.
     name: "Revolut",
     delimiter: ",",
     skipRows: 0,
@@ -43,6 +45,7 @@ export const DEFAULT_CSV_MAPPINGS: Omit<
     debitColumn: null,
     creditColumn: null,
     counterpartyColumn: 4,
+    feeColumn: 6,
   },
 ];
 

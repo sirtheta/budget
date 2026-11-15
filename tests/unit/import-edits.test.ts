@@ -15,6 +15,7 @@ function row(overrides: Partial<PreviewRow> & { hash: string }): PreviewRow {
   return {
     date: "2026-01-15",
     amountCents: -1000,
+    feeCents: 0,
     description: "Buchung",
     counterparty: null,
     bankReference: null,
@@ -24,6 +25,7 @@ function row(overrides: Partial<PreviewRow> & { hash: string }): PreviewRow {
     transferAccountName: null,
     isAdopted: false,
     isDuplicate: false,
+    possibleDuplicateOf: null,
     ...overrides,
   };
 }
@@ -147,6 +149,13 @@ describe("editsReducer", () => {
 
   it("selects every non-duplicate row shown", () => {
     const next = send(null, current, new Set(), { type: "selectAllNew", rows });
+
+    expect([...next.selected].sort()).toEqual(["a", "b"]);
+  });
+
+  it("does not preselect a likely renamed duplicate", () => {
+    const withRenamed = [...rows, row({ hash: "d", possibleDuplicateOf: "Anthropic" })];
+    const next = send(null, preview(withRenamed), new Set(), { type: "selectAllNew", rows: withRenamed });
 
     expect([...next.selected].sort()).toEqual(["a", "b"]);
   });

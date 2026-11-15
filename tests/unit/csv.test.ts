@@ -18,6 +18,7 @@ function mapping(overrides: Partial<CsvMapping> = {}): CsvMapping {
     debitColumn: null,
     creditColumn: null,
     counterpartyColumn: null,
+    feeColumn: null,
     decimalSeparator: ".",
     thousandsSeparator: "'",
     createdAt: new Date(),
@@ -161,5 +162,38 @@ describe("parseCsvStatement", () => {
     const csv = "Datum;Text;Betrag;Empfänger\n05.02.2026;Einkauf;-82.40;Migros Zürich";
     const result = parseCsvStatement(csv, mapping({ counterpartyColumn: 3 }));
     expect(result.transactions[0].counterparty).toBe("Migros Zürich");
+  });
+});
+
+describe("parseCsvStatement fee column", () => {
+  const csv = "Datum;Text;Betrag;Gebuehr\n2026-09-27;Kik;-70.80;0.71\n2026-09-28;Rueckzahlung;20.00;0.10\n2026-09-29;REWE;-11.45;0.00\n2026-09-30;Kaffee;-4.50;\n";
+
+  it("subtracts the fee on top of an expense", () => {
+    const { transactions } = parseCsvStatement(csv, mapping({ dateFormat: "YYYY-MM-DD", feeColumn: 3 }));
+    expect(transactions[0]).toMatchObject({ amountCents: -7151, feeCents: 71 });
+  });
+
+  it("treats a fee as a cost even next to a positive amount", () => {
+    const { transactions } = parseCsvStatement(csv, mapping({ dateFormat: "YYYY-MM-DD", feeColumn: 3 }));
+    expect(transactions[1]).toMatchObject({ amountCents: 1990, feeCents: 10 });
+  });
+
+  it("leaves rows with a zero or blank fee untouched", () => {
+    const { transactions } = parseCsvStatement(csv, mapping({ dateFormat: "YYYY-MM-DD", feeColumn: 3 }));
+    expect(transactions[2]).toMatchObject({ amountCents: -1145 });
+    expect(transactions[2].feeCents).toBeUndefined();
+    expect(transactions[3]).toMatchObject({ amountCents: -450 });
+    expect(transactions[3].feeCents).toBeUndefined();
+  });
+
+  it("ignores the fee when the mapping has no fee column", () => {
+    const { transactions } = parseCsvStatement(csv, mapping({ dateFormat: "YYYY-MM-DD" }));
+    expect(transactions[0].amountCents).toBe(-7080);
+  });
+
+  it("applies the fee after inverting a credit-card style amount", () => {
+    const card = "Datum;Text;Betrag;Gebuehr\n2026-09-27;Kik;70.80;0.71\n";
+    const { transactions } = parseCsvStatement(card, mapping({ dateFormat: "YYYY-MM-DD", invertAmount: true, feeColumn: 3 }));
+    expect(transactions[0].amountCents).toBe(-7151);
   });
 });

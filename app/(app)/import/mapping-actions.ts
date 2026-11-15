@@ -60,6 +60,7 @@ export async function saveCsvMappingAction(
   const counterpartyColumn = columnSchema.parse(
     formData.get("counterpartyColumn") as string | undefined
   );
+  const feeColumn = columnSchema.parse(formData.get("feeColumn") as string | undefined);
 
   // Either one signed column or a debit/credit pair — without one of them the
   // parser has no amount to read.
@@ -75,6 +76,7 @@ export async function saveCsvMappingAction(
     debitColumn,
     creditColumn,
     counterpartyColumn,
+    feeColumn,
   };
 
   const idRaw = formData.get("id");

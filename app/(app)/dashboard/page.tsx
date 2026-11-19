@@ -242,7 +242,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
 
   // Reuse the rate accountBalances() already resolved instead of a second,
   // rate-limited CoinGecko hit for the "current price" tile (see accounts/page.tsx).
-  const currentBtcRateChf = balances.find((account) => account.btcRateChf !== null)?.btcRateChf ?? null;
+  const balancesBtcRateChf = balances.find((account) => account.btcRateChf !== null)?.btcRateChf ?? null;
+  // The tile sits next to the price chart, so it takes the chart's newest point:
+  // that series is awaited fresh on every render, whereas the live rate is
+  // served stale-while-revalidate and would lag one render behind the chart.
+  // Falls back to the balances' rate when the 1-day series is unavailable.
+  const currentBtcRateChf = btcHistory?.[0]?.at(-1)?.price ?? balancesBtcRateChf;
 
   return (
     <>

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2](https://github.com/sirtheta/budget/compare/budget-v1.0.1...budget-v1.0.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **auth:** renew session cookie while the app is in use ([#178](https://github.com/sirtheta/budget/issues/178)) ([fe15626](https://github.com/sirtheta/budget/commit/fe156265a5bb9a9e2b1eac926636833cd6295a7e))
+* **dashboard:** take Bitcoin price tile from the chart's newest point ([#176](https://github.com/sirtheta/budget/issues/176)) ([56662b3](https://github.com/sirtheta/budget/commit/56662b3103543592768b02b52130b586b4481ecd))
+
 ## [1.0.1](https://github.com/sirtheta/budget/compare/budget-v1.0.0...budget-v1.0.1) (2026-11-15)
 
 
